@@ -1,0 +1,323 @@
+import json
+import os
+import shutil
+
+
+def save_to_json(data, output_file_path):
+    with open(output_file_path, 'w') as output_file:
+        json.dump(data, output_file, indent=2)
+
+
+data_to_save = \
+    {
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Version":
+            """8""",
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Year":
+            """2026""",
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Semester":
+            """Fall""",
+        # -----------------------------------------------------------------------------------------------------------------------
+        "project_name":
+            """Exploring applications for the Montandon Global Crisis Data Bank""",
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Objective":
+            """
+            The International Federation of Red Cross (IFRC) has created Montandon, the world's largest
+            disaster database. This includes information on disasters, their impacts, and operational responses.
+            The goal of this project is to explore potential applications of this database and build
+            a proof-of-concept pipeline for at least one such application in conjunction with Red Cross stakeholders.
+
+            Key Objectives:
+            1. Build pipelines to process dataset features with various approach candidates:
+                a. **Classical NLP:** Parse free-form text fields describing disasters and their impacts
+                    using Named Entity Recognition (NER)
+                b. **Geospatial analysis:** Mapping event density / hotspots; potentially combine disaster locations
+                    with external data sources
+                c. **Embeddings:** Embed free-form text fields and keywords
+            2. Build a network representation of disasters and responses using existing and generated features
+                for analysis work; this may involve a series of network maps (or slices of a whole) relating
+                to disasters and their responses separately or implementing different node/edge framings
+                depending on objective #1 findings
+            3. Explore the generated network to develop interpretable takeaways, such as:
+                - Identifying disaster node clusters
+                - Using node connections / centrality to spotlight core items (e.g. a network graph of disaster responses
+                    could highlight a common operational thread between them)
+                - Spotlighting outlier nodes (e.g. a disaster with impacts unlike others in its category)
+            4. Develop a proof-of-concept tool for Red Cross stakeholders to use with the full data bank
+                as new disasters are added
+            """,
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Dataset":
+            """
+            This project centers around the [Montandon Global Crisis Data Bank](https://montandondata.org/),
+            which has restricted access ahead of a production release (requiring an IFRC GO account for API use).
+
+            The data bank uses a modified version of the [SpatioTemporal Asset Catalogs (STAC) specification](https://stacspec.org/en),
+            including added custom fields and aggregating information from multiple sources.
+
+            The [Sentence Transformers](https://sbert.net/) library is the likely target for embedding exploration,
+            with models like (all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
+            available on HuggingFace.
+
+            DATASET / PIPELINE PREPARATION:
+            - Build shared utilities for retrieving API data
+            - Potentially use Pydantic to construct a shared schema for API data to support static type safety
+            - Potentially build related utilities around a cloud bucket to store previously retrieved records
+                depending on desired API use patterns
+            """,
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Rationale":
+            """
+            The Red Cross plays a critical role in global disaster responses. This project provides the
+            opportunity to bridge a gap between their extensive data bank and their ability to use it,
+            making it both technically interesting and impactful. The data bank's range of features
+            provides the opportunity to exercise a variety of potential approaches.
+
+            WHY THIS PROJECT IS TIMELY:
+            [Weather-related disasters are increasing in frequency and severity](https://www.climatecentral.org/climate-matters/billion-dollar-disasters-2025),
+            costing many lives and causing immense economic damage. Because of this, the need to understand disaster dynamics
+            and organizational responses grows proportionally. This project can make a meaningful contribution to
+            this space by helping the Red Cross glean insights from stored data.
+            """,
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Approach":
+            """
+            PHASE 1: DATA ACCESS & SHARED FOUNDATION (Week 1)
+
+            [Week 1: Data Access, Scoping & Shared Setup]
+            - Meet with Red Cross stakeholders to confirm handling restrictions and understand insight gaps
+            - Build shared API data retrieval and parsing utilities
+            - Complete repository setup chores, like CI, project setup, and more
+
+            PHASE 2: EXPLORATORY FEATURE GENERATION & INITIAL REPORTING (Weeks 2-4)
+
+            [Week 2: First Feature Pipelines]
+            - Student 1: Draft a cleaning / named entity recognition pipeline for the free-form disaster and impact fields
+            - Student 2: Build a geospatial pipeline for validating locations, starting work on initial
+                mapping and geospatial statistics
+            - Student 3: Build an embedding pipeline for descriptions and keywords, starting work on clustering
+
+            [Week 3: Feature Exploration]
+            - Extend the NLP work and complete initial exploratory analysis, pulling out interesting entities
+                and takeaways for a potential network representation
+            - Extend the geospatial work to examine disaster hotspots and other items of interest
+            - Extend the embedding work to inspect how cosine similarity thresholds manifest in practice
+                and review implementation decisions (potentially testing different models)
+            - Compare results and decide which generated features should be carried forward for the network
+
+            [Week 4: Initial Reporting & Network Design]
+            - Identify useful features, including raw/generated features, for network analysis
+            - Build initial reports with exploratory plots and examples from each analysis approach
+            - Pin down ~2 network approaches to pursue in parallel for insight generation
+                - NOTE: Following proposal maps/steps are tentative pending decisions here
+            - Sync with Red Cross stakeholders on decisions/direction
+
+            PHASE 3: NETWORK ANALYSIS & REPORTING TOOLS (Weeks 5-8)
+
+            [Week 5: Initial Network Maps]
+            - Student 1 starts building a network centered around disaster analysis, likely with disasters as core nodes.
+            - Student 2 starts a separate network for operational response dynamics. Possible nodes include response actions,
+                organizations, resource types, and related crisis records.
+            - Student 3 starts building shared reporting tools and utilities for shared use, including network statistic reports
+                and visualization.
+
+            [Week 6: Continued Network Buildout]
+            - Refine the node and edge decisions for both network maps, adjusting for interpretability;
+                this may involve handling excessively dense/sparse connections, reviewing when edges are drawn, and more
+            - Inspect clusters, central nodes, and outliers in both networks to prep for analysis work
+            - Extend the reporting tool visualizations and test initial implementations with both networks
+
+            [Week 7: Network Reporting]
+            - Draft the first complete reports for both network maps, including .gexf exports, graphs, and
+              written summaries of the findings and limitations
+            - Sync with Red Cross stakeholders on initial findings and proof-of-concept direction
+
+            PHASE 4: PROOF OF CONCEPT, EVALUATION & PAPER WORK (Weeks 8-12)
+
+            [Weeks 8-10: Complete the Proof of Concept]
+            - Build a proof-of-concept tool/pipeline, extending on existing work for more concrete Red Cross utility
+                - Potentially could be distributed as a Python library or a separate repository
+            - Test on data bank records
+            - Begin organizing the paper around the investigation process, methods, and initial findings
+
+            [Week 11: Revision & Paper Work]
+            - Revise the proof-of-concept based on Red Cross stakeholder feedback
+            - Document what works, what does not work, data limitations, and reasonable next steps to extend on the concept
+            - Prepare final figures, results, and code needed for the paper
+            - Complete a full draft of the paper documenting the investigation process and findings
+
+            [Week 12: Paper Completion & Submission]
+            - Revise and submit the project paper
+            - Start preparing the remaining final deliverables for the Red Cross
+
+            PHASE 5: FINAL HANDOFF (Weeks 13-15)
+
+            [Week 13: Final Analysis & Deliverable Preparation]
+            - Complete any remaining analysis and finalize limitations and next-step recommendations
+            - Prepare the final proof-of-concept materials and supporting documentation
+
+            [Week 14: Final Documentation]
+            - Finalize all deliverables for the Red Cross
+
+            [Week 15: Presentation & Handoff]
+            - Hand off the proof-of-concept completely, along with associated Red Cross correspondence
+            - Complete the final presentation and final project tweaks for submission.
+            """,
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Timeline":
+            """
+            Week 1:  Confirm handling restrictions and insight gaps; build shared API retrieval/parsing utilities
+                and complete repository setup.
+            Week 2:  Start the NLP, geospatial, and embedding feature pipelines.
+            Week 3:  Extend each feature pipeline and identify useful features for network analysis.
+            Week 4:  Build initial reports and exploratory plots; select two network approaches and sync with
+                Red Cross stakeholders on direction.
+            Week 5:  Building initial network maps; start shared reporting work on network statistics and visualization.
+            Week 6:  Refine both network maps and extend the reporting visualizations.
+            Week 7:  Draft complete network reports and sync with Red Cross stakeholders on findings and the
+                proof-of-concept direction.
+            Week 8:  Start the proof-of-concept tool or pipeline and test it on the data bank.
+            Week 9:  Continue the proof-of-concept and draft the paper structure, methods, and early results.
+            Week 10: Complete the first proof-of-concept version; finish the paper's first full draft.
+            Week 11: Revise the proof-of-concept from stakeholder feedback; complete final figures, results, and
+                paper revisions.
+            Week 12: Submit the completed research paper; document follow-up work and begin final deliverable preparation.
+            Week 13: Finish remaining analysis, limitations, and next steps; prepare final materials.
+            Week 14: Finalize all Red Cross deliverables and repository documentation.
+            Week 15: Complete the final presentation and handoff of the proof of concept, reporting tools, and
+                associated Red Cross correspondence.
+
+            TOTAL: 15 weeks
+
+            KEY MILESTONES:
+            - Week 1:  Shared data access and working project foundation complete
+            - Week 4:  Initial reports and exploratory plots complete; two network approaches selected
+            - Week 7:  Twin network reports and reusable reporting tools complete
+            - Week 10: Working proof of concept plus complete internal paper draft
+            - Week 12: Project paper submitted
+            - Week 15: Final handoff complete
+
+            DELIVERABLES BY WEEK 15:
+            - Reusable data retrieval, cleaning, and feature-generation pipeline
+            - Documented text, geospatial, and embedding feature outputs
+            - Disaster and operational-response network analyses
+            - Reusable network generation, reporting, and visualization tools
+            - Proof-of-concept tool or pipeline providing utility to Red Cross stakeholders
+            - Project paper submission
+            - Final report, presentation, and documented repository
+            """,
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Expected Number Students":
+            """
+            RECOMMENDED: 3 students
+
+            SHARED RESPONSIBILITIES (all students):
+            - Data retrieval, schema decisions, cleaning, documentation, stakeholder meetings,
+              proof-of-concept design, testing, writing, and the final presentation.
+
+            ROLE DISTRIBUTION FOR 3 STUDENTS:
+
+            Student 1: Classical NLP & Disaster Network
+            - Lead the exploration of named entity recognition and other text features from disaster and impact
+              descriptions.
+            - Lead the disaster-focused network once the shared feature set is ready.
+
+            Student 2: Geospatial Analysis & Operational-Response Network
+            - Lead location validation, mapping, and hotspot analysis.
+            - Lead the operational response-focused network once the shared feature set is ready.
+
+            Student 3: Embeddings & Shared Reporting Tools
+            - Lead text embeddings and associated analysis / experimentation.
+            - Build shared tools for visualization and reporting.
+            """,
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Research Contributions":
+            """
+            This project offers several avenues for useful research and technical contributions:
+
+            1. DATA & FEATURE CONTRIBUTIONS:
+            - A documented pipeline for retrieving, cleaning, and working with Montandon records.
+            - A practical comparison of classical NLP, geospatial analysis, and text embeddings on the crisis data.
+            - Documented features that can support future analysis and applications, including specific extensions
+                on proof-of-concept work
+
+            2. NETWORK ANALYSIS CONTRIBUTIONS:
+            - Two complementary network views to advance Montandon data bank understanding and utility
+            - An analysis of which node and edge definitions produce interpretable, useful results for stakeholders.
+            - Reusable utilities for future network exploration.
+
+            3. PRACTICAL CONTRIBUTIONS:
+            - A proof-of-concept with utility for Red Cross stakeholders.
+            - Clear documentation of data limitations, successful approaches, and recommended next steps.
+            - Reproducible code that future Red Cross collaborators can build on.
+
+            PUBLICATION VENUES:
+            - ISCRAM 2027 (International Conference on Information Systems for Crisis Response and Management).
+            - A Red Cross or IFRC data, innovation, or practitioner forum.
+
+            EXPECTED OUTCOMES:
+            - A reusable Montandon data collection pipeline and feature-generation workflow.
+            - Two documented network analyses with export and reporting tools.
+            - One proof-of-concept application and a stakeholder-informed recommendation for future work.
+            """,
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Possible Issues":
+            """
+            TECHNICAL CHALLENGES AND SOLUTIONS:
+
+            1. Restricted API Access or Changing Fields:
+            - ISSUE: Access patterns and available fields may change while the data bank is still being released.
+            - SOLUTION: Work with Red Cross stakeholders to triage potentially unreliable features
+
+            2. Missing or Inconsistent Data:
+            - ISSUE: Locations, dates, descriptions, and response fields may be incomplete or inconsistent,
+                especially given that this is aggregated from many different sources.
+            - SOLUTION: Profile missing data early on and ensure that takeaways are broad/robust enough.
+
+            3. Network Definitions:
+            - ISSUE: Network node/edge decisions can be somewhat opinioned/arbitrary, leading to different results.
+            - SOLUTION: Test multiple variations and defer to Red Cross stakeholders for utility determinations.
+
+            4. Scope of the Final Proof of Concept:
+            - ISSUE: There may be more possible applications than can be completed in one semester.
+            - SOLUTION: Work with Red Cross stakeholders to build something with concrete utility
+                that they can extend upon moving forward.
+
+            RISK MITIGATION TIMELINE:
+            - Week 1:  Confirm access, handling rules, data availability, and the stakeholder questions.
+            - Weeks 2-4: Check feature outputs against the source data and document coverage and limitations.
+            - Week 5:  Review network plans with stakeholders before building out both network analyses.
+            - Week 9:  Lock the proof-of-concept scope.
+            - Weeks 10-12: Test the proof of concept and revise it from stakeholder feedback.
+            - Weeks 13-15: Final documentation review and careful handoff of approved outputs.
+            """,
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Additional Resources":
+            """
+            PRIMARY LIBRARY:
+            - PySTAC: https://pystac.readthedocs.io/en/stable/
+              Python library for reading, writing, and working with SpatioTemporal Asset Catalog (STAC) metadata.
+              It will be used to parse and work with Montandon's modified STAC records.
+            """,
+        # -----------------------------------------------------------------------------------------------------------------------
+        "Proposed by": "Jeongmin An, Jehan Bugli, and Aidan Carlisle",
+        "Proposed by email": "zds6799@gmail.com, jehan.bugli@gwmail.gwu.edu, aidan.carlisle@gwmail.gwu.edu",
+        "instructor": "Amir Jafari",
+        "instructor_email": "ajafari@gwu.edu",
+        "collaborator": "International Federation of Red Cross (IFRC)",
+        "funding_opportunity": "",
+        "github_repo": "",
+        # -----------------------------------------------------------------------------------------------------------------------
+    }
+
+
+os.makedirs(
+    os.getcwd() + os.sep + f'Arxiv{os.sep}Proposals{os.sep}{data_to_save["Year"]}{os.sep}{data_to_save["Semester"]}{os.sep}{data_to_save["Version"]}',
+    exist_ok=True)
+output_file_path = os.getcwd() + os.sep + f'Arxiv{os.sep}Proposals{os.sep}{data_to_save["Year"]}{os.sep}{data_to_save["Semester"]}{os.sep}{data_to_save["Version"]}{os.sep}'
+save_to_json(data_to_save, output_file_path + "input.json")
+shutil.copy(__file__, output_file_path)
+print(f"Data saved to {output_file_path}")
