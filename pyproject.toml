@@ -1,0 +1,23 @@
+[project]
+name = "fall-2026-group2-dev"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Jehan Bugli", email = "jehanbugli123@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+fall-2026-group2-dev = "fall_2026_group2_dev:main"
+
+[project.optional-dependencies]
+test = [
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
