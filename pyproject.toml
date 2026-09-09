@@ -7,7 +7,9 @@ authors = [
     { name = "Jehan Bugli", email = "jehanbugli123@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "pystac-client>=0.9.0",
+]
 
 [project.scripts]
 fall-2026-group2-dev = "monty_tool:main"
