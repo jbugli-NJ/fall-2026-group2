@@ -1,5 +1,5 @@
 [project]
-name = "fall-2026-group2-dev"
+name = "monty-tool"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -10,7 +10,7 @@ requires-python = ">=3.14"
 dependencies = []
 
 [project.scripts]
-fall-2026-group2-dev = "fall_2026_group2_dev:main"
+fall-2026-group2-dev = "monty_tool:main"
 
 [project.optional-dependencies]
 test = [
