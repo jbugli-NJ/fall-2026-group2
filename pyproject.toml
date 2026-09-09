@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-fall-2026-group2-dev = "monty_tool:main"
+monty-tool = "monty_tool:main"
 
 [project.optional-dependencies]
 test = [
