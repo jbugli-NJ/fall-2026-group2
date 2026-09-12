@@ -9,11 +9,9 @@ import os
 from pystac_client import Client
 
 
-
 # Resources
 
 STAC_API_URL = 'https://montandon-eoapi-stage.ifrc.org/stac'
-
 
 
 # API utilities
