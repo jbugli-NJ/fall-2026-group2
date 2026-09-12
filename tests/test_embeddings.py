@@ -7,6 +7,7 @@ Tests for embedding generation.
 from unittest.mock import Mock
 
 import numpy as np
+import polars as pl
 
 from monty_tool.api_schemas import MontandonItem
 from monty_tool.embeddings.generate import (
@@ -65,3 +66,25 @@ def test_generate_item_embeddings_uses_item_inputs():
         description=[1.0, 0.0],
         keywords=[2.0, 1.0],
     )
+
+
+def test_embeddings_to_dataframe_executes():
+    """
+    Checks that an embedding record can produce a Polars DataFrame.
+    """
+    embeddings = MontandonItemEmbeddings(
+        item_id='event-1',
+        title=[0.0, 1.0],
+        description=[1.0, 0.0],
+    )
+
+    dataframe = embeddings.to_dataframe()
+
+    assert dataframe.shape == (1, 5)
+    assert dataframe.to_dicts() == [{
+        'item_id': 'event-1',
+        'title': [0.0, 1.0],
+        'description': [1.0, 0.0],
+        'keywords': None,
+        'impact_severity_text': None,
+    }]
