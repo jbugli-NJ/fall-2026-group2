@@ -6,9 +6,9 @@ Pydantic schemas for items returned by the Montandon STAC API.
 # Imports
 
 from datetime import datetime as DateTime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 # Helpers
@@ -73,15 +73,20 @@ class HazardDetail(MontandonModel):
 
 # Property schemas
 
+NonBlankText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1),
+]
+
 class CommonMontandonProperties(MontandonModel):
     """
     Properties shared by the documented event and hazard Item payloads.
     """
     roles: list[str]
-    title: str
+    title: NonBlankText
     datetime: DateTime
     keywords: list[str]
-    description: str
+    description: NonBlankText
     start_datetime: DateTime
     end_datetime: DateTime
     monty_corr_id: str = Field(alias="monty:corr_id")
