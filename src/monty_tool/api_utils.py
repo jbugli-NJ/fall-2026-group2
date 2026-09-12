@@ -8,6 +8,8 @@ import os
 
 from pystac_client import Client
 
+from monty_tool.api_schemas import MontandonItem
+
 
 # Resources
 
@@ -34,3 +36,15 @@ def get_pystac_client():
     auth_headers = _get_headers()
     client = Client.open(STAC_API_URL, headers=auth_headers)
     return client
+
+
+def get_collection_items(collection_id: str) -> list[MontandonItem]:
+    """
+    Retrieve and validate every Item in a Montandon collection.
+    """
+    client = get_pystac_client()
+    search = client.search(collections=[collection_id])
+    return [
+        MontandonItem.model_validate(item.to_dict())
+        for item in search.items()
+    ]
