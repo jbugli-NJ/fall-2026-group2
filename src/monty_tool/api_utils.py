@@ -38,12 +38,15 @@ def get_pystac_client():
     return client
 
 
-def get_collection_items(collection_id: str) -> list[MontandonItem]:
+def get_collection_items(
+    collection_id: str,
+    max_items: int | None = None,
+    ) -> list[MontandonItem]:
     """
     Retrieve and validate every Item in a Montandon collection.
     """
     client = get_pystac_client()
-    search = client.search(collections=[collection_id])
+    search = client.search(collections=[collection_id], max_items=max_items)
     return [
         MontandonItem.model_validate(item.to_dict())
         for item in search.items()
