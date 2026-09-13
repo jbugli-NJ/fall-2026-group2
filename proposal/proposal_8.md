@@ -15,27 +15,16 @@ disaster database. This includes information on disasters, their impacts, and op
 The goal of this project is to explore potential applications of this database to improve disaster understanding and response readiness, building a proof-of-concept pipeline for at least one such application in conjunction with Red Cross stakeholders.
 
 Key Objectives:
-1. Build pipelines to process dataset features with various approach candidates:
-    a. **Classical NLP:** Parse free-form text fields describing disasters and their impacts
-        using Named Entity Recognition (NER)
-    b. **Geospatial analysis:** Mapping event density / hotspots; potentially combine disaster locations
-        with external data sources
-    c. **Embeddings:** Embed free-form text fields and keywords
-2. Build a network representation of disasters and responses using existing and generated features
-    for analysis work; this may involve a series of network maps (or slices of a whole) relating
-    to disasters and their responses separately or implementing different node/edge framings
-    depending on objective #1 findings
-3. Explore the generated network to develop interpretable takeaways, such as:
-    - Identifying disaster node clusters
-    - Using node connections / centrality to spotlight core items (e.g. a network graph of disaster responses
-        could highlight a common operational thread between them)
-    - Spotlighting outlier nodes (e.g. a disaster with impacts unlike others in its category)
-4. Develop a proof-of-concept tool for Red Cross stakeholders to use with the full data bank
-    as new disasters are added
+1. Build network representations of disasters and responses using existing and generated features.
+  - Generated features include:
+    - Embeddings for certain text fields, including titles, descriptions and key words
+    - External data connections, including articles surrounding disasters and temperature at disaster locations. This includes:
+      - [NewsAPI](https://newsapi.org/)
+2. Explore the generated network to develop interpretable takeaways, such as:
+    - Identifying disaster node clusters, central nodes, and other network science measures ([networkx](https://networkx.org/en/) clustering, node centrality)
+    - Integrating the network with an LLM to run queries and provide recommendations (local [Neo4j](https://neo4j.com/product/community-edition/), LLM tool calls coverted to Cypher)
+4. Develop a proof-of-concept tool for Red Cross stakeholders to use with the full data bank as new disasters are added
 
-
-![Figure 1: Example figure](2026_Fall_8.png)
-*Figure 1: Caption*
 
 ## 2 Dataset:
 
