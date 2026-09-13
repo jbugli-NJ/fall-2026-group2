@@ -39,8 +39,9 @@ with models like (all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers
 available on HuggingFace.
 
 DATASET / PIPELINE PREPARATION:
-- Build shared utilities for retrieving API data
-- Potentially use Pydantic to construct a shared schema for API data to support static type safety
+- Build shared utilities for retrieving Montandon API data
+- Build utilities for interfacing with other external data sources, like NewsAPI
+- Use Pydantic to construct a shared schema for API data to support static type safety
 - Potentially build related utilities around a cloud bucket to store previously retrieved records
   depending on desired API use patterns
 
