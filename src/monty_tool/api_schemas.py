@@ -85,13 +85,16 @@ class CommonMontandonProperties(MontandonModel):
     roles: list[str]
     title: NonBlankText
     datetime: DateTime
-    keywords: list[str]
+    keywords: list[str] = Field(default_factory=list)
     description: NonBlankText
     start_datetime: DateTime
     end_datetime: DateTime
     monty_corr_id: str = Field(alias="monty:corr_id")
     monty_hazard_codes: list[str] = Field(alias="monty:hazard_codes")
-    monty_src_event_id: str = Field(alias="monty:src_event_id")
+    monty_src_event_id: str | None = Field(
+        default=None,
+        alias="monty:src_event_id",
+    )
     monty_country_codes: list[str] = Field(alias="monty:country_codes")
     monty_episode_number: int = Field(alias="monty:episode_number")
 
@@ -123,7 +126,7 @@ class ImpactDetail(MontandonModel):
     The required `monty:impact_detail` payload on impact Items.
     """
     type: str
-    unit: str
+    unit: str | None = None
     value: int | float
     category: str
     estimate_type: str
