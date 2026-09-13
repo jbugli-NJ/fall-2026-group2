@@ -25,6 +25,10 @@ Key Objectives:
     - Integrating the network with an LLM to run queries and provide recommendations (local [Neo4j](https://neo4j.com/product/community-edition/), LLM tool calls coverted to Cypher)
 4. Develop a proof-of-concept tool for Red Cross stakeholders to use with the full data bank as new disasters are added
 
+![Figure 1: Planned Network and Processing Pipeline](drawio/proposal_8_diagram.drawio.svg)
+
+*Figure 1: This diagram includes planned network dynamics and rough data processing stages.*
+
 
 ## 2 Dataset:
 
