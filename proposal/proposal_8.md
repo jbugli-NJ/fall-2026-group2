@@ -12,8 +12,7 @@
 
 The International Federation of Red Cross (IFRC) has created Montandon, the world's largest
 disaster database. This includes information on disasters, their impacts, and operational responses.
-The goal of this project is to explore potential applications of this database and build
-a proof-of-concept pipeline for at least one such application in conjunction with Red Cross stakeholders.
+The goal of this project is to explore potential applications of this database to improve disaster understanding and response readiness, building a proof-of-concept pipeline for at least one such application in conjunction with Red Cross stakeholders.
 
 Key Objectives:
 1. Build pipelines to process dataset features with various approach candidates:
