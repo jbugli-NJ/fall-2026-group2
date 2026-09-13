@@ -72,44 +72,35 @@ PHASE 1: DATA ACCESS & SHARED FOUNDATION (Week 1)
 PHASE 2: EXPLORATORY FEATURE GENERATION & INITIAL REPORTING (Weeks 2-4)
 
 [Week 2: First Feature Pipelines]
-- Student 1: Draft a cleaning / named entity recognition pipeline for the free-form disaster and impact fields
-- Student 2: Build a geospatial pipeline for validating locations, starting work on initial
-  mapping and geospatial statistics
+- Student 1: Explore external news reporting integration with Montandon records
+- Student 2: Run initial exploratory data analysis on the full Montandon record set
 - Student 3: Build an embedding pipeline for descriptions and keywords, starting work on clustering
 
-[Week 3: Feature Exploration]
-- Extend the NLP work and complete initial exploratory analysis, pulling out interesting entities
-  and takeaways for a potential network representation
-- Extend the geospatial work to examine disaster hotspots and other items of interest
-- Extend the embedding work to inspect how cosine similarity thresholds manifest in practice
-  and review implementation decisions (potentially testing different models)
-- Compare results and decide which generated features should be carried forward for the network
+[Week 3: Storage & Network Drafting]
+- Complete any lingering feature generation pipeline work or associated refinement with Montandon records
+- Create utilities to construct network graphs, likely using local Neo4j as a baseline
+- Refine and complete external data source retrieval (NewsAPI, etc.), integrating that into the network
 
 [Week 4: Initial Reporting & Network Design]
-- Identify useful features, including raw/generated features, for network analysis
-- Build initial reports with exploratory plots and examples from each analysis approach
-- Pin down ~2 network approaches to pursue in parallel for insight generation
-  - NOTE: Following proposal maps/steps are tentative pending decisions here
+- Complete network graph utilities
+- Build initial reporting pipelines to derive insights from network science measures
+  - Generate initial exploratory plots and takeaways
 - Sync with Red Cross stakeholders on decisions/direction
 
 PHASE 3: NETWORK ANALYSIS & REPORTING TOOLS (Weeks 5-8)
 
-[Week 5: Initial Network Maps]
-- Student 1 starts building a network centered around disaster analysis, likely with disasters as core nodes.
-- Student 2 starts a separate network for operational response dynamics. Possible nodes include response actions,
-  organizations, resource types, and related crisis records.
-- Student 3 starts building shared reporting tools and utilities for shared use, including network statistic reports
-  and visualization.
+[Week 5: Initial LLM integration]
+- Build utilities for Huggingface LLM integration, including a [chat template](https://huggingface.co/docs/transformers/main/en/internal/tokenization_utils#transformers.PreTrainedTokenizerBase.apply_chat_template) with tools for Cypher queries
+  - This may involve non-Cypher tools or other approaches depending on findings
+- Complete network(s) that the LLM will use as the platform for queries
 
-[Week 6: Continued Network Buildout]
-- Refine the node and edge decisions for both network maps, adjusting for interpretability;
-  this may involve handling excessively dense/sparse connections, reviewing when edges are drawn, and more
-- Inspect clusters, central nodes, and outliers in both networks to prep for analysis work
-- Extend the reporting tool visualizations and test initial implementations with both networks
+[Week 6: LLM testing and network completion]
+- Refine network maps as needed for tool calls
+- Test LLM recommendations, creating a fact retrieval benchmark to compare LLM efficacy and tool call behavior
+- Draft report on initial findings
 
 [Week 7: Network Reporting]
-- Draft the first complete reports for both network maps, including .gexf exports, graphs, and
-written summaries of the findings and limitations
+- Draft the first complete reports for the full network setup and LLM integration
 - Sync with Red Cross stakeholders on initial findings and proof-of-concept direction
 
 PHASE 4: PROOF OF CONCEPT, EVALUATION & PAPER WORK (Weeks 8-12)
