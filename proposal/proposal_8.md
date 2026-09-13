@@ -137,23 +137,25 @@ PHASE 5: FINAL HANDOFF (Weeks 13-15)
 
 ## 5 Timeline:
 
-Week 1:  Confirm handling restrictions and insight gaps; build shared API retrieval/parsing utilities
-  and complete repository setup.
-Week 2:  Start the NLP, geospatial, and embedding feature pipelines.
-Week 3:  Extend each feature pipeline and identify useful features for network analysis.
-Week 4:  Build initial reports and exploratory plots; select two network approaches and sync with
-  Red Cross stakeholders on direction.
-Week 5:  Building initial network maps; start shared reporting work on network statistics and visualization.
-Week 6:  Refine both network maps and extend the reporting visualizations.
-Week 7:  Draft complete network reports and sync with Red Cross stakeholders on findings and the
-  proof-of-concept direction.
-Week 8:  Start the proof-of-concept tool or pipeline and test it on the data bank.
-Week 9:  Continue the proof-of-concept and draft the paper structure, methods, and early results.
-Week 10: Complete the first proof-of-concept version; finish the paper's first full draft.
-Week 11: Revise the proof-of-concept from stakeholder feedback; complete final figures, results, and
+Week 1:  Confirm handling restrictions and stakeholder questions; build shared API retrieval and
+  parsing utilities, then complete repository setup.
+Week 2:  Start NewsAPI work, run exploratory analysis on the Montandon data, and begin embeddings.
+Week 3:  Continue the feature work, build graph utilities, and add external data to Montandon records.
+Week 4:  Build reports and plots from the first results; complete the graph utilities and meet with
+  Red Cross stakeholders on findings and direction.
+Week 5:  Build Hugging Face LLM utilities, including tools for Cypher queries; complete the network
+  setup the LLM will query.
+Week 6:  Test LLM tool calls and recommendations with a fact retrieval benchmark; update the network
+  maps as needed and draft a report on the findings.
+Week 7:  Draft reports on the network and LLM work; meet with Red Cross stakeholders on findings and
+  the proof-of-concept direction.
+Week 8:  Start the proof-of-concept tool or pipeline, test it on data bank records, and begin the paper.
+Week 9:  Continue the proof of concept and draft the paper's methods, findings, and limitations.
+Week 10: Complete the first proof-of-concept version and the first full paper draft.
+Week 11: Revise the proof of concept from stakeholder feedback; complete figures, results, and
   paper revisions.
 Week 12: Submit the completed research paper; document follow-up work and begin final deliverable preparation.
-Week 13: Finish remaining analysis, limitations, and next steps; prepare final materials.
+Week 13: Complete remaining analysis, limitations, and next steps; prepare final materials.
 Week 14: Finalize all Red Cross deliverables and repository documentation.
 Week 15: Complete the final presentation and handoff of the proof of concept, reporting tools, and
   associated Red Cross correspondence.
@@ -162,17 +164,18 @@ TOTAL: 15 weeks
 
 KEY MILESTONES:
 - Week 1:  Shared data access and working project foundation complete
-- Week 4:  Initial reports and exploratory plots complete; two network approaches selected
-- Week 7:  Twin network reports and reusable reporting tools complete
+- Week 4:  Reports, plots, and graph utilities complete
+- Week 7:  Network and LLM reports complete; proof-of-concept direction confirmed
 - Week 10: Working proof of concept plus complete internal paper draft
 - Week 12: Project paper submitted
 - Week 15: Final handoff complete
 
 DELIVERABLES BY WEEK 15:
 - Reusable data retrieval, cleaning, and feature-generation pipeline
-- Documented text, geospatial, and embedding feature outputs
-- Disaster and operational-response network analyses
+- News, exploratory analysis, and embedding outputs
+- Disaster and response network analysis and reporting
 - Reusable network generation, reporting, and visualization tools
+- LLM integration and fact retrieval evaluation results
 - Proof-of-concept tool or pipeline providing utility to Red Cross stakeholders
 - Project paper submission
 - Final report, presentation, and documented repository
@@ -189,18 +192,23 @@ proof-of-concept design, testing, writing, and the final presentation.
 
 ROLE DISTRIBUTION FOR 3 STUDENTS:
 
-Student 1: Classical NLP & Disaster Network
-- Lead the exploration of named entity recognition and other text features from disaster and impact
-descriptions.
-- Lead the disaster-focused network once the shared feature set is ready.
+Student 1: NewsAPI & External Data
+- Explore NewsAPI and related sources for articles surrounding disasters.
+- Build the work needed to connect external data to Montandon records.
 
-Student 2: Geospatial Analysis & Operational-Response Network
-- Lead location validation, mapping, and hotspot analysis.
-- Lead the operational response-focused network once the shared feature set is ready.
+Student 2: Exploratory Analysis
+- Explore the Montandon record set, identifying limitations and retrieval issues.
 
-Student 3: Embeddings & Shared Reporting Tools
-- Lead text embeddings and associated analysis / experimentation.
-- Build shared tools for visualization and reporting.
+Student 3: Embeddings & Clustering
+- Generate text embeddings for titles, descriptions, and keywords; explore clustering.
+- Prepare embedding outputs for network construction and LLM queries.
+
+All Students:
+- Construct tools for LLM use
+- Support testing and review
+- Write reports analyzing data through a network science lens and LLM integration dynamics
+- Communicate with Red Cross stakeholders
+- Produce final paper and deliverables for the Red Cross
 
 
 ## 7 Possible Issues:
