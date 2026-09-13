@@ -5,8 +5,10 @@ Tests for the local raw Item cache and its DataFrame utilities.
 # Imports
 
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+from pystac_client import Client
 
 from monty_tool import data_cache
 
@@ -29,19 +31,13 @@ class _FakeSearch:
             yield page
 
 
-class _FakeClient:
+def _client(pages: list[dict], fail_after: int | None = None) -> Mock:
     """
-    Stands in for `pystac_client.Client`, recording every search call.
+    A `Client` mock whose every search serves the same pre-built pages.
     """
-
-    def __init__(self, pages: list[dict], fail_after: int | None = None):
-        self.pages = pages
-        self.fail_after = fail_after
-        self.calls: list[dict] = []
-
-    def search(self, **kwargs):
-        self.calls.append(kwargs)
-        return _FakeSearch(self.pages, fail_after=self.fail_after)
+    client = Mock(spec=Client)
+    client.search.side_effect = lambda **kwargs: _FakeSearch(pages, fail_after=fail_after)
+    return client
 
 
 def _page(*ids: str) -> dict:
@@ -84,7 +80,7 @@ def test_pull_collection_round_trips_through_load(tmp_path: Path):
     """
     Confirms that every Item across all pages is written and read back in order.
     """
-    client = _FakeClient([_page('a', 'b'), _page('c')])
+    client = _client([_page('a', 'b'), _page('c')])
     path = data_cache.pull_collection('c', cache_dir=tmp_path, client=client, page_size=2)
 
     assert path == data_cache.raw_cache_path('c', tmp_path)
@@ -97,15 +93,15 @@ def test_pull_collection_search_arguments(tmp_path: Path):
     """
     Confirms the page size is passed through and geometry is only excluded on request.
     """
-    client = _FakeClient([_page('a')])
+    client = _client([_page('a')])
     data_cache.pull_collection('c', cache_dir=tmp_path, client=client, page_size=50)
     data_cache.pull_collection('c', cache_dir=tmp_path, client=client, geometry=False)
 
-    with_geometry, without_geometry = client.calls
-    assert with_geometry['collections'] == ['c']
-    assert with_geometry['limit'] == 50
-    assert with_geometry['fields'] is None
-    assert without_geometry['fields'] == data_cache.NO_GEOMETRY_FIELDS
+    with_geometry, without_geometry = client.search.call_args_list
+    assert with_geometry.kwargs['collections'] == ['c']
+    assert with_geometry.kwargs['limit'] == 50
+    assert with_geometry.kwargs['fields'] is None
+    assert without_geometry.kwargs['fields'] == data_cache.NO_GEOMETRY_FIELDS
 
 
 def test_pull_collection_creates_cache_dir(tmp_path: Path):
@@ -113,7 +109,7 @@ def test_pull_collection_creates_cache_dir(tmp_path: Path):
     Confirms a missing cache directory is created rather than raising.
     """
     cache_dir = tmp_path / 'nested' / 'raw'
-    data_cache.pull_collection('c', cache_dir=cache_dir, client=_FakeClient([_page('a')]))
+    data_cache.pull_collection('c', cache_dir=cache_dir, client=_client([_page('a')]))
     assert data_cache.raw_cache_path('c', cache_dir).exists()
 
 
@@ -121,7 +117,7 @@ def test_pull_collection_failure_leaves_no_cache(tmp_path: Path):
     """
     Confirms a pull that dies mid-way never produces a loadable (partial) cache.
     """
-    client = _FakeClient([_page('a'), _page('b')], fail_after=1)
+    client = _client([_page('a'), _page('b')], fail_after=1)
     with pytest.raises(ConnectionError):
         data_cache.pull_collection('c', cache_dir=tmp_path, client=client)
 

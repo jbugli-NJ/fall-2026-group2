@@ -4,10 +4,13 @@ Tests for the Montandon API utility module.
 
 # Imports
 
+from collections.abc import Sequence
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from pydantic import ValidationError
+from pystac_client import Client
 
 from monty_tool import api_utils
 
@@ -30,22 +33,16 @@ class _FakeSearch:
             yield from page['features']
 
 
-class _FakeClient:
+def _client(pages: list[dict], collection_ids: Sequence[str] = ()) -> Mock:
     """
-    Stands in for `pystac_client.Client`, recording every search call.
+    A `Client` mock whose every search serves the same pre-built pages.
     """
-
-    def __init__(self, pages: list[dict], collection_ids: list[str] = ()):
-        self.pages = pages
-        self.collection_ids = collection_ids
-        self.calls: list[dict] = []
-
-    def search(self, **kwargs):
-        self.calls.append(kwargs)
-        return _FakeSearch(self.pages)
-
-    def get_collections(self):
-        return [SimpleNamespace(id=collection_id) for collection_id in self.collection_ids]
+    client = Mock(spec=Client)
+    client.search.return_value = _FakeSearch(pages)
+    client.get_collections.return_value = [
+        SimpleNamespace(id=collection_id) for collection_id in collection_ids
+    ]
+    return client
 
 
 def _valid_item(**overrides) -> dict:
@@ -91,7 +88,7 @@ def test_get_collection_items_raw_keeps_unknown_fields(monkeypatch: pytest.Monke
     """
     item = _valid_item()
     item['properties']['monty:etl_id'] = 'etl-1'
-    monkeypatch.setattr(api_utils, 'get_pystac_client', lambda: _FakeClient([{'features': [item]}]))
+    monkeypatch.setattr(api_utils, 'get_pystac_client', lambda: _client([{'features': [item]}]))
 
     items = api_utils.get_collection_items_raw('events', max_items=5)
     assert items == [item]
@@ -103,7 +100,7 @@ def test_get_collection_items_raw_validate_passes_valid_items(monkeypatch: pytes
     Confirms `validate=True` is a no-op on schema-conformant Items.
     """
     item = _valid_item()
-    monkeypatch.setattr(api_utils, 'get_pystac_client', lambda: _FakeClient([{'features': [item]}]))
+    monkeypatch.setattr(api_utils, 'get_pystac_client', lambda: _client([{'features': [item]}]))
     assert api_utils.get_collection_items_raw('events', validate=True) == [item]
 
 
@@ -112,7 +109,7 @@ def test_get_collection_items_raw_validate_names_failing_item(monkeypatch: pytes
     Confirms `validate=True` raises with the offending Item ID and the Pydantic cause.
     """
     item = _valid_item(id='bad-item', properties={})
-    monkeypatch.setattr(api_utils, 'get_pystac_client', lambda: _FakeClient([{'features': [item]}]))
+    monkeypatch.setattr(api_utils, 'get_pystac_client', lambda: _client([{'features': [item]}]))
 
     with pytest.raises(ValueError, match="'bad-item'.*'events'") as info:
         api_utils.get_collection_items_raw('events', validate=True)
@@ -123,7 +120,7 @@ def test_count_collection_items_sums_pages():
     """
     Confirms the count sums `numberReturned` across pages, falling back to the feature count.
     """
-    client = _FakeClient([
+    client = _client([
         {'numberReturned': 2, 'features': [{'id': 'a'}, {'id': 'b'}]},
         {'features': [{'id': 'c'}]},  # no numberReturned: fall back to len(features)
     ])
@@ -134,21 +131,22 @@ def test_count_collection_items_requests_ids_only():
     """
     Confirms counting pages with only IDs requested, at the given page size.
     """
-    client = _FakeClient([{'numberReturned': 0, 'features': []}])
+    client = _client([{'numberReturned': 0, 'features': []}])
     api_utils.count_collection_items('c', client=client, page_size=250)
 
-    (call,) = client.calls
-    assert call['collections'] == ['c']
-    assert call['limit'] == 250
-    assert call['fields'] == api_utils.COUNT_ONLY_FIELDS
+    client.search.assert_called_once_with(
+        collections=['c'],
+        limit=250,
+        fields=api_utils.COUNT_ONLY_FIELDS,
+    )
 
 
 def test_get_collection_counts_keys_by_collection(monkeypatch: pytest.MonkeyPatch):
     """
     Confirms every collection the API lists is counted and keyed by its ID.
     """
-    client = _FakeClient([{'numberReturned': 4, 'features': []}], collection_ids=['x', 'y'])
+    client = _client([{'numberReturned': 4, 'features': []}], collection_ids=['x', 'y'])
     monkeypatch.setattr(api_utils, 'get_pystac_client', lambda: client)
 
     assert api_utils.get_collection_counts() == {'x': 4, 'y': 4}
-    assert [call['collections'] for call in client.calls] == [['x'], ['y']]
+    assert [call.kwargs['collections'] for call in client.search.call_args_list] == [['x'], ['y']]
