@@ -7,10 +7,11 @@ read from disk thereafter.
 
 import gzip
 import json
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
+import polars as pl
 from pystac_client import Client
 
 from monty_tool.api_utils import DEFAULT_PAGE_SIZE, get_pystac_client
@@ -97,3 +98,42 @@ def load_collection(
     with gzip.open(path, 'rt', encoding='utf-8') as file:
         for line in file:
             yield json.loads(line)
+
+
+# DataFrame utilities
+
+def _flatten_item(item: dict[str, Any]) -> dict[str, Any]:
+    """
+    Flatten one raw Item into a single-level record.
+
+    Top-level STAC keys are kept as-is, `properties` are promoted to
+    columns under their API names (e.g. `monty:corr_id`), and nested
+    dictionaries within properties are flattened with dotted keys
+    (e.g. `monty:impact_detail.value`). Geometry is reduced to its type.
+    """
+    record: dict[str, Any] = {
+        'id': item.get('id'),
+        'collection': item.get('collection'),
+        'bbox': item.get('bbox'),
+        'geometry_type': (item.get('geometry') or {}).get('type'),
+        'n_links': len(item.get('links') or []),
+        'n_assets': len(item.get('assets') or {}),
+    }
+    for key, value in (item.get('properties') or {}).items():
+        if isinstance(value, dict):
+            for sub_key, sub_value in value.items():
+                record[f'{key}.{sub_key}'] = sub_value
+        else:
+            record[key] = value
+    return record
+
+
+def items_to_frame(items: Iterable[dict[str, Any]]) -> pl.DataFrame:
+    """
+    Build a Polars DataFrame with one row per raw Item.
+
+    Columns are the union of keys across all Items; Items missing a key
+    get null, so column null-rates directly measure field coverage.
+    """
+    records = [_flatten_item(item) for item in items]
+    return pl.DataFrame(records, infer_schema_length=None, strict=False)
