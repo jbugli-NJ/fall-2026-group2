@@ -92,6 +92,8 @@ PHASE 2: EXPLORATORY FEATURE GENERATION & INITIAL REPORTING (Weeks 2-4)
 [Week 4: Initial Reporting & Network Design]
 - Complete network graph utilities
 - Build initial reporting pipelines to derive insights from network science measures
+  - Attempt networkx [greedy clustering](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.community.modularity_max.greedy_modularity_communities.html)
+  - Use [centrality](https://networkx.org/documentation/stable/reference/algorithms/centrality.html) and potentially other measures to highlight nodes and connections that might otherwise go unnoticed
   - Generate initial exploratory plots and takeaways
 - Sync with Red Cross stakeholders on decisions/direction
 
