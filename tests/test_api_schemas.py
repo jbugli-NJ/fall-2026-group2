@@ -7,7 +7,7 @@ Unit tests for Montandon API schemas.
 import pytest
 from pydantic import ValidationError
 
-from monty_tool.api_schemas import MontandonItem
+from monty_tool.api_schemas import MontandonImpactProperties, MontandonItem
 
 
 # Test object helpers
@@ -46,3 +46,23 @@ def test_montandon_item_title_description_nonblank(field):
     """
     with pytest.raises(ValidationError):
         _item({field: " \t\n "})
+
+
+def test_montandon_item_impact_without_gdacs_fields():
+    """
+    Ensures that EM-DAT/IFRC impact Items, which lack the GDACS-only
+    `created`/`forecasted`/`severitydata`/`advisory_number` fields, still
+    resolve to the impact properties model and keep `monty:impact_detail`.
+    """
+    item = _item({
+        'roles': ['impact'],
+        'monty:impact_detail': {
+            'type': 'death',
+            'value': 12,
+            'category': 'people',
+            'estimate_type': 'primary',
+        },
+    })
+    assert isinstance(item.properties, MontandonImpactProperties)
+    assert item.properties.monty_impact_detail.value == 12
+    assert item.properties.severitydata is None

@@ -45,7 +45,10 @@ def extract_field_texts(item: MontandonItem) -> dict[str, str]:
         'keywords': _keywords(properties.keywords),
         'impact_severity_text': None,
     }
-    if isinstance(properties, MontandonImpactProperties):
+    if (
+        isinstance(properties, MontandonImpactProperties)
+        and properties.severitydata is not None
+    ):
         texts['impact_severity_text'] = _text(properties.severitydata.severitytext)
     return {field: text for field, text in texts.items() if text is not None}
 
