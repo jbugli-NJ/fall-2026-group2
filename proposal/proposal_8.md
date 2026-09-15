@@ -44,7 +44,10 @@ available on HuggingFace.
 
 DATASET / PIPELINE PREPARATION:
 - Build shared utilities for retrieving Montandon API data
-- Build utilities for interfacing with other external data sources, like NewsAPI
+- Build utilities for interfacing with other external data sources, like the following (tentatively):
+  - [NewsAPI](https://newsapi.org/): articles related to disasters
+  - [NASA POWER](https://power.larc.nasa.gov/): weather at disaster locations
+  - [IFRC GO API](https://go-wiki.ifrc.org/en/go-api/api-overview): Red Cross operational data
 - Use Pydantic to construct a shared schema for API data to support static type safety
 - Potentially build related utilities around a cloud bucket to store previously retrieved records
   depending on desired API use patterns
@@ -83,11 +86,14 @@ PHASE 2: EXPLORATORY FEATURE GENERATION & INITIAL REPORTING (Weeks 2-4)
 [Week 3: Storage & Network Drafting]
 - Complete any lingering feature generation pipeline work or associated refinement with Montandon records
 - Create utilities to construct network graphs, likely using local Neo4j as a baseline
-- Refine and complete external data source retrieval (NewsAPI, etc.), integrating that into the network
+- Refine and complete external news reporting retrieval (NewsAPI, etc.), integrating that into the network
+- Build pipeline for weather data retrieval, integrating that into the network
 
 [Week 4: Initial Reporting & Network Design]
 - Complete network graph utilities
 - Build initial reporting pipelines to derive insights from network science measures
+  - Attempt networkx [greedy clustering](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.community.modularity_max.greedy_modularity_communities.html)
+  - Use [centrality](https://networkx.org/documentation/stable/reference/algorithms/centrality.html) and potentially other measures to highlight nodes and connections that might otherwise go unnoticed
   - Generate initial exploratory plots and takeaways
 - Sync with Red Cross stakeholders on decisions/direction
 
@@ -202,10 +208,13 @@ Student 1: NewsAPI & External Data
 
 Student 2: Exploratory Analysis
 - Explore the Montandon record set, identifying limitations and retrieval issues.
+- Scope out useful geospatial data integrations and handle connections to external
+  sources via these relationships (e.g. temperature),
 
 Student 3: Embeddings & Clustering
 - Generate text embeddings for titles, descriptions, and keywords; explore clustering.
 - Prepare embedding outputs for network construction and LLM queries.
+- Prepare initial network construction utilities.
 
 All Students:
 - Construct tools for LLM use
