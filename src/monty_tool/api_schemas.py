@@ -135,11 +135,14 @@ class ImpactDetail(MontandonModel):
 class MontandonImpactProperties(CommonMontandonProperties):
     """
     Properties on impact Items, such as `gdacs-impacts`.
+
+    `created`, `forecasted`, `severitydata`, and `advisory_number` are
+    GDACS-specific; EM-DAT and IFRC impact Items omit them.
     """
-    created: DateTime
-    forecasted: bool
-    severitydata: SeverityData
-    advisory_number: str
+    created: DateTime | None = None
+    forecasted: bool | None = None
+    severitydata: SeverityData | None = None
+    advisory_number: str | None = None
     monty_impact_detail: ImpactDetail = Field(alias="monty:impact_detail")
 
 
