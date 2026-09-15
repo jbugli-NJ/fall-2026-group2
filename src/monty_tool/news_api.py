@@ -1,19 +1,24 @@
 """
 Minimal NewsAPI.org client.
 
-This file only handles the NewsAPI connection.
-It does NOT know anything about Montandon or data cleaning.
+This file handles the NewsAPI connection and validated responses.
+It does not inspect or transform Montandon records directly.
 
-Later, pass it a prepared query and date range.
+Receives a prepared NewsQuery and handles the NewsAPI request.
 """
 
 from __future__ import annotations
 
 import os
-from datetime import date
 
 import requests
 from dotenv import load_dotenv
+
+from monty_tool.news.schemas import (
+    NewsAPIResponse,
+    NewsQuery,
+    NewsSearchResult,
+)
 
 
 NEWS_API_URL = "https://newsapi.org/v2/everything"
@@ -35,34 +40,20 @@ def get_news_api_key() -> str:
 
 
 def search_news(
-    query: str,
-    from_date: str | date,
-    to_date: str | date,
+    news_query: NewsQuery,
     *,
     language: str = "en",
     page_size: int = 20,
     sort_by: str = "relevancy",
-) -> dict:
+) -> NewsSearchResult:
     """
-    Search NewsAPI.org.
-
-    Example:
-        result = search_news(
-            query='"Flood" AND ("Pakistan" OR "Sindh")',
-            from_date="2026-08-01",
-            to_date="2026-08-08",
-        )
+    Search NewsAPI using prepared search parameters.
     """
-    if isinstance(from_date, date):
-        from_date = from_date.isoformat()
-
-    if isinstance(to_date, date):
-        to_date = to_date.isoformat()
 
     params = {
-        "q": query,
-        "from": from_date,
-        "to": to_date,
+        "q": news_query.query,
+        "from": news_query.from_date.isoformat(),
+        "to": news_query.to_date.isoformat(),
         "language": language,
         "sortBy": sort_by,
         "pageSize": page_size,
@@ -84,25 +75,13 @@ def search_news(
             f"{payload.get('code')} - {payload.get('message')}"
         )
 
-    articles = []
+    validated_response = NewsAPIResponse.model_validate(payload)
 
-    for article in payload.get("articles", []):
-        source = article.get("source") or {}
-
-        articles.append(
-            {
-                "source": source.get("name"),
-                "title": article.get("title"),
-                "description": article.get("description"),
-                "published_at": article.get("publishedAt"),
-                "url": article.get("url"),
-            }
-        )
-
-    return {
-        "query": query,
-        "from_date": from_date,
-        "to_date": to_date,
-        "total_results": payload.get("totalResults", 0),
-        "articles": articles,
-    }
+    return NewsSearchResult(
+        item_id=news_query.item_id,
+        query=news_query.query,
+        from_date=news_query.from_date,
+        to_date=news_query.to_date,
+        total_results=validated_response.total_results,
+        articles=validated_response.articles,
+    )
