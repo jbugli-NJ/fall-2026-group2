@@ -20,6 +20,28 @@ This project centers around the [Montandon Global Crisis Data Bank](https://mont
 The data bank uses a modified version of the [SpatioTemporal Asset Catalogs (STAC) specification](https://stacspec.org/en),
 including added custom fields and aggregating information from multiple sources.
 
+Data bank access requires an IFRC GO account and authorization token for API access; contact IFRC for assistance.
+
 ## Development
 
-Development requires an IFRC GO account and authorization token for API access; contact IFRC for assistance.
+### uv
+
+While standard Python/pip commands can be used, this project is built using [Astral's uv project/package manager](https://docs.astral.sh/uv/).
+See linked documentation for installation and basic use.
+
+### Neo4j
+
+This repository contains a [Docker compose](docker-compose.yml) file to set up a local Neo4j instance for testing.
+To prep your instance, you can execute the following commands from the repository root (may require alterations based on OS/installation):
+
+```bash
+# Launch the Neo4j instance; -d runs it in the background
+sudo docker compose up -d
+
+# Set up the new instance with constraints/etc.
+uv run -m monty_tool.network.initialize
+```
+
+Once running, this should be accessible via [Neo4j browser](http://localhost:7474/browser/).
+The test instance is automatically set up with user `neo4j` and password `password`.
+The browser UI can be used for exploration and basic queries.
