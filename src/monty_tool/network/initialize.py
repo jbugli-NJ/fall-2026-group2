@@ -22,3 +22,6 @@ def initialize_db():
             """,
             database_='neo4j',
         )
+
+if __name__ == '__main__':
+    initialize_db()
