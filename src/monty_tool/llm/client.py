@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import json
 import re
 from typing import Any
@@ -133,7 +134,7 @@ class LocalNewsAssistant:
             item.model_dump(mode="json", exclude={"source_links"})
             for item in self.tools.items.values()
         ]
-        messages = [
+        messages: Sequence[dict[str, str | list[dict[str, Any]]]] = [
             {"role": "system", "content": (
                 "You are a news assistant for the supplied Montandon records. "
                 "First call search_event_news exactly once with item_id and query. "
