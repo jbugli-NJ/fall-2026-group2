@@ -314,7 +314,7 @@ def insert_from_local_data():
         item
         for item in montandon_items
         if (
-            datetime(2025, 12, 1, tzinfo=timezone.utc)
+            datetime(2025, 7, 1, tzinfo=timezone.utc)
             <=item.properties.start_datetime
             <=datetime(2025, 12, 31, tzinfo=timezone.utc)
         )
@@ -326,7 +326,7 @@ def insert_from_local_data():
         event
         for event in go_events
         if (
-            datetime(2025, 12, 1, tzinfo=timezone.utc)
+            datetime(2025, 7, 1, tzinfo=timezone.utc)
             <=event.disaster_start_date
             <=datetime(2025, 12, 31, tzinfo=timezone.utc)
         )
@@ -335,7 +335,7 @@ def insert_from_local_data():
         appeal
         for appeal in go_appeals
         if (
-            datetime(2025, 12, 1, tzinfo=timezone.utc)
+            datetime(2025, 7, 1, tzinfo=timezone.utc)
             <=appeal.start_date
             <=datetime(2025, 12, 31, tzinfo=timezone.utc)
         )
