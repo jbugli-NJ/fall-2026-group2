@@ -95,6 +95,7 @@ def insert_records_into_graph_db(node_data: list[NodeData]):
         # Connect records using the various computed embeddings
         driver.execute_query(
             _BATCH_PAIR_MATCH + """
+            WHERE source.corr_id <> target.corr_id
             WITH source, target,
                  vector.similarity.cosine(
                      source.description_embedding,
@@ -110,7 +111,8 @@ def insert_records_into_graph_db(node_data: list[NodeData]):
         )
         driver.execute_query(
             _BATCH_PAIR_MATCH + """
-            WHERE source.keywords_embedding IS NOT NULL
+            WHERE source.corr_id <> target.corr_id
+              AND source.keywords_embedding IS NOT NULL
               AND target.keywords_embedding IS NOT NULL
             WITH source, target,
                  vector.similarity.cosine(
@@ -127,7 +129,8 @@ def insert_records_into_graph_db(node_data: list[NodeData]):
         )
         driver.execute_query(
             _BATCH_PAIR_MATCH + """
-            WHERE source.impact_severity_embedding IS NOT NULL
+            WHERE source.corr_id <> target.corr_id
+              AND source.impact_severity_embedding IS NOT NULL
               AND target.impact_severity_embedding IS NOT NULL
             WITH source, target,
                  vector.similarity.cosine(
