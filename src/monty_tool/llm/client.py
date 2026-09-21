@@ -311,6 +311,7 @@ class QueryAssistant:
 
         while True:
             response = self._generate(messages)
+            print("Raw model response:", repr(response))
             calls = parse_tool_calls(response)
 
             if not calls:
