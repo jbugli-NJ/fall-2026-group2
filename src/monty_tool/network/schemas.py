@@ -19,6 +19,7 @@ class NodeData(TypedDict):
     id: str
     title: str
     description: str
+    roles: list[str]
     description_embedding: Embedding
     keywords_embedding: Embedding | None
     impact_severity_embedding: Embedding | None
