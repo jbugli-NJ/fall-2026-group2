@@ -1,4 +1,6 @@
-"""Draft: one local LLM tool request, one NewsAPI search, then an answer."""
+"""
+Local assistants that use Qwen tool calls.
+"""
 
 from __future__ import annotations
 
@@ -7,12 +9,17 @@ import json
 import re
 from typing import Any
 
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from monty_tool.event_context import EventContext
-from monty_tool.llm.tools import NewsArguments, NewsTools
+from monty_tool.llm.tools import NewsArguments, NewsTools, QueryTools
 
 
 def parse_tool_call(text: str) -> dict[str, Any] | None:
-    """Parse exactly one Qwen3 tool call; reject malformed calls."""
+    """
+    Parse exactly one Qwen3 tool call and reject malformed calls.
+    """
 
     if "<tool_call>" not in text and "</tool_call>" not in text:
         return None
@@ -53,9 +60,6 @@ class LocalNewsAssistant:
         items: list[EventContext],
         model_id: str = "Qwen/Qwen3-1.7B",
     ):
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-
         self.tools = NewsTools(items)
 
         # NVIDIA GPU -> Apple Silicon GPU -> CPU.
@@ -86,9 +90,9 @@ class LocalNewsAssistant:
         use_tools: bool = True,
         max_new_tokens: int = 512,
     ) -> str:
-        """Generate one assistant response using the model's chat template."""
-
-        import torch
+        """
+        Generate one assistant response using the model's chat template.
+        """
 
         inputs = self.tokenizer.apply_chat_template(
             messages,
@@ -126,7 +130,9 @@ class LocalNewsAssistant:
         question: str,
         max_tool_calls: int = 1,
     ) -> dict[str, Any]:
-        """Ask the LLM to search once, execute its request, then explain the results."""
+        """
+        Ask the LLM to search once, execute its request, then explain the results.
+        """
         if type(max_tool_calls) is not int or max_tool_calls != 1:
             raise ValueError("This draft runs one search; max_tool_calls must be 1.")
 
@@ -209,3 +215,115 @@ class LocalNewsAssistant:
             "stop_reason": stop_reason,
             "errors": [result["message"]] if result["status"] == "error" else [],
         }
+
+
+class QueryAssistant:
+    """
+    Answer questions by querying the local graph and NewsAPI.
+    """
+
+    _CONTEXT_LIMIT = 32_768
+    _MAX_TOOL_CALLS = 10
+
+    def __init__(
+        self,
+        model_id: str = "Qwen/Qwen3-1.7B",
+        ):
+        self.tools = QueryTools()
+        self.device = "cuda" if torch.cuda.is_available() else (
+            "mps" if torch.backends.mps.is_available() else "cpu"
+        )
+        dtype = torch.float32 if self.device == "cpu" else torch.float16
+
+        self.tokenizer: Any = AutoTokenizer.from_pretrained(model_id)
+        self.model: Any = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            dtype=dtype,
+        )
+        self.model.to(self.device)
+        self.model.eval()
+
+    def _generate(
+        self,
+        messages: list[dict[str, Any]],
+        max_new_tokens: int = 1024,
+        ) -> str:
+        """
+        Generate one response while enforcing the context limit.
+        Currently a static limit with a Qwen model for testing.
+        """
+        inputs = self.tokenizer.apply_chat_template(
+            messages,
+            tools=self.tools.definitions,
+            tokenize=True,
+            add_generation_prompt=True,
+            enable_thinking=False,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(self.device)
+        prompt_length = inputs["input_ids"].shape[-1]
+
+        if prompt_length + max_new_tokens > self._CONTEXT_LIMIT:
+            raise ValueError(
+                "Conversation exceeds the context limit (32,768 tokens)."
+            )
+
+        with torch.inference_mode():
+            output = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=self.tokenizer.eos_token_id,
+            )
+
+        return self.tokenizer.decode(
+            output[0][prompt_length:],
+            skip_special_tokens=True,
+        ).strip()
+
+    def ask(self, question: str) -> dict[str, Any]:
+        """
+        Answer one question with up to ten tool calls.
+        This exposes NewsAPI and Cypher queries.
+        """
+        messages: list[dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": (
+                    "You answer questions about disaster records. The graph schema "
+                    "below is authoritative. Use the available tools when necessary.\n\n"
+                    f"Graph schema:\n{json.dumps(self.tools.schema, ensure_ascii=False)}"
+                ),
+            },
+            {"role": "user", "content": question},
+        ]
+        tool_results: list[dict[str, Any]] = []
+
+        for _ in range(self._MAX_TOOL_CALLS):
+            response = self._generate(messages)
+            call = parse_tool_call(response)
+
+            if call is None:
+                if not response:
+                    raise ValueError("Expected a final answer or a tool call.")
+                return {
+                    "answer": response,
+                    "tool_results": tool_results,
+                }
+
+            result = self.tools.execute(call["name"], call["arguments"])
+            tool_results.append({"call": call, "result": result})
+            messages.extend([
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {"type": "function", "function": call},
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "content": json.dumps(result, ensure_ascii=False),
+                },
+            ])
+
+        raise ValueError("QueryAssistant reached its 10-tool-call limit.")
