@@ -169,12 +169,19 @@ def insert_records_into_graph_db(node_data: list[NodeData]):
             items=node_data,
             database_='neo4j',
         )
-        # Connect records with overlapping date ranges
+        # Connect distinct events with the same start date
         driver.execute_query(
-            _BATCH_PAIR_MATCH + """
-            WHERE source.start_datetime <= target.end_datetime
-              AND target.start_datetime <= source.end_datetime
-            MERGE (source)-[relation:OVERLAPPING_TIME]->(target)
+            """
+            UNWIND $items AS item
+            MATCH (item_node:Event {id: item.id})
+            MATCH (other:Event)
+            WHERE item_node.id <> other.id
+            WITH CASE WHEN item_node.id < other.id THEN item_node ELSE other END AS source,
+                 CASE WHEN item_node.id < other.id THEN other ELSE item_node END AS target
+            WITH DISTINCT source, target
+            WHERE source.corr_id <> target.corr_id
+              AND date(source.start_datetime) = date(target.start_datetime)
+            MERGE (source)-[relation:SAME_DAY_START]->(target)
             """,
             items=node_data,
             database_='neo4j',
