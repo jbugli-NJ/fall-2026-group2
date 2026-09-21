@@ -223,8 +223,6 @@ class QueryAssistant:
     """
 
     _CONTEXT_LIMIT = 32_768
-    _MAX_TOOL_CALLS = 10
-
     def __init__(
         self,
         model_id: str = "Qwen/Qwen3-1.7B",
@@ -299,7 +297,7 @@ class QueryAssistant:
         ]
         tool_results: list[dict[str, Any]] = []
 
-        for _ in range(self._MAX_TOOL_CALLS):
+        while True:
             response = self._generate(messages)
             call = parse_tool_call(response)
 
@@ -325,5 +323,3 @@ class QueryAssistant:
                     "content": json.dumps(result, ensure_ascii=False),
                 },
             ])
-
-        raise ValueError("QueryAssistant reached its 10-tool-call limit.")
