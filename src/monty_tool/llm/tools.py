@@ -274,11 +274,13 @@ class QueryTools:
         RETURN nodeType, propertyName
         ORDER BY nodeType, propertyName
         """
-        relationship_query = """
-        CALL db.schema.relTypeProperties()
-        YIELD relType, propertyName
-        RETURN relType, propertyName
-        ORDER BY relType, propertyName
+        direction_query = """
+        MATCH (source)-[relationship]->(target)
+        RETURN DISTINCT labels(source) AS source_labels,
+               type(relationship) AS relationship_type,
+               labels(target) AS target_labels,
+               keys(relationship) AS property_names
+        ORDER BY relationship_type, source_labels, target_labels
         """
         with get_graph_db_driver() as driver:
             node_records, _, _ = driver.execute_query(
@@ -286,8 +288,8 @@ class QueryTools:
                 database_="neo4j",
                 routing_=RoutingControl.READ,
             )
-            relationship_records, _, _ = driver.execute_query(
-                relationship_query,
+            direction_records, _, _ = driver.execute_query(
+                direction_query,
                 database_="neo4j",
                 routing_=RoutingControl.READ,
             )
@@ -299,16 +301,12 @@ class QueryTools:
                 data["propertyName"]
             )
 
-        relationship_types: dict[str, list[str]] = {}
-        for record in relationship_records:
-            data = record.data()
-            properties = relationship_types.setdefault(data["relType"], [])
-            if data["propertyName"] is not None:
-                properties.append(data["propertyName"])
-
         return {
             "node_types": node_types,
-            "relationship_types": relationship_types,
+            "relationships": [
+                record.data()
+                for record in direction_records
+            ],
         }
 
     def _run_cypher(self, arguments: dict[str, Any]) -> dict[str, Any]:
