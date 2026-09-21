@@ -16,13 +16,13 @@ from monty_tool.event_context import EventContext
 from monty_tool.llm.tools import NewsArguments, NewsTools, QueryTools
 
 
-def parse_tool_call(text: str) -> dict[str, Any] | None:
+def parse_tool_calls(text: str) -> list[dict[str, Any]]:
     """
-    Parse exactly one Qwen3 tool call and reject malformed calls.
+    Parse one or more Qwen3 tool calls and reject malformed calls.
     """
 
     if "<tool_call>" not in text and "</tool_call>" not in text:
-        return None
+        return []
 
     blocks = re.findall(
         r"<tool_call>\s*(.*?)\s*</tool_call>",
@@ -30,28 +30,40 @@ def parse_tool_call(text: str) -> dict[str, Any] | None:
         re.DOTALL,
     )
 
-    if (
-        len(blocks) != 1
-        or text.count("<tool_call>") != 1
-        or text.count("</tool_call>") != 1
-    ):
+    if text.count("<tool_call>") != text.count("</tool_call>"):
+        raise ValueError("Expected complete tool calls.")
+
+    if len(blocks) != text.count("<tool_call>"):
+        raise ValueError("Expected complete tool calls.")
+
+    calls = []
+    for block in blocks:
+        call = json.loads(block)
+
+        if (
+            not isinstance(call, dict)
+            or set(call) != {"name", "arguments"}
+        ):
+            raise ValueError("Tool call must contain name and arguments.")
+
+        if (
+            not isinstance(call["name"], str)
+            or not isinstance(call["arguments"], dict)
+        ):
+            raise ValueError("Invalid tool name or arguments.")
+
+        calls.append(call)
+
+    return calls
+
+
+def parse_tool_call(text: str) -> dict[str, Any] | None:
+    """Parse exactly one tool call for single-call assistant flows."""
+
+    calls = parse_tool_calls(text)
+    if len(calls) > 1:
         raise ValueError("Expected exactly one complete tool call.")
-
-    call = json.loads(blocks[0])
-
-    if (
-        not isinstance(call, dict)
-        or set(call) != {"name", "arguments"}
-    ):
-        raise ValueError("Tool call must contain name and arguments.")
-
-    if (
-        not isinstance(call["name"], str)
-        or not isinstance(call["arguments"], dict)
-    ):
-        raise ValueError("Invalid tool name or arguments.")
-
-    return call
+    return calls[0] if calls else None
 
 
 class LocalNewsAssistant:
@@ -299,9 +311,9 @@ class QueryAssistant:
 
         while True:
             response = self._generate(messages)
-            call = parse_tool_call(response)
+            calls = parse_tool_calls(response)
 
-            if call is None:
+            if not calls:
                 if not response:
                     raise ValueError("Expected a final answer or a tool call.")
                 return {
@@ -309,17 +321,25 @@ class QueryAssistant:
                     "tool_results": tool_results,
                 }
 
-            result = self.tools.execute(call["name"], call["arguments"])
-            tool_results.append({"call": call, "result": result})
+            results = []
+            for call in calls:
+                result = self.tools.execute(call["name"], call["arguments"])
+                results.append(result)
+                tool_results.append({"call": call, "result": result})
+
             messages.extend([
                 {
                     "role": "assistant",
                     "tool_calls": [
-                        {"type": "function", "function": call},
+                        {"type": "function", "function": call}
+                        for call in calls
                     ],
                 },
-                {
-                    "role": "tool",
-                    "content": json.dumps(result, ensure_ascii=False),
-                },
+                *(
+                    {
+                        "role": "tool",
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                    for result in results
+                ),
             ])
