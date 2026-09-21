@@ -405,8 +405,17 @@ class QueryTools:
             }
 
         self.tool_call_count += 1
-        if name == "run_cypher":
-            return self._run_cypher(arguments)
-        if name == "search_news":
-            return self._search_news(arguments)
-        return {"status": "error", "message": "Unknown tool name."}
+        try:
+            if name == "run_cypher":
+                return self._run_cypher(arguments)
+            if name == "search_news":
+                return self._search_news(arguments)
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Tool call failed! Error: {str(e) or 'Unknown'}",
+            }
+        return {
+            "status": "error",
+            "message": "Unknown tool name.",
+        }
