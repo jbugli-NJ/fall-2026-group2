@@ -4,6 +4,11 @@ Insert Montandon records into a local Neo4j instance.
 
 # Imports
 
+from datetime import datetime, timezone
+from pathlib import Path
+
+from monty_tool.api_schemas import MontandonItem
+from monty_tool.network.node_data import items_to_node_data
 from monty_tool.network.resources import get_graph_db_driver
 from monty_tool.network.schemas import NodeData
 
@@ -155,3 +160,42 @@ def insert_records_into_graph_db(node_data: list[NodeData]):
             items=node_data,
             database_='neo4j',
         )
+
+
+# Temporary local insertion
+# TODO: Point at bucket once set up
+
+def insert_from_local_data():
+    """
+    Helper to initialize a network using JSONL files under `data/`
+    as a temporary placeholder for bucket access.
+
+    Filters by an arbitrary date range for testing purposes.
+    """
+    data_folder = Path('data')
+    valid_items: list[MontandonItem] = []
+    for file in data_folder.rglob('*.jsonl'):
+        with file.open(encoding='utf-8') as lines:
+            for line in lines:
+                if not line.strip():
+                    continue
+                valid_items.append(
+                    MontandonItem.model_validate_json(line, by_name=True)
+                )
+
+    filtered_items = [
+        item
+        for item in valid_items
+        if (
+            datetime(2025, 12, 1, tzinfo=timezone.utc)
+            <=item.properties.start_datetime
+            <=datetime(2025, 12, 31, tzinfo=timezone.utc)
+        )
+    ]
+    nodes = items_to_node_data(items=filtered_items)
+    insert_records_into_graph_db(node_data=nodes)
+    print('Insertion from local data complete!')
+
+
+if __name__ == '__main__':
+    insert_from_local_data()
