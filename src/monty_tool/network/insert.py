@@ -145,34 +145,26 @@ def insert_records_into_graph_db(node_data: list[NodeData]):
             minimum_similarity=_MINIMUM_SIMILARITY,
             database_='neo4j',
         )
-        # Connect records that share country codes
+        # Connect events to their countries
         driver.execute_query(
-            _BATCH_PAIR_MATCH + """
-            WITH source, target,
-                 [code IN source.country_codes
-                  WHERE code IN target.country_codes] AS country_codes
-            WHERE size(country_codes) > 0
-            MERGE (source)-[relation:SAME_COUNTRY]->(target)
-            SET relation.country_codes = country_codes,
-                relation.strength = toFloat(size(country_codes)) /
-                    (size(source.country_codes) + size(target.country_codes)
-                     - size(country_codes))
+            """
+            UNWIND $items AS item
+            MATCH (event:Event {id: item.id})
+            UNWIND event.country_codes AS code
+            MERGE (country:Country {code: code})
+            MERGE (event)-[:IN_COUNTRY]->(country)
             """,
             items=node_data,
             database_='neo4j',
         )
-        # Connect records that share hazard codes
+        # Connect events to their hazards
         driver.execute_query(
-            _BATCH_PAIR_MATCH + """
-            WITH source, target,
-                 [code IN source.hazard_codes
-                  WHERE code IN target.hazard_codes] AS hazard_codes
-            WHERE size(hazard_codes) > 0
-            MERGE (source)-[relation:SAME_HAZARD]->(target)
-            SET relation.hazard_codes = hazard_codes,
-                relation.strength = toFloat(size(hazard_codes)) /
-                    (size(source.hazard_codes) + size(target.hazard_codes)
-                     - size(hazard_codes))
+            """
+            UNWIND $items AS item
+            MATCH (event:Event {id: item.id})
+            UNWIND event.hazard_codes AS code
+            MERGE (hazard:Hazard {code: code})
+            MERGE (event)-[:HAS_HAZARD]->(hazard)
             """,
             items=node_data,
             database_='neo4j',
