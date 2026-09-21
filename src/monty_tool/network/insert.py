@@ -46,6 +46,29 @@ def insert_records_into_graph_db(node_data: list[NodeData]):
             items=node_data,
             database_='neo4j',
         )
+        # Apply labels from the source record roles
+        driver.execute_query(
+            """
+            UNWIND $items AS item
+            WITH item
+            WHERE 'event' IN item.roles
+            MATCH (node:MontandonItem {id: item.id})
+            SET node:Event
+            """,
+            items=node_data,
+            database_='neo4j',
+        )
+        driver.execute_query(
+            """
+            UNWIND $items AS item
+            WITH item
+            WHERE 'impact' IN item.roles
+            MATCH (node:MontandonItem {id: item.id})
+            SET node:Impact
+            """,
+            items=node_data,
+            database_='neo4j',
+        )
         # Remove every existing relationship for records if present
         driver.execute_query(
             """
@@ -58,12 +81,13 @@ def insert_records_into_graph_db(node_data: list[NodeData]):
             items=node_data,
             database_='neo4j',
         )
-        # Connect records with the same correlation ID
+        # Connect each impact to the event it measures
         driver.execute_query(
-            _BATCH_PAIR_MATCH + """
-            WHERE source.corr_id = target.corr_id
-            MERGE (source)-[relation:SAME_EVENT]->(target)
-            SET relation.corr_id = source.corr_id
+            """
+            UNWIND $items AS item
+            MATCH (impact:Impact {id: item.id})
+            MATCH (event:Event {corr_id: impact.corr_id})
+            MERGE (impact)-[:IMPACT_OF]->(event)
             """,
             items=node_data,
             database_='neo4j',
