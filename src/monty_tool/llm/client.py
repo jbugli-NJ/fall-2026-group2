@@ -233,7 +233,7 @@ class QueryAssistant:
         self.device = "cuda" if torch.cuda.is_available() else (
             "mps" if torch.backends.mps.is_available() else "cpu"
         )
-        dtype = torch.float32 if self.device == "cpu" else torch.float16
+        dtype = torch.bfloat16 if self.device == "cpu" else torch.float16
 
         self.tokenizer: Any = AutoTokenizer.from_pretrained(model_id)
         self.model: Any = AutoModelForCausalLM.from_pretrained(
