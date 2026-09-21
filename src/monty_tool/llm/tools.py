@@ -1,15 +1,28 @@
-"""Expose the existing Montandon-to-NewsAPI pipeline as an LLM tool."""
+"""
+Expose NewsAPI and Neo4j queries as LLM tools.
+"""
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import date, datetime, time
+import re
+from typing import Any, LiteralString, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    model_validator,
+)
 from requests import RequestException
+from neo4j import RoutingControl
 
 from monty_tool.event_context import EventContext
 from monty_tool.news.query import build_news_query
+from monty_tool.news.schemas import NewsQuery
 from monty_tool.news_api import search_news
+from monty_tool.network.resources import get_graph_db_driver
 
 
 class NewsArguments(BaseModel):
@@ -67,9 +80,10 @@ class NewsTools:
         self,
         name: str,
         arguments: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Validate a model-requested call and execute the news pipeline."""
-
+        ) -> dict[str, Any]:
+        """
+        Validate a NewsAPI tool call and retrieve articles.
+        """
         if name != "search_event_news":
             return {
                 "status": "error",
@@ -130,4 +144,256 @@ class NewsTools:
             "status": "ok" if result.articles else "empty",
             **result.model_dump(mode="json"),
         }
-    
+
+
+_BLOCKED_CYPHER = re.compile(
+    r"\b(?:"
+    r"CREATE|MERGE|DELETE|DETACH|SET|REMOVE|DROP|ALTER|RENAME|"
+    r"GRANT|DENY|REVOKE|FOREACH|CALL"
+    r")\b|\bLOAD\s+CSV\b",
+    re.IGNORECASE,
+)
+_MAX_CYPHER_ROWS = 25
+_OMIT_VALUE = object()
+
+
+class CypherArguments(BaseModel):
+    """
+    Arguments accepted by the graph query tool.
+    """
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    query: str = Field(min_length=1)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class QueryNewsArguments(BaseModel):
+    """
+    Arguments accepted by the direct NewsAPI tool.
+    """
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    query: str = Field(min_length=1, max_length=500)
+    from_date: date
+    to_date: date
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> QueryNewsArguments:
+        """
+        Require the NewsAPI date range to run forward in time.
+        """
+        if self.from_date > self.to_date:
+            raise ValueError("from_date must be on or before to_date.")
+        return self
+
+
+def _json_value(value: Any) -> Any:
+    """
+    Convert Neo4j outputs into JSON, stripping embeddings.
+    Checks recursively for nested objects.
+    """
+    if isinstance(value, dict):
+        output = {}
+        for key, item in value.items():
+            serialized = _json_value(item)
+            if serialized is not _OMIT_VALUE:
+                output[key] = serialized
+        return output
+
+    if isinstance(value, (list, tuple)):
+        if len(value) > 100:
+            return _OMIT_VALUE
+        output = []
+        for item in value:
+            serialized = _json_value(item)
+            if serialized is not _OMIT_VALUE:
+                output.append(serialized)
+        return output
+
+    if isinstance(value, (date, datetime, time)):
+        return value.isoformat()
+
+    return value
+
+
+class QueryTools:
+    """
+    Tools available to QueryAssistant.
+    """
+
+    def __init__(self):
+        self.schema = self._get_schema()
+        self.definitions = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "run_cypher",
+                    "description": (
+                        "Run a read-only Cypher query against the disaster graph. "
+                        "Use parameters for values when useful."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                            "parameters": {"type": "object"},
+                        },
+                        "required": ["query"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_news",
+                    "description": (
+                        "Search NewsAPI with an English query and a date range."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "minLength": 1, "maxLength": 500},
+                            "from_date": {"type": "string", "format": "date"},
+                            "to_date": {"type": "string", "format": "date"},
+                        },
+                        "required": ["query", "from_date", "to_date"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+        ]
+
+    def _get_schema(self) -> dict[str, Any]:
+        """
+        Read the current graph schema for the assistant prompt.
+        """
+        node_query = """
+        CALL db.schema.nodeTypeProperties()
+        YIELD nodeType, propertyName
+        RETURN nodeType, propertyName
+        ORDER BY nodeType, propertyName
+        """
+        relationship_query = """
+        CALL db.schema.relTypeProperties()
+        YIELD relType, propertyName
+        RETURN relType, propertyName
+        ORDER BY relType, propertyName
+        """
+        with get_graph_db_driver() as driver:
+            node_records, _, _ = driver.execute_query(
+                node_query,
+                database_="neo4j",
+                routing_=RoutingControl.READ,
+            )
+            relationship_records, _, _ = driver.execute_query(
+                relationship_query,
+                database_="neo4j",
+                routing_=RoutingControl.READ,
+            )
+
+        node_types: dict[str, list[str]] = {}
+        for record in node_records:
+            data = record.data()
+            node_types.setdefault(data["nodeType"], []).append(
+                data["propertyName"]
+            )
+
+        relationship_types: dict[str, list[str]] = {}
+        for record in relationship_records:
+            data = record.data()
+            properties = relationship_types.setdefault(data["relType"], [])
+            if data["propertyName"] is not None:
+                properties.append(data["propertyName"])
+
+        return {
+            "node_types": node_types,
+            "relationship_types": relationship_types,
+        }
+
+    def _run_cypher(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """
+        Run a Cypher query and return at most 25 rows as JSON.
+        """
+        try:
+            args = CypherArguments.model_validate(arguments)
+        except ValidationError:
+            return {
+                "status": "error",
+                "message": "Supply a query and an optional parameters object.",
+            }
+
+        if _BLOCKED_CYPHER.search(args.query):
+            return {
+                "status": "error",
+                "message": "That Cypher query contains a blocked write or administration keyword.",
+            }
+
+        try:
+            with get_graph_db_driver() as driver:
+                records, _, _ = driver.execute_query(
+                    cast(LiteralString, args.query),
+                    parameters_=args.parameters,
+                    database_="neo4j",
+                    routing_=RoutingControl.READ,
+                )
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Cypher query failed: {e}",
+            }
+
+        rows = [_json_value(record.data()) for record in records[:_MAX_CYPHER_ROWS]]
+        return {
+            "status": "ok",
+            "rows": rows,
+        }
+
+    def _search_news(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """
+        Run a direct NewsAPI search using provided inputs.
+        """
+        try:
+            args = QueryNewsArguments.model_validate(arguments)
+        except ValidationError:
+            return {
+                "status": "error",
+                "message": "Supply query, from_date, and to_date as ISO dates.",
+            }
+
+        try:
+            result = search_news(
+                NewsQuery(
+                    item_id="query-assistant",
+                    query=args.query,
+                    from_date=args.from_date,
+                    to_date=args.to_date,
+                ),
+                page_size=5,
+            )
+        except RequestException as e:
+            return {
+                "status": "error",
+                "message": f"NewsAPI connection failed: {type(e).__name__}",
+            }
+        except (RuntimeError, ValueError) as e:
+            return {"status": "error", "message": str(e)}
+
+        return {
+            "status": "ok" if result.articles else "empty",
+            **result.model_dump(mode="json"),
+        }
+
+    def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        ) -> dict[str, Any]:
+        """
+        Validate and execute one query tool call.
+        """
+        if name == "run_cypher":
+            return self._run_cypher(arguments)
+        if name == "search_news":
+            return self._search_news(arguments)
+        return {"status": "error", "message": "Unknown tool name."}
