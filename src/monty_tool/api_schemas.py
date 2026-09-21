@@ -162,6 +162,6 @@ class MontandonItem(MontandonModel):
     id: str
     bbox: BBox
     links: list[MontandonLink]
-    geometry: Geometry
+    geometry: Geometry | None = None
     collection: str
     properties: MontandonProperties
