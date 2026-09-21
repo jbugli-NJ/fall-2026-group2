@@ -221,7 +221,12 @@ class QueryTools:
     Tools available to QueryAssistant.
     """
 
-    def __init__(self):
+    def __init__(self, max_tool_calls: int = 10):
+        if max_tool_calls < 1:
+            raise ValueError("max_tool_calls must be at least 1.")
+
+        self.max_tool_calls = max_tool_calls
+        self.tool_call_count = 0
         self.schema = self._get_schema()
         self.definitions = [
             {
@@ -390,6 +395,16 @@ class QueryTools:
         """
         Validate and execute one query tool call.
         """
+        if self.tool_call_count >= self.max_tool_calls:
+            return {
+                "status": "limit_reached",
+                "message": (
+                    "The tool call limit has been reached. Answer now using "
+                    "the results already collected. Do not call another tool."
+                ),
+            }
+
+        self.tool_call_count += 1
         if name == "run_cypher":
             return self._run_cypher(arguments)
         if name == "search_news":
