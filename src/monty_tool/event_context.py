@@ -37,7 +37,7 @@ class EventContext(BaseModel):
     end_datetime: datetime
 
     # Preserve location information.
-    geometry_type: str
+    geometry_type: str | None
     bbox: BBox
     longitude: float | None = None
     latitude: float | None = None
@@ -105,7 +105,11 @@ def build_event_context(
         start_datetime=properties.start_datetime,
         end_datetime=properties.end_datetime,
 
-        geometry_type=item.geometry.type,
+        geometry_type=(
+            item.geometry.type
+            if item.geometry is not None
+            else None
+        ),
         bbox=item.bbox,
         longitude=longitude,
         latitude=latitude,
