@@ -28,6 +28,7 @@ def items_to_node_data(items: list[MontandonItem]) -> list[NodeData]:
             'id': item.id,
             'title': properties.title,
             'description': properties.description,
+            'roles': properties.roles,
             'description_embedding': embedding.description,
             'keywords_embedding': embedding.keywords,
             'impact_severity_embedding': embedding.impact_severity_text,
