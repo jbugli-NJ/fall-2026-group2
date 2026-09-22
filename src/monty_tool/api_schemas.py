@@ -1,12 +1,12 @@
 """
-Pydantic schemas for items returned by the Montandon STAC API.
+Pydantic schemas for Montandon STAC and IFRC GO API records.
 """
 
 
 # Imports
 
 from datetime import datetime as DateTime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -22,6 +22,13 @@ class MontandonModel(BaseModel):
         extra="ignore",
         validate_by_alias=True,
     )
+
+
+class GOModel(BaseModel):
+    """
+    Base model for records returned by the IFRC GO API.
+    """
+    model_config = ConfigDict(extra="ignore")
 
 
 # Geometry schemas
@@ -162,6 +169,132 @@ class MontandonItem(MontandonModel):
     id: str
     bbox: BBox
     links: list[MontandonLink]
-    geometry: Geometry
+    geometry: Geometry | None = None
     collection: str
     properties: MontandonProperties
+
+
+# IFRC GO schemas
+
+class GODisasterType(GOModel):
+    """
+    A disaster type nested in a GO event or appeal.
+    """
+    id: int
+    name: str
+    summary: str = ""
+    translation_module_original_language: str | None = None
+
+
+class GOCountry(GOModel):
+    """
+    A country nested in a GO event or appeal.
+    """
+    id: int
+    name: str
+    iso: str | None = None
+    iso3: str | None = None
+    record_type: int | None = None
+    record_type_display: str | None = None
+    region: int | None = None
+    independent: bool | None = None
+    is_deprecated: bool | None = None
+    fdrs: str | None = None
+    average_household_size: float | None = None
+    society_name: str | None = None
+    translation_module_original_language: str | None = None
+
+
+class GORegion(GOModel):
+    """
+    A region nested in a GO appeal.
+    """
+    id: int
+    region_name: str
+    label: str
+    name: int | str | None = None
+    translation_module_original_language: str | None = None
+
+
+class GOEmbeddedAppeal(GOModel):
+    """
+    Appeal data embedded in a GO event response.
+
+    This is not the same as `GOAppeal`: the event endpoint
+    does not include the appeal's event, country, or disaster type.
+    """
+    id: int
+    aid: str
+    atype: int
+    atype_display: str
+    status: int
+    status_display: str
+    code: str
+    sector: str
+    num_beneficiaries: int
+    amount_requested: float
+    amount_funded: float
+    start_date: DateTime
+    end_date: DateTime
+    translation_module_original_language: str | None = None
+
+
+class GOAppeal(GOModel):
+    """
+    A complete IFRC GO appeal record.
+    """
+    id: str
+    aid: str
+    name: str
+    dtype: GODisasterType
+    atype: int
+    atype_display: str
+    status: int
+    status_display: str
+    code: str
+    sector: str
+    num_beneficiaries: int
+    amount_requested: float
+    amount_funded: float
+    start_date: DateTime
+    end_date: DateTime
+    real_data_update: DateTime | None = None
+    created_at: DateTime
+    modified_at: DateTime
+    event: int | None = None
+    needs_confirmation: bool
+    country: GOCountry
+    region: GORegion
+    event_details: dict[str, Any] | None = None
+
+
+class GOEvent(GOModel):
+    """
+    An IFRC GO emergency event record.
+    """
+    id: int
+    name: str
+    dtype: GODisasterType | None = None
+    countries: list[GOCountry]
+    num_affected: int | None = None
+    ifrc_severity_level: int
+    ifrc_severity_level_display: str
+    ifrc_severity_level_update_date: DateTime | None = None
+    glide: str
+    disaster_start_date: DateTime
+    created_at: DateTime
+    auto_generated: bool
+    appeals: list[GOEmbeddedAppeal] = Field(default_factory=list)
+    is_featured: bool
+    is_featured_region: bool
+    field_reports: list[dict[str, Any]] = Field(default_factory=list)
+    updated_at: DateTime
+    slug: str | None = None
+    parent_event: int | None = None
+    tab_one_title: str
+    tab_two_title: str | None = None
+    tab_three_title: str | None = None
+    emergency_response_contact_email: str | None = None
+    active_deployments: int
+    summary: str
+    translation_module_original_language: str | None = None
