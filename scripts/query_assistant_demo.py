@@ -28,8 +28,8 @@ def main():
     output_path = OUTPUT_DIRECTORY.joinpath(f"query_assistant_graph_demo_{timestamp}.json")
     assistant = QueryAssistant()
     result = assistant.ask(
-        'What disasters had the strongest Red Cross response relative to severity? '
-        'Reference the available graph database for your response.'
+        'Use the graph to find earthquake events and summarize the recorded '
+        'impacts for the most relevant result.'
     )
     output_path.parent.mkdir(exist_ok=True)
     output_path.write_text(
