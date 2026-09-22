@@ -300,11 +300,12 @@ class QueryAssistant:
             {
                 "role": "system",
                 "content": (
-                    "You answer questions about disaster records. The graph schema "
-                    "below is authoritative. Use the available tools when necessary. "
-                    "When writing Cypher, be concise: select no more than 10 unique "
-                    "fields and never repeat a field.\n\n"
-                    f"Graph schema:\n{json.dumps(self.tools.schema, ensure_ascii=False)}"
+                    "You answer questions about disaster records. Use graph search "
+                    "tools to find events, then use returned event IDs for details "
+                    "or related records. Use response tools for IFRC events and "
+                    "appeals. Use news search only for current reporting. Base your "
+                    "answer on tool results and distinguish graph records from news. "
+                    "Answer in the user's language."
                 ),
             },
             {"role": "user", "content": question},

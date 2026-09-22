@@ -5,8 +5,8 @@ Expose NewsAPI and Neo4j queries as LLM tools.
 from __future__ import annotations
 
 from datetime import date, datetime, time
-import re
-from typing import Any, LiteralString, cast
+from importlib.resources import files
+from typing import Any, Literal, LiteralString, cast
 
 from pydantic import (
     BaseModel,
@@ -146,25 +146,73 @@ class NewsTools:
         }
 
 
-_BLOCKED_CYPHER = re.compile(
-    r"\b(?:"
-    r"CREATE|MERGE|DELETE|DETACH|SET|REMOVE|DROP|ALTER|RENAME|"
-    r"GRANT|DENY|REVOKE|FOREACH|CALL"
-    r")\b|\bLOAD\s+CSV\b",
-    re.IGNORECASE,
-)
-_MAX_CYPHER_ROWS = 25
 _OMIT_VALUE = object()
+_CYPHER_QUERY_PACKAGE = 'monty_tool.llm.cypher_queries'
 
 
-class CypherArguments(BaseModel):
+def _load_cypher_query(name: str) -> LiteralString:
     """
-    Arguments accepted by the graph query tool.
+    Read a Cypher query by filename.
+    """
+    return cast(
+        LiteralString,
+        files(_CYPHER_QUERY_PACKAGE).joinpath(name).read_text(encoding='utf-8'),
+    )
+
+
+class GraphSearchArguments(BaseModel):
+    """
+    Filters shared by graph searches.
     """
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    query: str = Field(min_length=1)
-    parameters: dict[str, Any] = Field(default_factory=dict)
+    country_code: str | None = Field(default=None, min_length=3, max_length=3)
+    from_date: date | None = None
+    to_date: date | None = None
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> GraphSearchArguments:
+        if self.from_date is not None and self.to_date is not None:
+            if self.from_date > self.to_date:
+                raise ValueError("from_date must be on or before to_date.")
+        return self
+
+
+class DisasterEventSearchArguments(GraphSearchArguments):
+    """
+    Filters for Montandon event searches.
+    """
+    hazard_code: str | None = Field(default=None, min_length=1, max_length=100)
+    text: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class EventIdArguments(BaseModel):
+    """
+    Identify an event returned by a graph tool.
+    """
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    event_id: str = Field(min_length=1, max_length=200)
+
+
+class RelatedEventArguments(EventIdArguments):
+    """
+    Select one relationship for a related event search.
+    """
+    relation_kind: Literal[
+        'semantic_similarity',
+        'same_hazard',
+        'same_country',
+        'same_start_day',
+        'same_incident',
+    ]
+
+
+class ResponseEventSearchArguments(GraphSearchArguments):
+    """
+    Filters for IFRC response event searches.
+    """
+    disaster_type: str | None = Field(default=None, min_length=1, max_length=100)
+    text: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class QueryNewsArguments(BaseModel):
@@ -172,7 +220,6 @@ class QueryNewsArguments(BaseModel):
     Arguments accepted by the direct NewsAPI tool.
     """
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
     query: str = Field(min_length=1, max_length=500)
     from_date: date
     to_date: date
@@ -218,7 +265,7 @@ def _json_value(value: Any) -> Any:
 
 class QueryTools:
     """
-    Tools available to QueryAssistant.
+    Graph and news tools available to QueryAssistant.
     """
 
     def __init__(self, max_tool_calls: int = 10):
@@ -227,23 +274,84 @@ class QueryTools:
 
         self.max_tool_calls = max_tool_calls
         self.tool_call_count = 0
-        self.schema = self._get_schema()
         self.definitions = [
             {
                 "type": "function",
                 "function": {
-                    "name": "run_cypher",
-                    "description": (
-                        "Run a read-only Cypher query against the disaster graph. "
-                        "Use parameters for values when useful."
-                    ),
+                    "name": "search_disaster_events",
+                    "description": "Find Montandon disaster events by place, hazard, date, or text.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string"},
-                            "parameters": {"type": "object"},
+                            "country_code": {"type": "string"},
+                            "hazard_code": {"type": "string"},
+                            "from_date": {"type": "string", "format": "date"},
+                            "to_date": {"type": "string", "format": "date"},
+                            "text": {"type": "string"},
                         },
-                        "required": ["query"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_disaster_context",
+                    "description": "Get one Montandon event and its impacts using an event_id returned by search_disaster_events.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"event_id": {"type": "string"}},
+                        "required": ["event_id"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "find_related_disaster_events",
+                    "description": "Find events related to one Montandon event by one named relationship.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "event_id": {"type": "string"},
+                            "relation_kind": {
+                                "type": "string",
+                                "enum": ["semantic_similarity", "same_hazard", "same_country", "same_start_day", "same_incident"],
+                            },
+                        },
+                        "required": ["event_id", "relation_kind"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_response_events",
+                    "description": "Find IFRC response events by place, disaster type, date, or text.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "country_code": {"type": "string"},
+                            "disaster_type": {"type": "string"},
+                            "from_date": {"type": "string", "format": "date"},
+                            "to_date": {"type": "string", "format": "date"},
+                            "text": {"type": "string"},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_response_context",
+                    "description": "Get one IFRC response event and its linked appeals using an event_id returned by search_response_events.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"event_id": {"type": "string"}},
+                        "required": ["event_id"],
                         "additionalProperties": False,
                     },
                 },
@@ -252,9 +360,7 @@ class QueryTools:
                 "type": "function",
                 "function": {
                     "name": "search_news",
-                    "description": (
-                        "Search NewsAPI with an English query and a date range."
-                    ),
+                    "description": "Search NewsAPI with an English query and a date range.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -269,87 +375,35 @@ class QueryTools:
             },
         ]
 
-    def _get_schema(self) -> dict[str, Any]:
+    def _run_graph_query(
+        self,
+        arguments: dict[str, Any],
+        argument_model: type[BaseModel],
+        query_file: str,
+        error_message: str,
+        ) -> dict[str, Any]:
         """
-        Read the current graph schema for the assistant prompt.
-        """
-        node_query = """
-        CALL db.schema.nodeTypeProperties()
-        YIELD nodeType, propertyName
-        RETURN nodeType, propertyName
-        ORDER BY nodeType, propertyName
-        """
-        direction_query = """
-        MATCH (source)-[relationship]->(target)
-        RETURN DISTINCT labels(source) AS source_labels,
-               type(relationship) AS relationship_type,
-               labels(target) AS target_labels,
-               keys(relationship) AS property_names
-        ORDER BY relationship_type, source_labels, target_labels
-        """
-        with get_graph_db_driver() as driver:
-            node_records, _, _ = driver.execute_query(
-                node_query,
-                database_="neo4j",
-                routing_=RoutingControl.READ,
-            )
-            direction_records, _, _ = driver.execute_query(
-                direction_query,
-                database_="neo4j",
-                routing_=RoutingControl.READ,
-            )
-
-        node_types: dict[str, list[str]] = {}
-        for record in node_records:
-            data = record.data()
-            node_types.setdefault(data["nodeType"], []).append(
-                data["propertyName"]
-            )
-
-        return {
-            "node_types": node_types,
-            "relationships": [
-                record.data()
-                for record in direction_records
-            ],
-        }
-
-    def _run_cypher(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """
-        Run a Cypher query and return at most 25 rows as JSON.
+        Validate and run a graph query.
         """
         try:
-            args = CypherArguments.model_validate(arguments)
+            args = argument_model.model_validate(arguments)
         except ValidationError:
-            return {
-                "status": "error",
-                "message": "Supply a query and an optional parameters object.",
-            }
-
-        if _BLOCKED_CYPHER.search(args.query):
-            return {
-                "status": "error",
-                "message": "That Cypher query contains a blocked write or administration keyword.",
-            }
+            return {"status": "error", "message": error_message}
 
         try:
             with get_graph_db_driver() as driver:
                 records, _, _ = driver.execute_query(
-                    cast(LiteralString, args.query),
-                    parameters_=args.parameters,
+                    _load_cypher_query(query_file),
+                    parameters_=args.model_dump(),
                     database_="neo4j",
                     routing_=RoutingControl.READ,
                 )
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Cypher query failed: {e}",
-            }
+        except Exception as exc:
+            return {"status": "error", "message": f"Graph query failed: {exc}"}
 
-        rows = [_json_value(record.data()) for record in records[:_MAX_CYPHER_ROWS]]
         return {
             "status": "ok",
-            "rows": rows,
+            "rows": [_json_value(record.data()) for record in records],
         }
 
     def _search_news(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -406,8 +460,41 @@ class QueryTools:
 
         self.tool_call_count += 1
         try:
-            if name == "run_cypher":
-                return self._run_cypher(arguments)
+            if name == "search_disaster_events":
+                return self._run_graph_query(
+                    arguments,
+                    DisasterEventSearchArguments,
+                    "search_disaster_events.cypher",
+                    "Supply optional country_code, hazard_code, dates, or text.",
+                )
+            if name == "get_disaster_context":
+                return self._run_graph_query(
+                    arguments,
+                    EventIdArguments,
+                    "get_disaster_context.cypher",
+                    "Supply a non-empty event_id.",
+                )
+            if name == "find_related_disaster_events":
+                return self._run_graph_query(
+                    arguments,
+                    RelatedEventArguments,
+                    "find_related_disaster_events.cypher",
+                    "Supply event_id and one supported relation_kind.",
+                )
+            if name == "search_response_events":
+                return self._run_graph_query(
+                    arguments,
+                    ResponseEventSearchArguments,
+                    "search_response_events.cypher",
+                    "Supply optional country_code, disaster_type, dates, or text.",
+                )
+            if name == "get_response_context":
+                return self._run_graph_query(
+                    arguments,
+                    EventIdArguments,
+                    "get_response_context.cypher",
+                    "Supply a non-empty event_id.",
+                )
             if name == "search_news":
                 return self._search_news(arguments)
         except Exception as e:
