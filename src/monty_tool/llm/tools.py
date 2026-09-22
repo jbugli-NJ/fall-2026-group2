@@ -283,11 +283,20 @@ class QueryTools:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "country_code": {"type": "string"},
-                            "hazard_code": {"type": "string"},
+                            "country_code": {
+                                "type": "string",
+                                "description": "3-letter country code (e.g. CHN for China).",
+                            },
+                            "hazard_code": {
+                                "type": "string",
+                                "description": "Montandon hazard code.",
+                            },
                             "from_date": {"type": "string", "format": "date"},
                             "to_date": {"type": "string", "format": "date"},
-                            "text": {"type": "string"},
+                            "text": {
+                                "type": "string",
+                                "description": "Words to find in event titles and descriptions.",
+                            },
                         },
                         "additionalProperties": False,
                     },
