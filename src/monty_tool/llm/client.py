@@ -327,7 +327,9 @@ class QueryAssistant:
 
             results = []
             for call in calls:
+                print("Tool call:", json.dumps(call, ensure_ascii=False))
                 result = self.tools.execute(call["name"], call["arguments"])
+                print("Tool result:", json.dumps(result, ensure_ascii=False))
                 results.append(result)
                 tool_results.append({"call": call, "result": result})
 
