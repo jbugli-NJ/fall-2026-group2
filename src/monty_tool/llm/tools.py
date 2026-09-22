@@ -150,7 +150,7 @@ _OMIT_VALUE = object()
 _CYPHER_QUERY_PACKAGE = 'monty_tool.llm.cypher_queries'
 
 
-def _load_cypher_query(name: str) -> LiteralString:
+def _load_cypher_query(name: LiteralString) -> LiteralString:
     """
     Read a Cypher query by filename.
     """
@@ -379,7 +379,7 @@ class QueryTools:
         self,
         arguments: dict[str, Any],
         argument_model: type[BaseModel],
-        query_file: str,
+        query_file: LiteralString,
         error_message: str,
         ) -> dict[str, Any]:
         """
