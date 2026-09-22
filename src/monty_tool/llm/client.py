@@ -177,7 +177,11 @@ class LocalNewsAssistant:
                 "Answer in the user's language."
             )},
             {"role": "user", "content": (
-                "Available records:\n" + json.dumps(catalog, ensure_ascii=False)
+                "Available records:\n" + json.dumps(
+                    catalog,
+                    ensure_ascii=False,
+                    default=str,
+                )
                 + "\n\nQuestion:\n" + question
             )},
         ]
@@ -198,7 +202,10 @@ class LocalNewsAssistant:
             {"role": "assistant", "tool_calls": [
                 {"type": "function", "function": call},
             ]},
-            {"role": "tool", "content": json.dumps(result, ensure_ascii=False)},
+            {
+                "role": "tool",
+                "content": json.dumps(result, ensure_ascii=False, default=str),
+            },
         ])
 
         # 3. The same model receives the tool result and writes the final answer.
@@ -327,9 +334,9 @@ class QueryAssistant:
 
             results = []
             for call in calls:
-                print("Tool call:", json.dumps(call, ensure_ascii=False))
+                print("Tool call:", json.dumps(call, ensure_ascii=False, default=str))
                 result = self.tools.execute(call["name"], call["arguments"])
-                print("Tool result:", json.dumps(result, ensure_ascii=False))
+                print("Tool result:", json.dumps(result, ensure_ascii=False, default=str))
                 results.append(result)
                 tool_results.append({"call": call, "result": result})
 
@@ -344,7 +351,11 @@ class QueryAssistant:
                 *(
                     {
                         "role": "tool",
-                        "content": json.dumps(result, ensure_ascii=False),
+                        "content": json.dumps(
+                            result,
+                            ensure_ascii=False,
+                            default=str,
+                        ),
                     }
                     for result in results
                 ),

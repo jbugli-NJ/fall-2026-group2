@@ -33,10 +33,10 @@ def main():
     )
     output_path.parent.mkdir(exist_ok=True)
     output_path.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2),
+        json.dumps(result, ensure_ascii=False, indent=2, default=str),
         encoding='utf-8',
     )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
 if __name__ == '__main__':
