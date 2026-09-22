@@ -223,6 +223,7 @@ class QueryNewsArguments(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     from_date: date
     to_date: date
+    location: str | None = Field(default=None, min_length=1, max_length=100)
 
     @model_validator(mode="after")
     def validate_date_range(self) -> QueryNewsArguments:
@@ -376,6 +377,7 @@ class QueryTools:
                             "query": {"type": "string", "minLength": 1, "maxLength": 500},
                             "from_date": {"type": "string", "format": "date"},
                             "to_date": {"type": "string", "format": "date"},
+                            "location": {"type": "string", "description": "Place named in the disaster question, when available.",},
                         },
                         "required": ["query", "from_date", "to_date"],
                         "additionalProperties": False,
@@ -428,10 +430,19 @@ class QueryTools:
             }
 
         try:
+            news_query = args.query
+            if args.location and args.location.casefold() not in news_query.casefold():
+                news_query = f"{news_query} {args.location}"
+            if len(news_query) > 500:
+                return {
+                    "status": "error",
+                    "message": "News query exceeds 500 characters after adding location.",
+                }
+
             result = search_news(
                 NewsQuery(
                     item_id="query-assistant",
-                    query=args.query,
+                    query=news_query,
                     from_date=args.from_date,
                     to_date=args.to_date,
                 ),
