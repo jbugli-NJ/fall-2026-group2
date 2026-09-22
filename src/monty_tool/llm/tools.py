@@ -21,7 +21,7 @@ from neo4j import RoutingControl
 from monty_tool.event_context import EventContext
 from monty_tool.news.query import build_news_query
 from monty_tool.news.schemas import NewsQuery
-from monty_tool.news_api import search_news
+from monty_tool.news.retrieval import search_ranked_news
 from monty_tool.network.resources import get_graph_db_driver
 
 
@@ -122,8 +122,8 @@ class NewsTools:
             }
 
         try:
-            # Keep the first demo small.
-            result = search_news(query, page_size=5)
+            # Rank candidates before selecting articles for the assistant.
+            result = search_ranked_news(query)
 
         except RequestException as exc:
             return {
@@ -439,14 +439,13 @@ class QueryTools:
                     "message": "News query exceeds 500 characters after adding location.",
                 }
 
-            result = search_news(
+            result = search_ranked_news(
                 NewsQuery(
                     item_id="query-assistant",
                     query=news_query,
                     from_date=args.from_date,
                     to_date=args.to_date,
                 ),
-                page_size=5,
             )
         except RequestException as e:
             return {
