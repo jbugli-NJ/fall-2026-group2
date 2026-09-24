@@ -45,3 +45,8 @@ uv run -m monty_tool.network.initialize
 Once running, this should be accessible via [Neo4j browser](http://localhost:7474/browser/).
 The test instance is automatically set up with user `neo4j` and password `password`.
 The browser UI can be used for exploration and basic queries.
+
+### nbstripout
+
+This project uses `nbstripout` in development dependencies, enforcing it in `.gitattributes` so that notebook outputs are not committed.
+Set this up locally with `uv run nbstripout --install` to activate the output filter after syncing.
