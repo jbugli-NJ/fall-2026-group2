@@ -33,3 +33,26 @@
 * [x] Create initial embedding utilities
 
 ---
+
+## Date: Week 3 - September 22, 2026
+- Topics of discussion
+  - Initial end-to-end setup for the LLM to query the network
+    - Nodes and edges used in the network
+    - HuggingFace chat template setup
+    - Tools to expose for Cypher queries
+  - Geospatial investigation
+    - Challenges with reconciling different geospatial data sources
+  - NewsAPI exporation
+    - Reranking article sources to surface more relevant items
+
+- Action Items:
+
+* [x] Build utilities for inserting data into networks
+  * [x] Montandon API
+  * [x] GO API events
+  * [x] GO API appeals
+* [x] Wire up initial full LLM tests to respond to queries with NewsAPI/Cypher queries
+* [x] Explore geospatial data options and potential integrationsm
+* [x] Refine NewsAPI tooling and article reranking
+
+---
