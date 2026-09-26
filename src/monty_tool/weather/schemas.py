@@ -173,11 +173,17 @@ class WeatherResult(BaseModel):
             ]
 
         precipitation = values('precipitation')
-        peak_day = max(
-            (day for day in self.days if day.precipitation is not None),
-            key=lambda day: day.precipitation,
-            default=None,
-        )
+
+        # Pair each reading with its date before taking the peak, so the
+        # comparison runs on values already narrowed to float. Taking it
+        # over the days themselves leaves the key returning float | None,
+        # which has no ordering.
+        measured_rain = [
+            (day.date, day.precipitation)
+            for day in self.days
+            if day.precipitation is not None
+        ]
+        peak_rain = max(measured_rain, key=lambda pair: pair[1], default=None)
         maxima = values('temperature_max') or values('temperature_mean')
         minima = values('temperature_min') or values('temperature_mean')
         winds = values('wind_speed')
@@ -191,10 +197,10 @@ class WeatherResult(BaseModel):
                 round(sum(precipitation), 2) if precipitation else None
             ),
             'peak_precipitation': (
-                round(peak_day.precipitation, 2) if peak_day else None
+                round(peak_rain[1], 2) if peak_rain else None
             ),
             'peak_precipitation_date': (
-                peak_day.date.isoformat() if peak_day else None
+                peak_rain[0].isoformat() if peak_rain else None
             ),
             'max_temperature': max(maxima) if maxima else None,
             'min_temperature': min(minima) if minima else None,

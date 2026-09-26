@@ -423,12 +423,13 @@ def test_results_keep_record_order_at_any_worker_count(
     """
     call, _ = _latency_tracker(_payload(), delay=0.0)
 
+    calls = {'count': 0}
+
     def uneven(*args, **kwargs):
         # Later records finish first, inverting completion order.
-        time.sleep(max(0.0, 0.05 - 0.002 * uneven.calls))
-        uneven.calls += 1
+        time.sleep(max(0.0, 0.05 - 0.002 * calls['count']))
+        calls['count'] += 1
         return call()
-    uneven.calls = 0
 
     monkeypatch.setattr(retrieval, 'get_weather_data', uneven)
     items = [_context(f'event-{number:03d}') for number in range(20)]
