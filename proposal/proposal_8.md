@@ -86,27 +86,30 @@ PHASE 2: EXPLORATORY FEATURE GENERATION & INITIAL REPORTING (Weeks 2-4)
 [Week 3: Storage & Network Drafting]
 - Complete any lingering feature generation pipeline work or associated refinement with Montandon records
 - Create utilities to construct network graphs, likely using local Neo4j as a baseline
-- Refine and complete external news reporting retrieval (NewsAPI, etc.), integrating that into the network
-- Build pipeline for weather data retrieval, integrating that into the network
+- Build initial end-to-end tests using LLMs to query the constructed network
+- Continue exploring news article collection
+- Continue exploring geospatial data collection
 
-[Week 4: Initial Reporting & Network Design]
-- Complete network graph utilities
-- Build initial reporting pipelines to derive insights from network science measures
-  - Attempt networkx [greedy clustering](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.community.modularity_max.greedy_modularity_communities.html)
-  - Use [centrality](https://networkx.org/documentation/stable/reference/algorithms/centrality.html) and potentially other measures to highlight nodes and connections that might otherwise go unnoticed
-  - Generate initial exploratory plots and takeaways
+[Week 4: Demo App Kickoff]
+- Move data storage to the cloud
+- Start work on a deployed app to demo the full network setup and LLM queries
+  - Refine network setups and exposed tools
+- Finish NewsAPI collection utilities and explore scheduled collection
+- Finish geospatial data collection and troubleshooting
 - Sync with Red Cross stakeholders on decisions/direction
 
 PHASE 3: NETWORK ANALYSIS & REPORTING TOOLS (Weeks 5-8)
 
-[Week 5: Initial LLM integration]
-- Build utilities for Huggingface LLM integration, including a [chat template](https://huggingface.co/docs/transformers/main/en/internal/tokenization_utils#transformers.PreTrainedTokenizerBase.apply_chat_template) with tools for Cypher queries
-  - This may involve non-Cypher tools or other approaches depending on findings
-- Complete network(s) that the LLM will use as the platform for queries
+[Week 5: Demo App Completion]
+- Completing any lingering network insertion pipelines and tools
+- Refine NewsAPI collection pipeline
+- Complete a deployed app to demo the full network setup
 
-[Week 6: LLM testing and network completion]
-- Refine network maps as needed for tool calls
-- Test LLM recommendations, creating a fact retrieval benchmark to compare LLM efficacy and tool call behavior
+[Week 6: App refinement and direction-setting]
+- Refine the demo app and/or change course as needed based on instruction feedback, potentially:
+  - Involving more classical modeling using the data bank records
+  - Benchmarking LLM recommendations to compare efficacy and tool call behavior
+  - Transitioning from local execution to an API with more intelligent frontier models
 - Draft report on initial findings
 
 [Week 7: Network Reporting]
@@ -150,13 +153,18 @@ PHASE 5: FINAL HANDOFF (Weeks 13-15)
 Week 1:  Confirm handling restrictions and stakeholder questions; build shared API retrieval and
   parsing utilities, then complete repository setup.
 Week 2:  Start NewsAPI work, run exploratory analysis on the Montandon data, and begin embeddings.
-Week 3:  Continue the feature work, build graph utilities, and add external data to Montandon records.
-Week 4:  Build reports and plots from the first results; complete the graph utilities and meet with
-  Red Cross stakeholders on findings and direction.
-Week 5:  Build Hugging Face LLM utilities, including tools for Cypher queries; complete the network
-  setup the LLM will query.
-Week 6:  Test LLM tool calls and recommendations with a fact retrieval benchmark; update the network
-  maps as needed and draft a report on the findings.
+Week 3:  Complete lingering feature work and refinement with Montandon records; create graph
+  construction utilities; build initial end-to-end LLM network-query tests; and continue exploring
+  news-article and geospatial data collection.
+Week 4:  Move data storage to the cloud; start a deployed demo app for the full network setup and
+  LLM queries; refine network setups and exposed tools; finish NewsAPI collection utilities and
+  explore scheduled collection; finish geospatial data collection and troubleshooting; and meet
+  with Red Cross stakeholders on direction.
+Week 5:  Complete lingering network-insertion pipelines and tools; refine the NewsAPI collection
+  pipeline; and complete the deployed app demonstrating the full network setup.
+Week 6:  Refine the demo app and/or change course as needed based on instruction feedback,
+  potentially involving more classical modeling, benchmarking LLM recommendations and tool calls,
+  or moving from local execution to an API with frontier models; draft a report on initial findings.
 Week 7:  Draft reports on the network and LLM work; meet with Red Cross stakeholders on findings and
   the proof-of-concept direction.
 Week 8:  Start the proof-of-concept tool or pipeline, test it on data bank records, and begin the paper.
@@ -174,7 +182,7 @@ TOTAL: 15 weeks
 
 KEY MILESTONES:
 - Week 1:  Shared data access and working project foundation complete
-- Week 4:  Reports, plots, and graph utilities complete
+- Week 5: Initial demo app complete
 - Week 7:  Network and LLM reports complete; proof-of-concept direction confirmed
 - Week 10: Working proof of concept plus complete internal paper draft
 - Week 12: Project paper submitted
