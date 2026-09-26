@@ -23,6 +23,8 @@ from monty_tool.news.query import build_news_query
 from monty_tool.news.schemas import NewsQuery
 from monty_tool.news.retrieval import search_ranked_news
 from monty_tool.network.resources import get_graph_db_driver
+from monty_tool.weather.query import build_weather_query
+from monty_tool.weather.retrieval import get_event_weather
 
 
 class NewsArguments(BaseModel):
@@ -524,4 +526,155 @@ class QueryTools:
         return {
             "status": "error",
             "message": "Unknown tool name.",
+        }
+
+
+class WeatherArguments(BaseModel):
+    """
+    Arguments accepted by the record-scoped weather tool.
+    """
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        str_strip_whitespace=True,
+    )
+
+    item_id: str = Field(min_length=1)
+    # The useful window depends on the hazard: a flood is explained by
+    # the rain of the preceding week, a heatwave by the days themselves.
+    # Bounded so a tool call cannot ask POWER for years of data.
+    days_before: int = Field(default=7, ge=0, le=30)
+    days_after: int = Field(default=1, ge=0, le=30)
+
+
+class WeatherTools:
+    """
+    Weather for supplied Montandon records, as an LLM tool.
+
+    Mirrors `NewsTools`: the model chooses among records it was given
+    and never supplies coordinates itself, so a hallucinated point
+    cannot return real-looking weather for somewhere else.
+    """
+
+    def __init__(self, items: list[EventContext]):
+        if not 1 <= len(items) <= 10:
+            raise ValueError("Provide between 1 and 10 sample records.")
+
+        self.items = {item.item_id: item for item in items}
+
+        # Records with no point geometry are advertised as unavailable
+        # rather than offered and then refused: most collections are
+        # country-level polygons, and POWER needs a single point.
+        self.available = {
+            item_id: item
+            for item_id, item in self.items.items()
+            if item.longitude is not None and item.latitude is not None
+        }
+
+        # This describes the tool to the model.
+        self.definitions = [{
+            "type": "function",
+            "function": {
+                "name": "get_event_weather",
+                "description": (
+                    "Get observed daily weather around one of the supplied "
+                    "Montandon records, from NASA POWER."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "item_id": {
+                            "type": "string",
+                            "enum": list(self.available),
+                        },
+                        "days_before": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 30,
+                            "description": (
+                                "Days of weather before the event starts. "
+                                "Use more for floods, where the preceding "
+                                "rain is the cause."
+                            ),
+                        },
+                        "days_after": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 30,
+                            "description": "Days of weather after the event ends.",
+                        },
+                    },
+                    "required": ["item_id"],
+                    "additionalProperties": False,
+                },
+            },
+        }]
+
+    def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        ) -> dict[str, Any]:
+        """
+        Validate a weather tool call and retrieve observations.
+        """
+        if name != "get_event_weather":
+            return {
+                "status": "error",
+                "message": "Unknown tool name.",
+            }
+
+        try:
+            args = WeatherArguments.model_validate(arguments)
+        except ValidationError:
+            return {
+                "status": "error",
+                "message": (
+                    "Supply item_id, and optionally days_before and "
+                    "days_after between 0 and 30; no other arguments."
+                ),
+            }
+
+        item = self.items.get(args.item_id)
+
+        if item is None:
+            return {
+                "status": "error",
+                "message": "Unknown Montandon item_id.",
+            }
+
+        try:
+            # Reuse the existing Montandon -> WeatherQuery function,
+            # which refuses records POWER cannot answer for.
+            query = build_weather_query(
+                item,
+                days_before=args.days_before,
+                days_after=args.days_after,
+            )
+            result = get_event_weather(query)
+
+        except RequestException as exc:
+            return {
+                "status": "error",
+                "message": (
+                    f"NASA POWER connection failed: {type(exc).__name__}"
+                ),
+            }
+
+        except (RuntimeError, ValueError) as exc:
+            return {
+                "status": "error",
+                "message": str(exc),
+            }
+
+        # The summary, not the daily series: a row per day per
+        # measurement would crowd out the rest of the conversation.
+        return {
+            "status": "empty" if result.missing_days == len(result.days) else "ok",
+            "item_id": result.item_id,
+            "latitude": result.latitude,
+            "longitude": result.longitude,
+            "elevation": result.elevation,
+            "sources": result.sources,
+            **result.summary(),
         }
