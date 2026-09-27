@@ -1,0 +1,62 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\Large George Washington University Data Science Program\par}
+\vspace{1cm}
+{\large Capstone Report --- Fall 2026\par}
+\vspace{1.5cm}
+{\huge\bfseries Exploring Applications for the Montandon Global Crisis Data Bank\par}
+\vspace{2cm}
+{\large Jeongmin An, Jehan Bugli, and Aidan Carlisle\par}
+\vspace{1cm}
+{\large Advisor: Amir Jafari\par}
+\vfill
+{\large Draft --- September 2026\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+This report documents a project exploring applications of the Montandon Global Crisis
+Data Bank. The project combines disaster and response records with external news,
+geospatial context, text embeddings, and network analysis.
+
+\section{Problem Statement}
+
+Montandon contains rich crisis and response information, but connecting related records
+and exploring their relationships can be difficult. This project investigates whether a
+graph-based representation and a simple query interface can make that information easier
+to explore. Results and evaluation criteria will be added as the project is scoped.
+
+\section{Related Work}
+
+Crisis risk reduction depends on understanding disaster risk, preparedness, and recovery
+\cite{undrr2015sendai}. Research on emergency social-media messages
+includes filtering, classification, and summarization \cite{imran2015processing}; this
+project instead starts with the curated Montandon data bank and uses external articles as
+additional context. STAC provides a common structure for spatiotemporal metadata
+\cite{ogc2025stac}, which is relevant because Montandon uses a modified STAC approach.
+
+\section{Solution and Methodology}
+
+This section will describe data access, feature generation, graph construction, and the query setup.
+
+\section{Results and Discussion}
+
+This section will report the project’s results, figures, and limitations.
+
+\section{Conclusion}
+
+This section will summarize findings and recommended next steps.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
