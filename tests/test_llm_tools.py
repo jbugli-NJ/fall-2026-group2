@@ -5,7 +5,7 @@ Tests for LLM tools.
 # Imports
 
 from datetime import date, datetime, time
-from typing import Any, get_args
+from typing import Any, cast, get_args
 
 import pytest
 
@@ -81,3 +81,22 @@ def test_json_value_serializes_and_omits_large_values(value: Any, expected: Any)
         assert result is tools._OMIT_VALUE
     else:
         assert result == expected
+
+
+def test_query_tools_has_definitions():
+    """
+    Checks that `QueryTools` has a full set of definitions when initialized.
+    This also does some other checks for definition contents to catch obvious issues.
+    """
+    query_tools = tools.QueryTools()
+    for definition in query_tools.definitions:
+        assert definition['type'] == 'function'
+        function = cast(dict, definition['function'])
+        expected_keys = {'name', 'description', 'parameters'}
+        assert expected_keys.issubset(function)
+        assert len(function['name'].strip()) >= 1
+        parameters = cast(dict, function['parameters'])
+        assert len(parameters) >= 1
+        assert 'properties' in parameters
+        assert 'additionalProperties' in parameters
+        assert parameters['additionalProperties'] == False
