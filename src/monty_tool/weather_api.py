@@ -1,0 +1,119 @@
+"""
+Minimal NASA POWER client.
+
+This file handles the POWER connection and returns its raw payload.
+It does not inspect or transform Montandon records directly.
+
+Receives a point and a date range, and handles the POWER request.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+import requests
+
+
+# POWER serves daily values for a single point per request; there is no
+# bulk endpoint, so callers pulling many events should cache results
+# (see `go_api.py` for the gzipped JSON Lines pattern) rather than
+# re-requesting.
+POWER_API_URL = 'https://power.larc.nasa.gov/api/temporal/daily/point'
+
+# Parameters chosen to cover the hazards Montandon records most often:
+# rainfall for floods, temperature for heatwaves, wind for storms.
+DEFAULT_PARAMETERS = (
+    'T2M',          # mean temperature at 2 m, degrees C
+    'T2M_MAX',      # daily maximum temperature, degrees C
+    'T2M_MIN',      # daily minimum temperature, degrees C
+    'PRECTOTCORR',  # bias-corrected precipitation, mm/day
+    'WS10M',        # mean wind speed at 10 m, m/s
+)
+
+# POWER groups its parameters into communities that determine which
+# variables are offered and in what units. RE (Renewable Energy) is the
+# one carrying the surface meteorology above.
+DEFAULT_COMMUNITY = 'RE'
+
+# POWER's daily series is MERRA-2 derived and starts here; earlier dates
+# are rejected with a 422 rather than returned empty. GDACS records only
+# reach back to 2000, but EM-DAT runs to 1900, so roughly an eighth of it
+# sits outside POWER's coverage entirely.
+POWER_START_DATE = date(1981, 1, 1)
+
+# POWER reports absent observations as this sentinel rather than null.
+# It is deliberately NOT applied here: this module stays pure transport,
+# so the parsing layer converts it to None. Averaging a column that
+# still holds -999.0 silently corrupts the result instead of failing.
+FILL_VALUE = -999.0
+
+
+class PowerRateLimitError(RuntimeError):
+    """
+    Raised when POWER refuses a request with HTTP 429.
+
+    POWER publishes no rate limit; the team monitors usage and throttles
+    to keep access equitable. Callers should back off rather than treat
+    this as a permanent failure.
+    """
+
+
+def get_weather_data(
+    lat: float,
+    lon: float,
+    start: date,
+    end: date,
+    *,
+    parameters: tuple[str, ...] = DEFAULT_PARAMETERS,
+    community: str = DEFAULT_COMMUNITY,
+    ) -> dict:
+    """
+    Retrieve daily weather for one point over a date range.
+
+    POWER needs no API key: the endpoint is open, and the `NASA_KEY` in
+    `.env` belongs to api.nasa.gov, a separate service that does not
+    gate this one.
+
+    `lat`/`lon` must describe an actual point. Only point-located
+    Montandon records (GDACS) qualify; the bounding-box centre of a
+    country-level Polygon record is not where the event happened.
+
+    The returned payload is raw POWER JSON, including `FILL_VALUE`
+    entries for dates POWER has no data for. POWER lags real time, so
+    recent events can come back short of their full range or empty.
+    """
+    if start > end:
+        raise ValueError('start must be on or before end.')
+
+    params = {
+        'parameters': ','.join(parameters),
+        'community': community,
+        'longitude': lon,
+        'latitude': lat,
+        # POWER takes compact YYYYMMDD dates, not the ISO dates used
+        # elsewhere in this project.
+        'start': start.strftime('%Y%m%d'),
+        'end': end.strftime('%Y%m%d'),
+        'format': 'JSON',
+    }
+
+    response = requests.get(POWER_API_URL, params=params, timeout=30)
+
+    # Separated from the errors below because it is the one failure
+    # worth retrying: the request was fine, the pace was not.
+    if response.status_code == 429:
+        raise PowerRateLimitError(
+            'NASA POWER refused the request: HTTP 429 (too many requests).'
+        )
+
+    # POWER signals bad points, date ranges, and parameter names with a
+    # 422 and an explanatory body, so the status line is the reliable
+    # check. The payload's `messages` list is informational and stays
+    # empty on failures, so it is not treated as an error here.
+    if response.status_code != 200:
+        raise RuntimeError(
+            f'NASA POWER failed: HTTP {response.status_code} - '
+            f'{response.text[:200]}'
+        )
+
+    return response.json()
