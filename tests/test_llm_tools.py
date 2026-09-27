@@ -6,6 +6,7 @@ Tests for LLM tools.
 
 from datetime import date, datetime, time
 from typing import Any, cast, get_args
+from unittest.mock import Mock, ANY
 
 import pytest
 
@@ -100,3 +101,59 @@ def test_query_tools_has_definitions():
         assert 'properties' in parameters
         assert 'additionalProperties' in parameters
         assert parameters['additionalProperties'] == False
+
+
+@pytest.mark.parametrize(
+    ('name', 'arguments', 'query_file'),
+    [
+        ('search_disaster_events', {'country_code': 'JPN'}, 'search_disaster_events.cypher'),
+        ('get_disaster_context', {'event_id': 'event-1'}, 'get_disaster_context.cypher'),
+        (
+            'find_related_disaster_events',
+            {'event_id': 'event-1', 'relation_kind': 'same_country'},
+            'find_related_disaster_events.cypher',
+        ),
+        ('search_response_events', {'country_code': 'JPN'}, 'search_response_events.cypher'),
+        ('get_response_context', {'event_id': 'event-1'}, 'get_response_context.cypher'),
+    ],
+)
+def test_query_tools_routes_graph_tools(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    arguments: dict[str, Any],
+    query_file: str,
+    ):
+    """
+    Ensures each graph tool selects its corresponding Cypher query.
+    """
+    query_tools = tools.QueryTools()
+    run_query = Mock(return_value={'status': 'ok', 'rows': []})
+    monkeypatch.setattr(query_tools, '_run_graph_query', run_query)
+
+    assert query_tools.execute(name, arguments) == {'status': 'ok', 'rows': []}
+    assert run_query.call_args.args[0] == arguments
+    assert run_query.call_args.args[2] == query_file
+
+
+@pytest.mark.parametrize(
+    ('name', 'arguments'),
+    [
+        ( 'search_disaster_events', {'country_code': 'JP'}),
+        ('get_disaster_context', {}),
+        ('find_related_disaster_events', {'event_id': 'event-1', 'relation_kind': 'nonexistent'}),
+        ('search_response_events', {'from_date': '2026-09-20', 'to_date': '2026-09-19'}),
+        ('get_response_context', {'event_id': ''}),
+    ],
+)
+def test_query_tools_reject_invalid_graph_tool_arguments(
+    name: str,
+    arguments: dict[str, Any],
+    ):
+    """
+    Checks that graph query tools return error messages given invalid inputs.
+    """
+    result = tools.QueryTools().execute(name, arguments)
+    assert result == {
+        'status': 'error',
+        'message': ANY,
+    }
