@@ -221,3 +221,7 @@ __marimo__/
 data/
 outputs/
 .claude/
+
+# Chainlit UI spike runtime files (spikes/chainlit)
+.chainlit/
+chainlit.md

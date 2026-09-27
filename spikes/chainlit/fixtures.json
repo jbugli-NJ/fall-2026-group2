@@ -1,0 +1,139 @@
+{
+  "question": "What flooding has been recorded in Spain, and what were the impacts?",
+  "steps": [
+    {
+      "name": "search_disaster_events",
+      "arguments": {
+        "country_code": "ESP",
+        "hazard_code": "MH0600"
+      },
+      "result": {
+        "status": "ok",
+        "rows": [
+          {
+            "event_id": "gdacs-event-1104151-1",
+            "title": "Flood in Spain",
+            "start_datetime": "2026-09-09T01:00:00Z",
+            "end_datetime": "2026-09-11T01:00:00Z",
+            "country_codes": [
+              "ESP"
+            ],
+            "hazard_codes": [
+              "FL",
+              "MH0600",
+              "nat-hyd-flo-flo"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "get_disaster_context",
+      "arguments": {
+        "event_id": "gdacs-event-1104151-1"
+      },
+      "result": {
+        "status": "ok",
+        "rows": [
+          {
+            "event_id": "gdacs-event-1104151-1",
+            "title": "Flood in Spain",
+            "description": "Green Flood in Spain from: 09 Sep 2026 01 to: 11 Sep 2026 01.",
+            "start_datetime": "2026-09-09T01:00:00Z",
+            "end_datetime": "2026-09-11T01:00:00Z",
+            "correlation_id": "20260909-ESP-1160108-MH0600-1-GCDB",
+            "country_codes": [
+              "ESP"
+            ],
+            "hazard_codes": [
+              "FL",
+              "MH0600",
+              "nat-hyd-flo-flo"
+            ],
+            "impacts": [
+              {
+                "impact_id": "gdacs-impact-1104151-1-c-houses-damaged-spain-av-mallorca-alba-1-sol-de-malorca-2",
+                "title": "Flood in Spain",
+                "impact_type": "damaged",
+                "impact_category": "buildings",
+                "impact_value": 29,
+                "impact_unit": "sendai",
+                "estimate_type": "primary"
+              },
+              {
+                "impact_id": "gdacs-impact-1104151-1-a-death-spain-spain-0",
+                "title": "Flood in Spain",
+                "impact_type": "death",
+                "impact_category": "people",
+                "impact_value": 1,
+                "impact_unit": "sendai",
+                "estimate_type": "primary"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "find_related_disaster_events",
+      "arguments": {
+        "event_id": "gdacs-event-1104151-1",
+        "relation_kind": "same_hazard"
+      },
+      "result": {
+        "status": "ok",
+        "rows": [
+          {
+            "event_id": "gdacs-event-1104149-1",
+            "title": "Flood in France",
+            "start_datetime": "2026-09-09T01:00:00Z",
+            "relationship_kind": "same_hazard",
+            "relationship_detail": "MH0600",
+            "similarity": null
+          },
+          {
+            "event_id": "gdacs-event-1104147-3",
+            "title": "Flood in Islamic Republic of Iran",
+            "start_datetime": "2026-09-07T01:00:00Z",
+            "relationship_kind": "same_hazard",
+            "relationship_detail": "MH0600",
+            "similarity": null
+          },
+          {
+            "event_id": "gdacs-event-1104147-2",
+            "title": "Flood in Islamic Republic of Iran",
+            "start_datetime": "2026-09-07T01:00:00Z",
+            "relationship_kind": "same_hazard",
+            "relationship_detail": "MH0600",
+            "similarity": null
+          },
+          {
+            "event_id": "gdacs-event-1104147-1",
+            "title": "Flood in Islamic Republic of Iran",
+            "start_datetime": "2026-09-07T01:00:00Z",
+            "relationship_kind": "same_hazard",
+            "relationship_detail": "MH0600",
+            "similarity": null
+          },
+          {
+            "event_id": "gdacs-event-1104146-1",
+            "title": "Flood in Indonesia",
+            "start_datetime": "2026-09-06T01:00:00Z",
+            "relationship_kind": "same_hazard",
+            "relationship_detail": "MH0600",
+            "similarity": null
+          },
+          {
+            "event_id": "gdacs-event-1104143-2",
+            "title": "Flood in Canada",
+            "start_datetime": "2026-09-02T01:00:00Z",
+            "relationship_kind": "same_hazard",
+            "relationship_detail": "MH0600",
+            "similarity": null
+          }
+        ]
+      }
+    }
+  ],
+  "answer": "**Flood in Spain** (2026-09-09 to 2026-09-11) is the most recent flood event recorded for Spain in the graph.\n\nThe record carries **2 linked impact record(s)**, including **1 recorded death(s)**. Related events sharing the same hazard code (`MH0600`) number 6 in this slice.\n\n*All figures above come from the Montandon graph records shown in the steps, not from the model.*"
+}
