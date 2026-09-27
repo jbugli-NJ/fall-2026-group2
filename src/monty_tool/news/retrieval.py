@@ -4,12 +4,17 @@ import logging
 
 from monty_tool import news_api
 from monty_tool.news.schemas import NewsQuery, NewsSearchResult
+from monty_tool.event_context import EventContext
 
 
 logger = logging.getLogger(__name__)
 
 
-def search_ranked_news(news_query: NewsQuery) -> NewsSearchResult:
+def search_ranked_news(
+    news_query: NewsQuery,
+    *,
+    event_context: EventContext | None = None,
+) -> NewsSearchResult:
     """Fetch up to 20 candidates and return up to five in relevance order.
 
     Search failures propagate to the caller's existing error handling.
