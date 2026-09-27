@@ -39,7 +39,10 @@ def test_tools_fetch_twenty_and_return_five_with_fallback(
     monkeypatch: pytest.MonkeyPatch, tool_kind: str, ranking_fails: bool,
 ) -> None:
     articles = [NewsArticle(
-        source=NewsSource(name="Example source"), title=f"Article {number}",
+        source=NewsSource(name="Example source"), title=(
+         f"Earthquake in Japan {number}"
+        if tool_kind == "event"
+        else f"Article {number}"),
         publishedAt=datetime(2026, 9, 10, tzinfo=timezone.utc),
         url=f"https://example.com/{number}",
     ) for number in range(7)]
@@ -108,7 +111,6 @@ def test_empty_search_and_search_error_remain_distinct(
 
 
 
-
 @pytest.mark.parametrize(
     ("country_code", "hazard_code", "title", "country_match", "hazard_match"),
     [
@@ -155,4 +157,46 @@ def test_assess_article(
     assert evidence.country_match is country_match
     assert evidence.hazard_match is hazard_match
     assert evidence.match_count == int(country_match) + int(hazard_match)
+
+def test_event_news_uses_record_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    titles = [
+        "Global energy demand rises",
+        "Quake reported in Tokyo",
+        "Earthquake in Japan",
+    ]
+    articles = [
+        NewsArticle(
+            source=NewsSource(name="Example source"),
+            title=title,
+            publishedAt=datetime(2026, 9, 10, tzinfo=timezone.utc),
+            url=f"https://example.com/{number}",
+        )
+        for number, title in enumerate(titles)
+    ]
+
+    def fake_search(query: NewsQuery, *, page_size: int) -> NewsSearchResult:
+        return NewsSearchResult(
+            item_id=query.item_id,
+            query=query.query,
+            from_date=query.from_date,
+            to_date=query.to_date,
+            total_results=3,
+            articles=articles,
+        )
+
+    monkeypatch.setattr(news_api, "search_news", fake_search)
+    monkeypatch.setattr(
+        ranking,
+        "rank_news_articles",
+        lambda candidates, reference_text: candidates,
+    )
+
+    result = _execute("event")
+
+    assert [article["title"] for article in result["articles"]] == [
+        "Earthquake in Japan",
+        "Quake reported in Tokyo",
+    ]
 
