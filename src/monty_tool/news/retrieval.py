@@ -29,7 +29,7 @@ def search_ranked_news(
         articles = [
             article
             for article in articles
-            if assess_article(article, event_context).hazard_match
+            if assess_article(article, event_context).strong_match
         ]
     if len(articles) > 1:
         try:

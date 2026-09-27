@@ -175,6 +175,7 @@ def test_event_news_uses_record_evidence(
         )
         for number, title in enumerate(titles)
     ]
+    
 
     def fake_search(query: NewsQuery, *, page_size: int) -> NewsSearchResult:
         return NewsSearchResult(
@@ -196,7 +197,38 @@ def test_event_news_uses_record_evidence(
     result = _execute("event")
 
     assert [article["title"] for article in result["articles"]] == [
-        "Earthquake in Japan",
-        "Quake reported in Tokyo",
-    ]
+    "Earthquake in Japan",]
 
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Bus crash on Fogo Island", True),
+        ("Travel guide to Fogo Island", False),
+    ],
+)
+def test_emdat_place_alone_is_not_enough(
+    title: str, expected: bool,
+) -> None:
+    event = EventContext(
+        item_id="fogo-event",
+        collection="emdat-events",
+        correlation_id="fogo-event",
+        roles=["event"],
+        title="Road in Cabo Verde",
+        description="Road in Fogo Isl., Cabo Verde",
+        keywords=[],
+        country_codes=["CPV"],
+        hazard_codes=["AC"],
+        start_datetime=datetime(2026, 9, 5, tzinfo=timezone.utc),
+        end_datetime=datetime(2026, 9, 5, tzinfo=timezone.utc),
+        geometry_type=None,
+        bbox=(-25.0, 14.0, -22.0, 18.0),
+    )
+    article = NewsArticle(
+        source=NewsSource(name="Example source"),
+        title=title,
+        publishedAt=datetime(2026, 9, 5, tzinfo=timezone.utc),
+        url="https://example.com/article",
+    )
+
+    assert assess_article(article, event).strong_match is expected

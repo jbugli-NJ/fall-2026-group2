@@ -27,11 +27,20 @@ _COUNTRY_ALIASES = {
 class ArticleEvidence:
     country_match: bool
     hazard_match: bool
+    place_match: bool = False
+    incident_match: bool = False
 
     @property
     def match_count(self) -> int:
         return int(self.country_match) + int(self.hazard_match)
 
+    @property
+    def strong_match(self) -> bool:
+        return (
+            self.country_match and self.hazard_match
+        ) or (
+            self.place_match and (self.hazard_match or self.incident_match)
+        )
 
 @lru_cache(maxsize=1)
 def _hazard_labels() -> dict[str, str]:
@@ -52,6 +61,35 @@ def _mentions_any(text: str, terms: set[str]) -> bool:
         if term.strip()
     )
 
+def _record_place(event: EventContext) -> str | None:
+    """Read a specific place when an EMDAT description provides one."""
+    if event.collection != "emdat-events" or not event.description:
+        return None
+
+    match = re.search(
+        r"\bin\s+([^,]+),",
+        event.description,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+
+    place = match.group(1).strip()
+    place = re.sub(r"^Near\s+", "", place, flags=re.IGNORECASE)
+    place = re.sub(r"\s+district\b.*$", "", place, flags=re.IGNORECASE)
+    place = re.sub(r"\s+Isl\.$", "", place, flags=re.IGNORECASE)
+
+    return place if len(place) >= 4 else None
+
+def _incident_terms(event: EventContext) -> set[str]:
+    title = event.title.lower()
+    if re.search(r"\broad\b", title):
+        return {"road accident", "crash", "crashed", "collision", "collided"}
+    if re.search(r"\bexplosion\b", title):
+        return {"explosion", "blast"}
+    if re.search(r"\bflood\b", title):
+        return {"flood", "floods", "flooding"}
+    return set()
 
 def assess_article(
     article: NewsArticle,
@@ -59,6 +97,7 @@ def assess_article(
 ) -> ArticleEvidence:
     """Check article title and description against one disaster record."""
     text = f"{article.title} {article.description or ''}"
+    place = _record_place(event)
 
     country_terms: set[str] = set()
     for code in event.country_codes:
@@ -80,4 +119,6 @@ def assess_article(
     return ArticleEvidence(
         country_match=_mentions_any(text, country_terms),
         hazard_match=_mentions_any(text, hazard_terms),
+        place_match=bool(place and _mentions_any(text, {place})),
+        incident_match=_mentions_any(text, _incident_terms(event)),
     )
