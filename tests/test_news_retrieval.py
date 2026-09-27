@@ -10,6 +10,7 @@ from monty_tool.event_context import EventContext
 from monty_tool.llm.tools import NewsTools, QueryTools
 from monty_tool.news import ranking
 from monty_tool.news.schemas import NewsArticle, NewsQuery, NewsSearchResult, NewsSource
+from monty_tool.news.relevance import assess_article
 
 
 def _execute(tool_kind: str) -> dict:
@@ -104,3 +105,54 @@ def test_empty_search_and_search_error_remain_distinct(
     else:
         assert result["articles"] == []
     rank.assert_not_called()
+
+
+
+
+@pytest.mark.parametrize(
+    ("country_code", "hazard_code", "title", "country_match", "hazard_match"),
+    [
+        ("JPN", "EQ", "Quake strikes Japan", True, True),
+        ("ITA", "FL", "Floods in Italy", True, True),
+        ("USA", "WF", "Wildfire spreads in California", False, True),
+        ("USA", "WF", "U.S. wildfire spreads", True, True),
+        ("JPN", "TS", "Tsunami warning in Japan", True, True),
+        ("JPN", "EQ", "Football tournament in Japan", True, False),
+    ],
+)
+def test_assess_article(
+    country_code: str,
+    hazard_code: str,
+    title: str,
+    country_match: bool,
+    hazard_match: bool,
+) -> None:
+    event = EventContext(
+        item_id="event-1",
+        collection="events",
+        correlation_id="correlation-1",
+        roles=["event"],
+        title="Sample disaster",
+        description=None,
+        keywords=[],
+        country_codes=[country_code],
+        hazard_codes=[hazard_code],
+        start_datetime=datetime(2026, 9, 10, tzinfo=timezone.utc),
+        end_datetime=datetime(2026, 9, 10, tzinfo=timezone.utc),
+        geometry_type=None,
+        bbox=(130.0, 30.0, 140.0, 40.0),
+    )
+    article = NewsArticle(
+        source=NewsSource(name="Example source"),
+        title=title,
+        description=None,
+        publishedAt=datetime(2026, 9, 10, tzinfo=timezone.utc),
+        url="https://example.com/article",
+    )
+
+    evidence = assess_article(article, event)
+
+    assert evidence.country_match is country_match
+    assert evidence.hazard_match is hazard_match
+    assert evidence.match_count == int(country_match) + int(hazard_match)
+
