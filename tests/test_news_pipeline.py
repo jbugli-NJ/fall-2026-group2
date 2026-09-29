@@ -21,6 +21,7 @@ from monty_tool.news.pipeline import NewsCollectionJob
 from monty_tool.news.schemas import NewsQuery, NewsSearchResult
 from monty_tool.news.history import load_recent_snapshots, news_job_key
 from monty_tool.news import runner
+from monty_tool.news import cli
 
 def make_record(
     item_id: str,
@@ -789,3 +790,143 @@ def test_runner_handles_empty_job_list(tmp_path, fake_collection_search):
     assert summary.reused == []
     assert summary.stop_report is None
     fake_collection_search.assert_not_called()
+
+@pytest.fixture
+def cli_environment(monkeypatch, tmp_path, fixed_news_today):
+    load = Mock(return_value=[
+        make_record("cli-event", source_id="cli-source")
+    ])
+    run = Mock(side_effect=AssertionError("Unexpected collection run"))
+    search = Mock(side_effect=AssertionError("Unexpected NewsAPI call"))
+
+    monkeypatch.setattr(cli, "load_collection", load)
+    monkeypatch.setattr(cli, "run_news_collection", run)
+    monkeypatch.setattr(news_api, "search_news", search)
+
+    arguments = [
+        "--collection", "gdacs-events",
+        "--cache-dir", str(tmp_path / "raw"),
+        "--start-date", "2026-09-01",
+        "--end-date", "2026-09-29",
+        "--max-records", "1",
+        "--output-dir", str(tmp_path / "results"),
+        "--state-path", str(tmp_path / "state.sqlite3"),
+    ]
+    return arguments, load, run, search
+
+
+def test_cli_dry_run_does_not_collect_or_write(
+    cli_environment, tmp_path, capsys
+):
+    arguments, load, run, search = cli_environment
+
+    exit_code = cli.main([*arguments, "--dry-run"])
+    plan = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert plan["mode"] == "dry_run"
+    assert plan["planned_jobs"] == 1
+    assert plan["news_api_requests_made"] == 0
+    assert plan["jobs"][0]["item_id"] == "cli-event"
+    assert plan["jobs"][0]["from_date"] == "2026-09-09"
+    assert plan["jobs"][0]["to_date"] == "2026-09-13"
+
+    load.assert_called_once()
+    run.assert_not_called()
+    search.assert_not_called()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_cli_execute_requires_explicit_budget(cli_environment):
+    arguments, load, run, search = cli_environment
+
+    with pytest.raises(SystemExit) as error:
+        cli.main([*arguments, "--execute"])
+
+    assert error.value.code == 2
+    load.assert_not_called()
+    run.assert_not_called()
+    search.assert_not_called()
+
+
+def test_cli_requires_explicit_mode(cli_environment):
+    arguments, load, run, search = cli_environment
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(arguments)
+
+    assert error.value.code == 2
+    load.assert_not_called()
+    run.assert_not_called()
+    search.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "expected_exit"),
+    [
+        ("completed", 0),
+        ("budget_exhausted", 0),
+        ("error", 1),
+    ],
+)
+def test_cli_passes_execution_settings_and_reports_status(
+    cli_environment, tmp_path, capsys, stop_reason, expected_exit
+):
+    arguments, load, run, search = cli_environment
+    run.side_effect = None
+    run.return_value = runner.NewsCollectionRun(stop_reason=stop_reason)
+
+    exit_code = cli.main([
+        *arguments,
+        "--execute",
+        "--request-limit", "2",
+        "--page-size", "50",
+        "--refresh-hours", "12",
+    ])
+
+    assert exit_code == expected_exit
+    run.assert_called_once()
+
+    jobs = run.call_args.args[0]
+    assert len(jobs) == 1
+    assert jobs[0].event.item_id == "cli-event"
+    assert run.call_args.kwargs == {
+        "output_dir": tmp_path / "results",
+        "state_path": tmp_path / "state.sqlite3",
+        "request_limit": 2,
+        "page_size": 50,
+        "refresh_after": timedelta(hours=12),
+    }
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["stop_reason"] == stop_reason
+    search.assert_not_called()
+
+
+def test_cli_rejects_oversized_article_request(cli_environment):
+    arguments, load, run, search = cli_environment
+
+    with pytest.raises(SystemExit) as error:
+        cli.main([*arguments, "--dry-run", "--page-size", "101"])
+
+    assert error.value.code == 2
+    load.assert_not_called()
+    run.assert_not_called()
+    search.assert_not_called()
+
+
+def test_cli_supports_no_geometry_cache(
+    cli_environment, tmp_path, capsys
+):
+    arguments, load, run, search = cli_environment
+
+    assert cli.main([*arguments, "--dry-run", "--no-geometry"]) == 0
+
+    load.assert_called_once_with(
+        "gdacs-events",
+        cache_dir=tmp_path / "raw",
+        geometry=False,
+    )
+    run.assert_not_called()
+    search.assert_not_called()
+    capsys.readouterr()
