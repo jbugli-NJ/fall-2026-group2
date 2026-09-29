@@ -1,12 +1,15 @@
 """Prepare disaster records for scheduled news collection."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import date
 from typing import Any
 
 from monty_tool.api_schemas import MontandonItem
 from monty_tool.event_context import EventContext, build_event_context
+from pydantic import BaseModel
 
+from monty_tool.news.query import build_news_query
+from monty_tool.news.schemas import NewsQuery
 
 def select_disaster_records(
     records: Iterable[dict[str, Any]],
@@ -72,3 +75,51 @@ def select_disaster_records(
         reverse=True,
     )
     return selected[:max_records]
+
+class NewsCollectionJob(BaseModel):
+    """Keep a source event together with its planned news query."""
+
+    event: EventContext
+    query: NewsQuery
+
+
+def prepare_news_jobs(
+    events: Iterable[EventContext],
+    *,
+    days_before: int = 1,
+    days_after: int = 3,
+    query_overrides: Mapping[tuple[str, str], str] | None = None,
+) -> list[NewsCollectionJob]:
+    """Prepare collection jobs without calling NewsAPI."""
+    for name, value in (
+        ("days_before", days_before),
+        ("days_after", days_after),
+    ):
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{name} must be a non-negative integer.")
+
+    overrides = query_overrides if query_overrides is not None else {}
+    jobs: list[NewsCollectionJob] = []
+
+    for event in events:
+        if event.end_datetime < event.start_datetime:
+            raise ValueError(
+                f"Event end precedes its start: {event.item_id!r}."
+            )
+
+        identity = (event.collection, event.item_id)
+        query = build_news_query(
+            event,
+            days_before=days_before,
+            days_after=days_after,
+            search_query=overrides.get(identity),
+        )
+
+        if query.from_date > query.to_date:
+            raise ValueError(
+                f"Invalid news search period for event {event.item_id!r}."
+            )
+
+        jobs.append(NewsCollectionJob(event=event, query=query))
+
+    return jobs

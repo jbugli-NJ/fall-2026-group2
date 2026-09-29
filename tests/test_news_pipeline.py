@@ -6,7 +6,12 @@ from typing import Any
 
 import pytest
 
-from monty_tool.news.pipeline import select_disaster_records
+from monty_tool.event_context import build_event_context
+from monty_tool.news import query as news_query_module
+from monty_tool.news.pipeline import (
+    prepare_news_jobs,
+    select_disaster_records,
+)
 
 
 def make_record(
@@ -154,3 +159,144 @@ def test_reversed_date_range_is_rejected():
 
 def test_empty_input_returns_empty_selection():
     assert select([]) == []
+
+@pytest.fixture
+def fixed_news_today(monkeypatch):
+    """Keep date-dependent tests reproducible."""
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 29)
+
+    monkeypatch.setattr(news_query_module, "date", FixedDate)
+
+
+def test_prepare_jobs_preserves_event_and_builds_query(fixed_news_today):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    original = event.model_dump()
+
+    jobs = prepare_news_jobs([event])
+
+    assert len(jobs) == 1
+    assert jobs[0].event.model_dump() == original
+    assert jobs[0].query.item_id == "event-a"
+    assert jobs[0].query.query == "Earthquake in Japan"
+    assert jobs[0].query.from_date == date(2026, 9, 9)
+    assert jobs[0].query.to_date == date(2026, 9, 13)
+    assert event.model_dump() == original
+
+
+def test_query_override_is_scoped_to_collection_and_id(fixed_news_today):
+    events = [
+        build_event_context(make_record(
+            "same-id", source_id="a", collection="gdacs-events",
+        )),
+        build_event_context(make_record(
+            "same-id", source_id="a", collection="emdat-events",
+        )),
+    ]
+
+    jobs = prepare_news_jobs(
+        events,
+        query_overrides={
+            ("gdacs-events", "same-id"): "Japan AND earthquake",
+        },
+    )
+
+    queries = {
+        job.event.collection: job.query.query
+        for job in jobs
+    }
+    assert queries == {
+        "gdacs-events": "Japan AND earthquake",
+        "emdat-events": "Earthquake in Japan",
+    }
+
+
+@pytest.mark.parametrize(
+    ("days_before", "days_after", "expected_start", "expected_end"),
+    [
+        (0, 0, date(2026, 9, 10), date(2026, 9, 10)),
+        (2, 4, date(2026, 9, 8), date(2026, 9, 14)),
+    ],
+)
+def test_custom_search_window(
+    fixed_news_today,
+    days_before,
+    days_after,
+    expected_start,
+    expected_end,
+):
+    event = build_event_context(make_record("event-a", source_id="a"))
+
+    job = prepare_news_jobs(
+        [event],
+        days_before=days_before,
+        days_after=days_after,
+    )[0]
+
+    assert job.query.from_date == expected_start
+    assert job.query.to_date == expected_end
+
+
+def test_search_end_is_capped_at_today(fixed_news_today):
+    event = build_event_context(
+        make_record("event-a", source_id="a", day=29)
+    )
+
+    job = prepare_news_jobs([event])[0]
+
+    assert job.query.from_date == date(2026, 9, 28)
+    assert job.query.to_date == date(2026, 9, 29)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("days_before", -1),
+        ("days_before", True),
+        ("days_before", 1.5),
+        ("days_after", -1),
+        ("days_after", True),
+        ("days_after", 1.5),
+    ],
+)
+def test_invalid_day_settings_are_rejected(name, value):
+    with pytest.raises(ValueError, match=name):
+        prepare_news_jobs([], **{name: value})
+
+
+@pytest.mark.parametrize("query_text", ["", "   ", "x" * 501])
+def test_invalid_query_override_is_rejected(fixed_news_today, query_text):
+    event = build_event_context(make_record("event-a", source_id="a"))
+
+    with pytest.raises(ValueError, match="Search query"):
+        prepare_news_jobs(
+            [event],
+            query_overrides={
+                ("gdacs-events", "event-a"): query_text,
+            },
+        )
+
+
+def test_reversed_event_dates_are_rejected(fixed_news_today):
+    record = make_record("event-a", source_id="a")
+    record["properties"]["end_datetime"] = "2026-09-09T00:00:00Z"
+    event = build_event_context(record)
+
+    with pytest.raises(ValueError, match="Event end precedes"):
+        prepare_news_jobs([event])
+
+
+def test_invalid_search_period_is_rejected(fixed_news_today):
+    event = build_event_context(
+        make_record("future-event", source_id="a", day=30)
+    )
+
+    with pytest.raises(ValueError, match="Invalid news search period"):
+        prepare_news_jobs([event], days_before=0)
+
+
+def test_prepare_jobs_accepts_empty_input():
+    assert prepare_news_jobs([]) == []
