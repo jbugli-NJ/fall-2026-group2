@@ -5,7 +5,6 @@ import logging
 from monty_tool import news_api
 from monty_tool.news.schemas import NewsQuery, NewsSearchResult
 from monty_tool.event_context import EventContext
-from monty_tool.news.relevance import assess_article
 
 
 logger = logging.getLogger(__name__)
@@ -24,13 +23,6 @@ def search_ranked_news(
     """
     result = news_api.search_news(news_query, page_size=20)
     articles = result.articles
-
-    if event_context is not None:
-        articles = [
-            article
-            for article in articles
-            if assess_article(article, event_context).strong_match
-        ]
     if len(articles) > 1:
         try:
             from monty_tool.news.ranking import rank_news_articles
@@ -41,13 +33,4 @@ def search_ranked_news(
                 "News ranking failed (%s); keeping NewsAPI order.",
                 type(exc).__name__,
             )
-    if event_context is not None:
-        articles = sorted(
-            articles,
-            key=lambda article: assess_article(
-                article, event_context
-            ).country_match,
-            reverse=True,
-        )
-
     return result.model_copy(update={"articles": articles[:5]})

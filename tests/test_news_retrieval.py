@@ -158,7 +158,7 @@ def test_assess_article(
     assert evidence.hazard_match is hazard_match
     assert evidence.match_count == int(country_match) + int(hazard_match)
 
-def test_event_news_uses_record_evidence(
+def test_event_news_preserves_candidates_and_rank_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     titles = [
@@ -188,16 +188,25 @@ def test_event_news_uses_record_evidence(
         )
 
     monkeypatch.setattr(news_api, "search_news", fake_search)
-    monkeypatch.setattr(
-        ranking,
-        "rank_news_articles",
-        lambda candidates, reference_text: candidates,
-    )
+    rank = Mock(return_value=[
+        articles[1],  # Quake reported in Tokyo
+        articles[2],  # Earthquake in Japan
+        articles[0],  # Global energy demand rises
+    ])
+    monkeypatch.setattr(ranking, "rank_news_articles", rank)
 
     result = _execute("event")
 
+    rank.assert_called_once_with(
+        articles,
+        reference_text="earthquake Japan",
+    )
+
     assert [article["title"] for article in result["articles"]] == [
-    "Earthquake in Japan",]
+        "Quake reported in Tokyo",
+        "Earthquake in Japan",
+        "Global energy demand rises",
+    ]
 
 @pytest.mark.parametrize(
     ("title", "expected"),
