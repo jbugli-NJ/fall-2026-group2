@@ -13,6 +13,17 @@ from monty_tool.news.pipeline import (
     select_disaster_records,
 )
 
+import json
+from unittest.mock import Mock
+
+from requests.exceptions import Timeout
+
+from monty_tool import news_api
+from monty_tool.news import collector
+from monty_tool.news.budget import reserve_news_request
+from monty_tool.news.pipeline import NewsCollectionJob
+from monty_tool.news.schemas import NewsQuery, NewsSearchResult
+
 
 def make_record(
     item_id: str,
@@ -300,3 +311,169 @@ def test_invalid_search_period_is_rejected(fixed_news_today):
 
 def test_prepare_jobs_accepts_empty_input():
     assert prepare_news_jobs([]) == []
+
+@pytest.fixture
+def collection_job():
+    event = build_event_context(
+        make_record("test-event", source_id="test-source")
+    )
+    return NewsCollectionJob(
+        event=event,
+        query=NewsQuery(
+            item_id=event.item_id,
+            query="earthquake Japan",
+            from_date=date(2026, 9, 9),
+            to_date=date(2026, 9, 13),
+        ),
+    )
+
+
+def make_search_result(job, article_count):
+    return NewsSearchResult(
+        **job.query.model_dump(),
+        total_results=250 if article_count else 0,
+        articles=[
+            {
+                "source": {"name": "Test News"},
+                "title": f"Earthquake report {index}",
+                "description": f"Test description {index}",
+                "publishedAt": "2026-09-10T12:00:00Z",
+                "url": f"https://example.com/articles/{index}",
+            }
+            for index in range(article_count)
+        ],
+    )
+
+
+@pytest.mark.parametrize("article_count", [0, 100])
+def test_collection_preserves_complete_result(
+    monkeypatch, tmp_path, collection_job, article_count
+):
+    result = make_search_result(collection_job, article_count)
+    search = Mock(return_value=result)
+    monkeypatch.setattr(news_api, "search_news", search)
+
+    output = collector.collect_news_job(
+        collection_job,
+        output_dir=tmp_path / "results",
+        state_path=tmp_path / "state.sqlite3",
+        request_limit=1,
+    )
+    report = json.loads(output.read_text(encoding="utf-8"))
+
+    search.assert_called_once_with(
+        collection_job.query,
+        page_size=100,
+        language="en",
+        sort_by="relevancy",
+    )
+    assert report["status"] == ("ok" if article_count else "empty")
+    assert report["request_attempted"] is True
+    assert report["job"] == collection_job.model_dump(mode="json")
+    assert report["result"] == result.model_dump(mode="json")
+    assert len(report["result"]["articles"]) == article_count
+    assert report["error"] is None
+    assert not list(output.parent.glob("*.tmp"))
+
+
+def test_collection_blocks_requests_when_budget_is_used(
+    monkeypatch, tmp_path, collection_job
+):
+    search = Mock(return_value=make_search_result(collection_job, 1))
+    monkeypatch.setattr(news_api, "search_news", search)
+    settings = {
+        "output_dir": tmp_path / "results",
+        "state_path": tmp_path / "state.sqlite3",
+        "request_limit": 1,
+    }
+
+    first = collector.collect_news_job(collection_job, **settings)
+    first_contents = first.read_text(encoding="utf-8")
+    second = collector.collect_news_job(collection_job, **settings)
+    report = json.loads(second.read_text(encoding="utf-8"))
+
+    assert first != second
+    assert first.read_text(encoding="utf-8") == first_contents
+    assert len(list((tmp_path / "results").glob("*.json"))) == 2
+    assert search.call_count == 1
+    assert report["status"] == "budget_exhausted"
+    assert report["request_attempted"] is False
+    assert report["result"] is None
+
+
+@pytest.mark.parametrize("error_type", [Timeout, RuntimeError, ValueError])
+def test_collection_records_search_failure_without_refunding_budget(
+    monkeypatch, tmp_path, collection_job, error_type
+):
+    search = Mock(side_effect=error_type("sensitive-test-message"))
+    monkeypatch.setattr(news_api, "search_news", search)
+    settings = {
+        "output_dir": tmp_path / "results",
+        "state_path": tmp_path / "state.sqlite3",
+        "request_limit": 1,
+    }
+
+    output = collector.collect_news_job(collection_job, **settings)
+    contents = output.read_text(encoding="utf-8")
+    report = json.loads(contents)
+
+    assert report["status"] == "error"
+    assert report["request_attempted"] is True
+    assert report["result"] is None
+    assert report["error"] == {"type": error_type.__name__}
+    assert "sensitive-test-message" not in contents
+
+    second = collector.collect_news_job(collection_job, **settings)
+    second_report = json.loads(second.read_text(encoding="utf-8"))
+
+    assert second_report["status"] == "budget_exhausted"
+    assert search.call_count == 1
+
+
+def test_collection_propagates_storage_failure(
+    monkeypatch, tmp_path, collection_job
+):
+    search = Mock(return_value=make_search_result(collection_job, 1))
+    monkeypatch.setattr(news_api, "search_news", search)
+    monkeypatch.setattr(
+        collector.os,
+        "fsync",
+        Mock(side_effect=OSError("Simulated storage failure")),
+    )
+    output_dir = tmp_path / "results"
+    state_path = tmp_path / "state.sqlite3"
+
+    with pytest.raises(OSError, match="Simulated storage failure"):
+        collector.collect_news_job(
+            collection_job,
+            output_dir=output_dir,
+            state_path=state_path,
+            request_limit=1,
+        )
+
+    search.assert_called_once()
+    assert not list(output_dir.glob("*.json"))
+    assert not list(output_dir.glob("*.tmp"))
+    assert reserve_news_request(state_path, request_limit=1) is False
+
+
+@pytest.mark.parametrize("page_size", [0, 101, -1, True, 1.5])
+def test_collection_rejects_invalid_page_size_before_request(
+    monkeypatch, tmp_path, collection_job, page_size
+):
+    search = Mock()
+    reserve = Mock()
+    monkeypatch.setattr(news_api, "search_news", search)
+    monkeypatch.setattr(collector, "reserve_news_request", reserve)
+
+    with pytest.raises(ValueError, match="page_size"):
+        collector.collect_news_job(
+            collection_job,
+            output_dir=tmp_path / "results",
+            state_path=tmp_path / "state.sqlite3",
+            request_limit=1,
+            page_size=page_size,
+        )
+
+    search.assert_not_called()
+    reserve.assert_not_called()
