@@ -12,7 +12,6 @@ from monty_tool.news.pipeline import (prepare_news_jobs, select_disaster_records
 
 import json
 from unittest.mock import Mock
-
 from requests.exceptions import Timeout
 
 from monty_tool import news_api
@@ -21,7 +20,7 @@ from monty_tool.news.budget import reserve_news_request
 from monty_tool.news.pipeline import NewsCollectionJob
 from monty_tool.news.schemas import NewsQuery, NewsSearchResult
 from monty_tool.news.history import load_recent_snapshots, news_job_key
-
+from monty_tool.news import runner
 
 def make_record(
     item_id: str,
@@ -619,3 +618,174 @@ def test_history_reports_invalid_json(tmp_path, history_now):
 
     with pytest.raises(ValueError, match="Invalid news snapshot"):
         load_recent_snapshots(tmp_path, now=history_now)
+
+@pytest.fixture
+def fake_collection_search(monkeypatch):
+    def respond(query, **kwargs):
+        return NewsSearchResult(
+            **query.model_dump(),
+            total_results=0,
+            articles=[],
+        )
+
+    search = Mock(side_effect=respond)
+    monkeypatch.setattr(news_api, "search_news", search)
+    return search
+
+
+def make_runner_jobs(job, count):
+    """Create distinct search jobs from one test event."""
+    jobs = []
+    for index in range(count):
+        copied = job.model_copy(deep=True)
+        copied.query.query = f"earthquake Japan report {index}"
+        jobs.append(copied)
+    return jobs
+
+
+def test_runner_reuses_results_across_runs(
+    tmp_path, collection_job, fake_collection_search
+):
+    settings = {
+        "output_dir": tmp_path / "results",
+        "state_path": tmp_path / "state.sqlite3",
+        "request_limit": 1,
+    }
+
+    first = runner.run_news_collection([collection_job], **settings)
+    second = runner.run_news_collection([collection_job], **settings)
+
+    assert first.stop_reason == "completed"
+    assert len(first.collected) == 1
+    assert first.reused == []
+    assert second.stop_reason == "completed"
+    assert second.collected == []
+    assert second.reused == first.collected
+    assert fake_collection_search.call_count == 1
+
+
+def test_runner_skips_duplicates_within_one_run(
+    tmp_path, collection_job, fake_collection_search
+):
+    summary = runner.run_news_collection(
+        [collection_job, collection_job],
+        output_dir=tmp_path / "results",
+        state_path=tmp_path / "state.sqlite3",
+        request_limit=1,
+    )
+
+    assert summary.stop_reason == "completed"
+    assert len(summary.collected) == 1
+    assert summary.reused == summary.collected
+    assert fake_collection_search.call_count == 1
+
+
+def test_runner_stops_at_shared_budget(
+    tmp_path, collection_job, fake_collection_search
+):
+    jobs = make_runner_jobs(collection_job, 3)
+
+    summary = runner.run_news_collection(
+        jobs,
+        output_dir=tmp_path / "results",
+        state_path=tmp_path / "state.sqlite3",
+        request_limit=1,
+    )
+
+    assert summary.stop_reason == "budget_exhausted"
+    assert len(summary.collected) == 1
+    assert summary.stop_report is not None
+    assert fake_collection_search.call_count == 1
+
+    report = json.loads(
+        summary.stop_report.read_text(encoding="utf-8")
+    )
+    assert report["job"]["query"]["query"] == jobs[1].query.query
+    assert report["request_attempted"] is False
+    assert len(list((tmp_path / "results").glob("news-*.json"))) == 2
+
+
+@pytest.mark.parametrize("error_type", [Timeout, RuntimeError])
+def test_runner_stops_on_search_error(
+    tmp_path, collection_job, fake_collection_search, error_type
+):
+    jobs = make_runner_jobs(collection_job, 3)
+    fake_collection_search.side_effect = error_type("Test failure")
+
+    summary = runner.run_news_collection(
+        jobs,
+        output_dir=tmp_path / "results",
+        state_path=tmp_path / "state.sqlite3",
+        request_limit=3,
+    )
+
+    assert summary.stop_reason == "error"
+    assert summary.collected == []
+    assert summary.stop_report is not None
+    assert fake_collection_search.call_count == 1
+
+    report = json.loads(
+        summary.stop_report.read_text(encoding="utf-8")
+    )
+    assert report["status"] == "error"
+    assert report["error"] == {"type": error_type.__name__}
+
+
+def test_runner_refreshes_expired_snapshot(
+    tmp_path, collection_job, fake_collection_search
+):
+    output_dir = tmp_path / "results"
+    output_dir.mkdir()
+    old_path = write_history_snapshot(
+        output_dir / "news-old.json",
+        collection_job,
+        status="empty",
+        finished_at=datetime.now(timezone.utc) - timedelta(hours=25),
+    )
+
+    summary = runner.run_news_collection(
+        [collection_job],
+        output_dir=output_dir,
+        state_path=tmp_path / "state.sqlite3",
+        request_limit=1,
+    )
+
+    assert summary.stop_reason == "completed"
+    assert len(summary.collected) == 1
+    assert summary.reused == []
+    assert fake_collection_search.call_count == 1
+    assert old_path.exists()
+    assert summary.collected[0] != old_path
+
+
+def test_runner_propagates_storage_failure(
+    monkeypatch, tmp_path, collection_job, fake_collection_search
+):
+    collect = Mock(side_effect=OSError("Test storage failure"))
+    monkeypatch.setattr(runner, "collect_news_job", collect)
+
+    with pytest.raises(OSError, match="Test storage failure"):
+        runner.run_news_collection(
+            make_runner_jobs(collection_job, 3),
+            output_dir=tmp_path / "results",
+            state_path=tmp_path / "state.sqlite3",
+            request_limit=3,
+        )
+
+    assert collect.call_count == 1
+    fake_collection_search.assert_not_called()
+
+
+def test_runner_handles_empty_job_list(tmp_path, fake_collection_search):
+    summary = runner.run_news_collection(
+        [],
+        output_dir=tmp_path / "results",
+        state_path=tmp_path / "state.sqlite3",
+        request_limit=1,
+    )
+
+    assert summary.stop_reason == "completed"
+    assert summary.collected == []
+    assert summary.reused == []
+    assert summary.stop_report is None
+    fake_collection_search.assert_not_called()
