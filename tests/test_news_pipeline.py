@@ -18,7 +18,7 @@ from monty_tool import news_api
 from monty_tool.news import collector
 from monty_tool.news.budget import reserve_news_request
 from monty_tool.news.pipeline import NewsCollectionJob
-from monty_tool.news.schemas import NewsQuery, NewsSearchResult
+from monty_tool.news.schemas import NewsArticle, NewsQuery, NewsSearchResult
 from monty_tool.news.history import load_recent_snapshots, news_job_key
 from monty_tool.news import runner
 from monty_tool.news import cli
@@ -326,18 +326,21 @@ def collection_job():
     )
 
 
-def make_search_result(job, article_count):
+def make_search_result(
+    job: NewsCollectionJob,
+    article_count: int,
+) -> NewsSearchResult:
     return NewsSearchResult(
         **job.query.model_dump(),
         total_results=250 if article_count else 0,
         articles=[
-            {
+            NewsArticle.model_validate({
                 "source": {"name": "Test News"},
                 "title": f"Earthquake report {index}",
                 "description": f"Test description {index}",
                 "publishedAt": "2026-09-10T12:00:00Z",
                 "url": f"https://example.com/articles/{index}",
-            }
+            })
             for index in range(article_count)
         ],
     )
