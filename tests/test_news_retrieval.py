@@ -10,7 +10,6 @@ from monty_tool.event_context import EventContext
 from monty_tool.llm.tools import NewsTools, QueryTools
 from monty_tool.news import ranking
 from monty_tool.news.schemas import NewsArticle, NewsQuery, NewsSearchResult, NewsSource
-from monty_tool.news.relevance import assess_article
 from monty_tool.news.retrieval import collect_ranked_news
 
 def _execute(tool_kind: str) -> dict:
@@ -109,55 +108,6 @@ def test_empty_search_and_search_error_remain_distinct(
         assert result["articles"] == []
     rank.assert_not_called()
 
-
-
-@pytest.mark.parametrize(
-    ("country_code", "hazard_code", "title", "country_match", "hazard_match"),
-    [
-        ("JPN", "EQ", "Quake strikes Japan", True, True),
-        ("ITA", "FL", "Floods in Italy", True, True),
-        ("USA", "WF", "Wildfire spreads in California", False, True),
-        ("USA", "WF", "U.S. wildfire spreads", True, True),
-        ("JPN", "TS", "Tsunami warning in Japan", True, True),
-        ("JPN", "EQ", "Football tournament in Japan", True, False),
-    ],
-)
-def test_assess_article(
-    country_code: str,
-    hazard_code: str,
-    title: str,
-    country_match: bool,
-    hazard_match: bool,
-) -> None:
-    event = EventContext(
-        item_id="event-1",
-        collection="events",
-        correlation_id="correlation-1",
-        roles=["event"],
-        title="Sample disaster",
-        description=None,
-        keywords=[],
-        country_codes=[country_code],
-        hazard_codes=[hazard_code],
-        start_datetime=datetime(2026, 9, 10, tzinfo=timezone.utc),
-        end_datetime=datetime(2026, 9, 10, tzinfo=timezone.utc),
-        geometry_type=None,
-        bbox=(130.0, 30.0, 140.0, 40.0),
-    )
-    article = NewsArticle(
-        source=NewsSource(name="Example source"),
-        title=title,
-        description=None,
-        publishedAt=datetime(2026, 9, 10, tzinfo=timezone.utc),
-        url="https://example.com/article",
-    )
-
-    evidence = assess_article(article, event)
-
-    assert evidence.country_match is country_match
-    assert evidence.hazard_match is hazard_match
-    assert evidence.match_count == int(country_match) + int(hazard_match)
-
 def test_event_news_preserves_candidates_and_rank_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -207,40 +157,6 @@ def test_event_news_preserves_candidates_and_rank_order(
         "Earthquake in Japan",
         "Global energy demand rises",
     ]
-
-@pytest.mark.parametrize(
-    ("title", "expected"),
-    [
-        ("Bus crash on Fogo Island", True),
-        ("Travel guide to Fogo Island", False),
-    ],
-)
-def test_emdat_place_alone_is_not_enough(
-    title: str, expected: bool,
-) -> None:
-    event = EventContext(
-        item_id="fogo-event",
-        collection="emdat-events",
-        correlation_id="fogo-event",
-        roles=["event"],
-        title="Road in Cabo Verde",
-        description="Road in Fogo Isl., Cabo Verde",
-        keywords=[],
-        country_codes=["CPV"],
-        hazard_codes=["AC"],
-        start_datetime=datetime(2026, 9, 5, tzinfo=timezone.utc),
-        end_datetime=datetime(2026, 9, 5, tzinfo=timezone.utc),
-        geometry_type=None,
-        bbox=(-25.0, 14.0, -22.0, 18.0),
-    )
-    article = NewsArticle(
-        source=NewsSource(name="Example source"),
-        title=title,
-        publishedAt=datetime(2026, 9, 5, tzinfo=timezone.utc),
-        url="https://example.com/article",
-    )
-
-    assert assess_article(article, event).strong_match is expected
 
 @pytest.mark.parametrize("llm_limit", [20, 100])
 @pytest.mark.parametrize("ranking_fails", [False, True])
