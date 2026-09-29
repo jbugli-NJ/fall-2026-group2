@@ -1,17 +1,14 @@
 """Offline tests for disaster selection in the news pipeline."""
 
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import pytest
 
 from monty_tool.event_context import build_event_context
 from monty_tool.news import query as news_query_module
-from monty_tool.news.pipeline import (
-    prepare_news_jobs,
-    select_disaster_records,
-)
+from monty_tool.news.pipeline import (prepare_news_jobs, select_disaster_records,)
 
 import json
 from unittest.mock import Mock
@@ -23,6 +20,7 @@ from monty_tool.news import collector
 from monty_tool.news.budget import reserve_news_request
 from monty_tool.news.pipeline import NewsCollectionJob
 from monty_tool.news.schemas import NewsQuery, NewsSearchResult
+from monty_tool.news.history import load_recent_snapshots, news_job_key
 
 
 def make_record(
@@ -477,3 +475,147 @@ def test_collection_rejects_invalid_page_size_before_request(
 
     search.assert_not_called()
     reserve.assert_not_called()
+
+@pytest.fixture
+def history_now():
+    return datetime(2026, 9, 29, 12, tzinfo=timezone.utc)
+
+
+def write_history_snapshot(path, job, *, status, finished_at):
+    """Write a synthetic collection report without calling NewsAPI."""
+    result = None
+    if status in {"ok", "empty"}:
+        result = make_search_result(
+            job,
+            1 if status == "ok" else 0,
+        ).model_dump(mode="json")
+
+    report = {
+        "schema_version": 1,
+        "job": job.model_dump(mode="json"),
+        "search_parameters": {
+            "page_size": 100,
+            "language": "en",
+            "sort_by": "relevancy",
+            "page": 1,
+        },
+        "started_at": finished_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "request_attempted": status != "budget_exhausted",
+        "status": status,
+        "result": result,
+        "error": {"type": "Timeout"} if status == "error" else None,
+    }
+    path.write_text(json.dumps(report), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    "changed_field",
+    ["query", "from_date", "to_date", "collection", "page_size"],
+)
+def test_history_key_distinguishes_search_settings(
+    collection_job, changed_field
+):
+    original = news_job_key(collection_job)
+    changed = collection_job.model_copy(deep=True)
+    page_size = 100
+
+    if changed_field == "query":
+        changed.query.query = "earthquake Tokyo"
+    elif changed_field == "from_date":
+        changed.query.from_date -= timedelta(days=1)
+    elif changed_field == "to_date":
+        changed.query.to_date += timedelta(days=1)
+    elif changed_field == "collection":
+        changed.event.collection = "emdat-events"
+    else:
+        page_size = 20
+
+    assert news_job_key(changed, page_size=page_size) != original
+    assert news_job_key(collection_job) == original
+
+
+@pytest.mark.parametrize(
+    ("status", "reusable"),
+    [
+        ("ok", True),
+        ("empty", True),
+        ("error", False),
+        ("budget_exhausted", False),
+    ],
+)
+def test_history_reuses_only_successful_searches(
+    tmp_path, collection_job, history_now, status, reusable
+):
+    path = write_history_snapshot(
+        tmp_path / "news-status.json",
+        collection_job,
+        status=status,
+        finished_at=history_now - timedelta(hours=1),
+    )
+
+    recent = load_recent_snapshots(tmp_path, now=history_now)
+
+    expected = {news_job_key(collection_job): path} if reusable else {}
+    assert recent == expected
+    assert path.exists()
+
+
+@pytest.mark.parametrize(
+    ("age_hours", "reusable"),
+    [(23, True), (24, False), (25, False)],
+)
+def test_history_expires_without_deleting_snapshots(
+    tmp_path, collection_job, history_now, age_hours, reusable
+):
+    path = write_history_snapshot(
+        tmp_path / "news-age.json",
+        collection_job,
+        status="ok",
+        finished_at=history_now - timedelta(hours=age_hours),
+    )
+
+    recent = load_recent_snapshots(tmp_path, now=history_now)
+
+    assert (news_job_key(collection_job) in recent) is reusable
+    assert path.exists()
+
+
+def test_history_selects_newest_successful_snapshot(
+    tmp_path, collection_job, history_now
+):
+    newest = write_history_snapshot(
+        tmp_path / "news-a-newest.json",
+        collection_job,
+        status="ok",
+        finished_at=history_now - timedelta(hours=1),
+    )
+    older = write_history_snapshot(
+        tmp_path / "news-z-older.json",
+        collection_job,
+        status="ok",
+        finished_at=history_now - timedelta(hours=3),
+    )
+
+    recent = load_recent_snapshots(tmp_path, now=history_now)
+
+    assert recent == {news_job_key(collection_job): newest}
+    assert older.exists()
+
+
+def test_history_handles_missing_output_directory(tmp_path, history_now):
+    recent = load_recent_snapshots(
+        tmp_path / "not-created",
+        now=history_now,
+    )
+
+    assert recent == {}
+
+
+def test_history_reports_invalid_json(tmp_path, history_now):
+    path = tmp_path / "news-broken.json"
+    path.write_text("{invalid json", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid news snapshot"):
+        load_recent_snapshots(tmp_path, now=history_now)
