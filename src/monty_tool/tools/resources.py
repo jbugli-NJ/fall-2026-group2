@@ -21,12 +21,14 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Bucket resources
 
-RAW_BUCKET_PREFIX = 'raw/'
-GO_BUCKET_PREFIX = 'go/'
+BUCKET_DATA_PREFIX = 'aidan.carlisle@gwu.edu/'
 
-MONTANDON_NODE_DATA_BUCKET_PREFIX = 'node_data/montandon/'
-GO_EVENT_NODE_DATA_BUCKET_PREFIX = 'node_data/go_event/'
-GO_APPEAL_NODE_DATA_BUCKET_PREFIX = 'node_data/go_appeal/'
+RAW_BUCKET_PREFIX = BUCKET_DATA_PREFIX + 'raw/'
+GO_BUCKET_PREFIX = BUCKET_DATA_PREFIX + 'go/'
+
+MONTANDON_NODE_DATA_BUCKET_PREFIX = BUCKET_DATA_PREFIX + 'node_data/montandon/'
+GO_EVENT_NODE_DATA_BUCKET_PREFIX = BUCKET_DATA_PREFIX + 'node_data/go_event/'
+GO_APPEAL_NODE_DATA_BUCKET_PREFIX = BUCKET_DATA_PREFIX + 'node_data/go_appeal/'
 
 GO_EVENT_BUCKET_KEY = GO_BUCKET_PREFIX + 'event.jsonl.gz'
 GO_APPEAL_BUCKET_KEY = GO_BUCKET_PREFIX + 'appeal.jsonl.gz'
