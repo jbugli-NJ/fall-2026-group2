@@ -19,6 +19,26 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
 
+# Bucket resources
+
+RAW_BUCKET_PREFIX = 'raw/'
+GO_BUCKET_PREFIX = 'go/'
+
+MONTANDON_NODE_DATA_BUCKET_PREFIX = 'node_data/montandon/'
+GO_EVENT_NODE_DATA_BUCKET_PREFIX = 'node_data/go_event/'
+GO_APPEAL_NODE_DATA_BUCKET_PREFIX = 'node_data/go_appeal/'
+
+GO_EVENT_BUCKET_KEY = GO_BUCKET_PREFIX + 'event.jsonl.gz'
+GO_APPEAL_BUCKET_KEY = GO_BUCKET_PREFIX + 'appeal.jsonl.gz'
+
+GO_EVENT_NODE_DATA_BUCKET_KEY = (
+    GO_EVENT_NODE_DATA_BUCKET_PREFIX + 'event.jsonl.gz'
+)
+GO_APPEAL_NODE_DATA_BUCKET_KEY = (
+    GO_APPEAL_NODE_DATA_BUCKET_PREFIX + 'appeal.jsonl.gz'
+)
+
+
 # Environment helpers
 
 def get_env_bucket_name() -> str:
