@@ -5,8 +5,11 @@ Insert Montandon records into a local Neo4j instance.
 # Imports
 
 from datetime import datetime, timezone
+from itertools import batched
 from pathlib import Path
+from typing import LiteralString, cast
 
+from neo4j import Query
 from pydantic import ValidationError
 from sentence_transformers import SentenceTransformer
 
@@ -17,7 +20,15 @@ from monty_tool.network.node_data import (
     go_events_to_node_data,
     montandon_items_to_node_data,
 )
-from monty_tool.network.resources import get_graph_db_driver
+from monty_tool.network.resources import (
+    MONTANDON_DESCRIPTION_VECTOR_INDEX,
+    MONTANDON_IMPACT_VECTOR_INDEX,
+    MONTANDON_KEYWORDS_VECTOR_INDEX,
+    NETWORK_INSERT_BATCH_SIZE,
+    SIMILARITY_NEIGHBOR_LIMIT,
+    SIMILARITY_THRESHOLD,
+    get_graph_db_driver,
+)
 from monty_tool.network.schemas import (
     GOAppealNodeData,
     GOEventNodeData,
@@ -25,182 +36,157 @@ from monty_tool.network.schemas import (
 )
 
 
-# Constants
+# Montandon insertion helpers
 
-_MINIMUM_SIMILARITY = 0.95
-
-# NOTE: Returns item pairs that need relationships calculated
-_BATCH_PAIR_MATCH = """
-UNWIND $items AS item
-MATCH (item_node:MontandonItem {id: item.id})
-MATCH (other:MontandonItem)
-WHERE item_node.id <> other.id
-WITH CASE WHEN item_node.id < other.id THEN item_node ELSE other END AS source,
-     CASE WHEN item_node.id < other.id THEN other ELSE item_node END AS target
-WITH DISTINCT source, target
-"""
-
-
-# Insertion helper
-
-def insert_montandon_records_into_graph_db(
-    node_data: list[MontandonItemNodeData],
-    ):
+def insert_montandon_nodes(driver, node_data: list[MontandonItemNodeData]):
     """
-    Insert Montandon records as nodes and build node relationships.
+    Insert one bounded batch of Montandon nodes and apply their labels.
+    """
+    driver.execute_query(
+        """
+        UNWIND $items AS item
+        MERGE (node:MontandonItem {id: item.id})
+        SET node += item
+        """,
+        items=node_data,
+        database_='neo4j',
+    )
+    driver.execute_query(
+        """
+        UNWIND $items AS item
+        WITH item
+        WHERE 'event' IN item.roles
+        MATCH (node:MontandonItem {id: item.id})
+        SET node:Event
+        """,
+        items=node_data,
+        database_='neo4j',
+    )
+    driver.execute_query(
+        """
+        UNWIND $items AS item
+        WITH item
+        WHERE 'impact' IN item.roles
+        MATCH (node:MontandonItem {id: item.id})
+        SET node:Impact
+        """,
+        items=node_data,
+        database_='neo4j',
+    )
+
+
+def create_montandon_deterministic_relationships():
+    """
+    Create links derived from record metadata without pairwise matching.
     """
     with get_graph_db_driver() as driver:
-        # Insert the record nodes and their properties
         driver.execute_query(
             """
-            UNWIND $items AS item
-            MERGE (node:MontandonItem {id: item.id})
-            SET node += item
-            """,
-            items=node_data,
-            database_='neo4j',
-        )
-
-        # Apply labels from the source record roles
-        driver.execute_query(
-            """
-            UNWIND $items AS item
-            WITH item
-            WHERE 'event' IN item.roles
-            MATCH (node:MontandonItem {id: item.id})
-            SET node:Event
-            """,
-            items=node_data,
-            database_='neo4j',
-        )
-        driver.execute_query(
-            """
-            UNWIND $items AS item
-            WITH item
-            WHERE 'impact' IN item.roles
-            MATCH (node:MontandonItem {id: item.id})
-            SET node:Impact
-            """,
-            items=node_data,
-            database_='neo4j',
-        )
-        # Remove every existing relationship for records if present
-        driver.execute_query(
-            """
-            UNWIND $items AS item
-            MATCH (node:MontandonItem {id: item.id})
-            MATCH (node)-[relation]-()
-            WITH DISTINCT relation
-            DELETE relation
-            """,
-            items=node_data,
-            database_='neo4j',
-        )
-        # Connect each impact to the event it measures
-        driver.execute_query(
-            """
-            UNWIND $items AS item
-            MATCH (impact:Impact {id: item.id})
+            MATCH (impact:Impact)
             MATCH (event:Event {corr_id: impact.corr_id})
             MERGE (impact)-[:IMPACT_OF]->(event)
             """,
-            items=node_data,
             database_='neo4j',
         )
-        # Connect records using the various computed embeddings
-        driver.execute_query(
-            _BATCH_PAIR_MATCH + """
-            WHERE source.corr_id <> target.corr_id
-            WITH source, target,
-                 vector.similarity.cosine(
-                     source.description_embedding,
-                     target.description_embedding
-                 ) AS similarity
-            WHERE similarity >= $minimum_similarity
-            MERGE (source)-[relation:SIMILAR_TO]->(target)
-            SET relation.similarity = similarity
-            """,
-            items=node_data,
-            minimum_similarity=_MINIMUM_SIMILARITY,
-            database_='neo4j',
-        )
-        driver.execute_query(
-            _BATCH_PAIR_MATCH + """
-            WHERE source.corr_id <> target.corr_id
-              AND source.keywords_embedding IS NOT NULL
-              AND target.keywords_embedding IS NOT NULL
-            WITH source, target,
-                 vector.similarity.cosine(
-                     source.keywords_embedding,
-                     target.keywords_embedding
-                 ) AS similarity
-            WHERE similarity >= $minimum_similarity
-            MERGE (source)-[relation:SIMILAR_KEYWORDS]->(target)
-            SET relation.similarity = similarity
-            """,
-            items=node_data,
-            minimum_similarity=_MINIMUM_SIMILARITY,
-            database_='neo4j',
-        )
-        driver.execute_query(
-            _BATCH_PAIR_MATCH + """
-            WHERE source.corr_id <> target.corr_id
-              AND source.impact_severity_embedding IS NOT NULL
-              AND target.impact_severity_embedding IS NOT NULL
-            WITH source, target,
-                 vector.similarity.cosine(
-                     source.impact_severity_embedding,
-                     target.impact_severity_embedding
-                 ) AS similarity
-            WHERE similarity >= $minimum_similarity
-            MERGE (source)-[relation:SIMILAR_IMPACT]->(target)
-            SET relation.similarity = similarity
-            """,
-            items=node_data,
-            minimum_similarity=_MINIMUM_SIMILARITY,
-            database_='neo4j',
-        )
-        # Connect events to their countries
         driver.execute_query(
             """
-            UNWIND $items AS item
-            MATCH (event:Event {id: item.id})
+            MATCH (event:Event)
             UNWIND event.country_codes AS code
             MERGE (country:Country {code: code})
             MERGE (event)-[:IN_COUNTRY]->(country)
             """,
-            items=node_data,
             database_='neo4j',
         )
-        # Connect events to their hazards
         driver.execute_query(
             """
-            UNWIND $items AS item
-            MATCH (event:Event {id: item.id})
+            MATCH (event:Event)
             UNWIND event.hazard_codes AS code
             MERGE (hazard:Hazard {code: code})
             MERGE (event)-[:HAS_HAZARD]->(hazard)
             """,
-            items=node_data,
             database_='neo4j',
         )
-        # Connect distinct events with the same start date
         driver.execute_query(
             """
-            UNWIND $items AS item
-            MATCH (item_node:Event {id: item.id})
-            MATCH (other:Event)
-            WHERE item_node.id <> other.id
-            WITH CASE WHEN item_node.id < other.id THEN item_node ELSE other END AS source,
-                 CASE WHEN item_node.id < other.id THEN other ELSE item_node END AS target
-            WITH DISTINCT source, target
-            WHERE source.corr_id <> target.corr_id
-              AND date(source.start_datetime) = date(target.start_datetime)
-            MERGE (source)-[relation:SAME_DAY_START]->(target)
+            MATCH (event:Event)
+            MERGE (day:EventDay {date: date(event.start_datetime)})
+            MERGE (event)-[:STARTED_ON]->(day)
             """,
-            items=node_data,
             database_='neo4j',
         )
+
+
+def _similarity_query(
+    index_name: str,
+    embedding_property: str,
+    relationship_type: str,
+    ) -> Query:
+    """
+    Build a bounded vector-neighbor relationship query.
+    """
+    return Query(
+        cast(
+            LiteralString,
+            f"""
+            UNWIND $item_ids AS item_id
+            MATCH (source:MontandonItem {{id: item_id}})
+            WHERE source.`{embedding_property}` IS NOT NULL
+            MATCH (target:MontandonItem)
+            SEARCH target IN (
+                VECTOR INDEX {index_name}
+                FOR source.`{embedding_property}`
+                LIMIT $neighbor_count
+            ) SCORE AS score
+            WHERE source.id <> target.id
+              AND source.corr_id <> target.corr_id
+              AND score >= $minimum_similarity
+            MERGE (source)-[relation:`{relationship_type}`]-(target)
+            SET relation.similarity = score
+            """,
+        ),
+    )
+
+
+def create_montandon_similarity_relationships():
+    """
+    Create bounded semantic links from the three vector indexes.
+    """
+    similarity_indexes = [
+        (
+            MONTANDON_DESCRIPTION_VECTOR_INDEX,
+            'description_embedding',
+            'SIMILAR_TO',
+        ),
+        (
+            MONTANDON_KEYWORDS_VECTOR_INDEX,
+            'keywords_embedding',
+            'SIMILAR_KEYWORDS',
+        ),
+        (
+            MONTANDON_IMPACT_VECTOR_INDEX,
+            'impact_severity_embedding',
+            'SIMILAR_IMPACT',
+        ),
+    ]
+    with get_graph_db_driver() as driver:
+        records, _, _ = driver.execute_query(
+            'MATCH (node:MontandonItem) RETURN node.id AS id',
+            database_='neo4j',
+        )
+        item_ids = [record['id'] for record in records]
+        for item_id_batch in batched(item_ids, NETWORK_INSERT_BATCH_SIZE):
+            for index_name, embedding_property, relationship_type in similarity_indexes:
+                driver.execute_query(
+                    _similarity_query(
+                        index_name,
+                        embedding_property,
+                        relationship_type,
+                    ),
+                    item_ids=list(item_id_batch),
+                    neighbor_count=SIMILARITY_NEIGHBOR_LIMIT + 1,
+                    minimum_similarity=SIMILARITY_THRESHOLD,
+                    database_='neo4j',
+                )
 
 
 def insert_go_event_nodes(driver, node_data: list[GOEventNodeData]):
@@ -220,9 +206,6 @@ def insert_go_event_nodes(driver, node_data: list[GOEventNodeData]):
         """
         UNWIND $items AS item
         MATCH (event:GOEvent {id: item.id})
-        OPTIONAL MATCH (event)-[relation:IN_COUNTRY]->(:Country)
-        DELETE relation
-        WITH event
         UNWIND event.country_codes AS code
         MERGE (country:Country {code: code})
         MERGE (event)-[:IN_COUNTRY]->(country)
@@ -255,9 +238,6 @@ def insert_go_appeal_links(driver, node_data: list[GOAppealNodeData]):
         """
         UNWIND $items AS item
         MATCH (appeal:GOAppeal {id: item.id})
-        OPTIONAL MATCH (appeal)-[relation:FOR_EVENT]->(:GOEvent)
-        DELETE relation
-        WITH appeal
         MATCH (event:GOEvent {go_event_id: appeal.go_event_id})
         MERGE (appeal)-[:FOR_EVENT]->(event)
         """,
@@ -326,7 +306,9 @@ def insert_from_local_data():
         items=filtered_items,
         embedding_model=embedding_model,
     )
-    insert_montandon_records_into_graph_db(node_data=montandon_nodes)
+    with get_graph_db_driver() as driver:
+        insert_montandon_nodes(driver, montandon_nodes)
+    create_montandon_deterministic_relationships()
 
     filtered_go_events = [
         event

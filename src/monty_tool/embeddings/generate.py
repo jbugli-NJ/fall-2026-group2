@@ -13,6 +13,7 @@ from monty_tool.embeddings.schemas import MontandonItemEmbeddings, Embedding
 # Constants
 
 EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
+EMBEDDING_DIMENSIONS = 384
 
 
 # Helpers

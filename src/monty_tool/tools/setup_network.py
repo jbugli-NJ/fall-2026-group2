@@ -6,6 +6,7 @@ Set up the local network database from node data stored in an S3 bucket.
 
 import logging
 from collections.abc import Generator
+from itertools import batched
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, TypeVar
@@ -14,10 +15,20 @@ from pydantic import TypeAdapter, ValidationError
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.boto3_utils.s3_utils import download_object, get_bucket
-from monty_tool.network.initialize import initialize_db
+from monty_tool.network.initialize import (
+    clear_db,
+    initialize_db,
+    initialize_vector_indexes,
+)
 from monty_tool.network.insert import (
+    create_montandon_deterministic_relationships,
+    create_montandon_similarity_relationships,
     insert_go_records_into_graph_db,
-    insert_montandon_records_into_graph_db,
+    insert_montandon_nodes,
+)
+from monty_tool.network.resources import (
+    NETWORK_INSERT_BATCH_SIZE,
+    get_graph_db_driver,
 )
 from monty_tool.network.schemas import (
     GOAppealNodeData,
@@ -95,6 +106,30 @@ def _download_node_data(
     return list(_validated_node_data(path, adapter, node_type))
 
 
+def _insert_montandon_node_data(
+    bucket: S3Bucket,
+    bucket_name: str,
+    key: str,
+    tmp_path: Path,
+    ) -> None:
+    """
+    Download, validate, and batch-insert one Montandon node-data object.
+    """
+    path = tmp_path.joinpath(Path(key).name)
+    logger.info('Downloading s3://%s/%s', bucket_name, key)
+    download_object(bucket, key, path)
+    with get_graph_db_driver() as driver:
+        for node_data in batched(
+            _validated_node_data(
+                path,
+                MONTANDON_NODE_DATA_ADAPTER,
+                'Montandon',
+            ),
+            NETWORK_INSERT_BATCH_SIZE,
+        ):
+            insert_montandon_nodes(driver, list(node_data))
+
+
 def main():
     """
     Initialize the local network database and load its stored node data.
@@ -108,19 +143,20 @@ def main():
             f'{MONTANDON_NODE_DATA_BUCKET_PREFIX!r}'
         )
 
+    clear_db()
     initialize_db()
     with TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         for key in montandon_keys:
-            node_data = _download_node_data(
+            _insert_montandon_node_data(
                 bucket=bucket,
                 bucket_name=bucket_name,
                 key=key,
                 tmp_path=tmp_path,
-                adapter=MONTANDON_NODE_DATA_ADAPTER,
-                node_type='Montandon',
             )
-            insert_montandon_records_into_graph_db(node_data)
+        initialize_vector_indexes()
+        create_montandon_deterministic_relationships()
+        create_montandon_similarity_relationships()
 
         event_data = _download_node_data(
             bucket=bucket,
