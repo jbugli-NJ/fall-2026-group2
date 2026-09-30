@@ -23,6 +23,7 @@ dependencies = [
 
 [project.scripts]
 monty-tool = "monty_tool:main"
+setup-network = "monty_tool.tools.setup_network:main"
 update-network-node-data = "monty_tool.tools.update_network_node_data:main"
 
 [project.optional-dependencies]
