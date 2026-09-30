@@ -149,8 +149,15 @@ class NewsTools:
 _OMIT_VALUE = object()
 _CYPHER_QUERY_PACKAGE = 'monty_tool.llm.cypher_queries'
 
+type CypherTemplateFile = Literal[
+    'search_disaster_events.cypher',
+    'get_disaster_context.cypher',
+    'find_related_disaster_events.cypher',
+    'search_response_events.cypher',
+    'get_response_context.cypher',
+]
 
-def _load_cypher_query(name: LiteralString) -> LiteralString:
+def _load_cypher_query(name: CypherTemplateFile) -> LiteralString:
     """
     Read a Cypher query by filename.
     """
@@ -390,7 +397,7 @@ class QueryTools:
         self,
         arguments: dict[str, Any],
         argument_model: type[BaseModel],
-        query_file: LiteralString,
+        query_file: CypherTemplateFile,
         error_message: str,
         ) -> dict[str, Any]:
         """
@@ -404,7 +411,7 @@ class QueryTools:
         try:
             with get_graph_db_driver() as driver:
                 records, _, _ = driver.execute_query(
-                    _load_cypher_query(query_file),
+                    _load_cypher_query(name=query_file),
                     parameters_=args.model_dump(),
                     database_="neo4j",
                     routing_=RoutingControl.READ,
