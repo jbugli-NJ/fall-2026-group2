@@ -123,7 +123,7 @@ class NewsTools:
 
         try:
             # Rank candidates before selecting articles for the assistant.
-            result = search_ranked_news(query)
+            result = search_ranked_news(query, event_context=item)
 
         except RequestException as exc:
             return {

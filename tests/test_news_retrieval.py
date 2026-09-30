@@ -10,7 +10,7 @@ from monty_tool.event_context import EventContext
 from monty_tool.llm.tools import NewsTools, QueryTools
 from monty_tool.news import ranking
 from monty_tool.news.schemas import NewsArticle, NewsQuery, NewsSearchResult, NewsSource
-
+from monty_tool.news.retrieval import collect_ranked_news
 
 def _execute(tool_kind: str) -> dict:
     if tool_kind == "query":
@@ -34,19 +34,22 @@ def _execute(tool_kind: str) -> dict:
 
 @pytest.mark.parametrize("tool_kind", ["query", "event"])
 @pytest.mark.parametrize("ranking_fails", [False, True])
-def test_tools_fetch_twenty_and_return_five_with_fallback(
+def test_tools_fetch_hundred_and_return_twenty_with_fallback(
     monkeypatch: pytest.MonkeyPatch, tool_kind: str, ranking_fails: bool,
 ) -> None:
     articles = [NewsArticle(
-        source=NewsSource(name="Example source"), title=f"Article {number}",
+        source=NewsSource(name="Example source"), title=(
+         f"Earthquake in Japan {number}"
+        if tool_kind == "event"
+        else f"Article {number}"),
         publishedAt=datetime(2026, 9, 10, tzinfo=timezone.utc),
         url=f"https://example.com/{number}",
-    ) for number in range(7)]
+    ) for number in range(30)]
     fetched: list[NewsSearchResult] = []
     queries: list[NewsQuery] = []
 
     def fake_search(query: NewsQuery, *, page_size: int) -> NewsSearchResult:
-        assert page_size == 20
+        assert page_size == 100
         queries.append(query)
         result = NewsSearchResult(
             item_id=query.item_id, query=query.query, from_date=query.from_date,
@@ -69,7 +72,7 @@ def test_tools_fetch_twenty_and_return_five_with_fallback(
     assert result["item_id"] == queries[0].item_id
     assert result["from_date"] == queries[0].from_date.isoformat()
     assert result["to_date"] == queries[0].to_date.isoformat()
-    expected = articles[:5] if ranking_fails else list(reversed(articles))[:5]
+    expected = articles[:20] if ranking_fails else list(reversed(articles))[:20]
     assert [a["url"] for a in result["articles"]] == [a.url for a in expected]
     assert fetched[0].articles == articles
     rank.assert_called_once_with(articles, reference_text="earthquake Japan")
@@ -103,4 +106,162 @@ def test_empty_search_and_search_error_remain_distinct(
         assert result["message"] == "NewsAPI failed"
     else:
         assert result["articles"] == []
+    rank.assert_not_called()
+
+def test_event_news_preserves_candidates_and_rank_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    titles = [
+        "Global energy demand rises",
+        "Quake reported in Tokyo",
+        "Earthquake in Japan",
+    ]
+    articles = [
+        NewsArticle(
+            source=NewsSource(name="Example source"),
+            title=title,
+            publishedAt=datetime(2026, 9, 10, tzinfo=timezone.utc),
+            url=f"https://example.com/{number}",
+        )
+        for number, title in enumerate(titles)
+    ]
+    
+
+    def fake_search(query: NewsQuery, *, page_size: int) -> NewsSearchResult:
+        return NewsSearchResult(
+            item_id=query.item_id,
+            query=query.query,
+            from_date=query.from_date,
+            to_date=query.to_date,
+            total_results=3,
+            articles=articles,
+        )
+
+    monkeypatch.setattr(news_api, "search_news", fake_search)
+    rank = Mock(return_value=[
+        articles[1],  # Quake reported in Tokyo
+        articles[2],  # Earthquake in Japan
+        articles[0],  # Global energy demand rises
+    ])
+    monkeypatch.setattr(ranking, "rank_news_articles", rank)
+
+    result = _execute("event")
+
+    rank.assert_called_once_with(
+        articles,
+        reference_text="earthquake Japan",
+    )
+
+    assert [article["title"] for article in result["articles"]] == [
+        "Quake reported in Tokyo",
+        "Earthquake in Japan",
+        "Global energy demand rises",
+    ]
+
+@pytest.mark.parametrize("llm_limit", [20, 100])
+@pytest.mark.parametrize("ranking_fails", [False, True])
+def test_collect_preserves_all_candidates_and_respects_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    llm_limit: int,
+    ranking_fails: bool,
+) -> None:
+    query = NewsQuery(
+        item_id="test-event",
+        query="earthquake Japan",
+        from_date=date(2026, 9, 9),
+        to_date=date(2026, 9, 13),
+    )
+    articles = [
+        NewsArticle(
+            source=NewsSource(name="Test source"),
+            title=f"Test article {number}",
+            publishedAt=datetime(2026, 9, 10, tzinfo=timezone.utc),
+            url=f"https://example.com/news/{number}",
+        )
+        for number in range(100)
+    ]
+    raw = NewsSearchResult(
+        item_id=query.item_id,
+        query=query.query,
+        from_date=query.from_date,
+        to_date=query.to_date,
+        total_results=250,
+        articles=articles,
+    )
+    original = raw.model_dump()
+
+    search = Mock(return_value=raw)
+    rank = Mock(return_value=list(reversed(articles)))
+    if ranking_fails:
+        rank.side_effect = RuntimeError("Ranking unavailable")
+
+    monkeypatch.setattr(news_api, "search_news", search)
+    monkeypatch.setattr(ranking, "rank_news_articles", rank)
+
+    batch = collect_ranked_news(
+        query,
+        candidate_limit=100,
+        llm_limit=llm_limit,
+    )
+
+    search.assert_called_once_with(query, page_size=100)
+    rank.assert_called_once_with(
+        articles,
+        reference_text=query.query,
+    )
+
+    assert batch.retrieved.model_dump() == original
+    assert len(batch.retrieved.articles) == 100
+    assert len(batch.for_llm.articles) == llm_limit
+
+    expected = articles if ranking_fails else list(reversed(articles))
+    assert [article.url for article in batch.for_llm.articles] == [
+        article.url for article in expected[:llm_limit]
+    ]
+
+    assert batch.retrieved.total_results == 250
+    assert batch.for_llm.total_results == 250
+
+    assert batch.for_llm.articles is not batch.retrieved.articles
+    batch.for_llm.articles.clear()
+    assert batch.retrieved.model_dump() == original
+
+@pytest.mark.parametrize(
+    ("candidate_limit", "llm_limit"),
+    [
+        (0, 20),
+        (101, 20),
+        (True, 1),
+        (1.5, 1),
+        (100, 0),
+        (100, 101),
+        (10, 20),
+        (100, True),
+        (100, 1.5),
+    ],
+)
+def test_collect_rejects_invalid_limits_before_search(
+    monkeypatch: pytest.MonkeyPatch,
+    candidate_limit,
+    llm_limit,
+) -> None:
+    query = NewsQuery(
+        item_id="test-event",
+        query="earthquake Japan",
+        from_date=date(2026, 9, 9),
+        to_date=date(2026, 9, 13),
+    )
+    search = Mock()
+    rank = Mock()
+    monkeypatch.setattr(news_api, "search_news", search)
+    monkeypatch.setattr(ranking, "rank_news_articles", rank)
+
+    with pytest.raises(ValueError):
+        collect_ranked_news(
+            query,
+            candidate_limit=candidate_limit,
+            llm_limit=llm_limit,
+        )
+
+    search.assert_not_called()
     rank.assert_not_called()
