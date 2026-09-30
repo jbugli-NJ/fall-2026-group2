@@ -8,8 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pydantic import ValidationError
+from sentence_transformers import SentenceTransformer
 
 from monty_tool.api_schemas import GOAppeal, GOEvent, MontandonItem
+from monty_tool.embeddings.generate import EMBEDDING_MODEL_NAME
 from monty_tool.network.node_data import (
     go_appeals_to_node_data,
     go_events_to_node_data,
@@ -319,7 +321,11 @@ def insert_from_local_data():
             <=datetime(2025, 12, 31, tzinfo=timezone.utc)
         )
     ]
-    montandon_nodes = montandon_items_to_node_data(items=filtered_items)
+    embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    montandon_nodes = montandon_items_to_node_data(
+        items=filtered_items,
+        embedding_model=embedding_model,
+    )
     insert_montandon_records_into_graph_db(node_data=montandon_nodes)
 
     filtered_go_events = [
