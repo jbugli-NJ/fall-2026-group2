@@ -174,7 +174,7 @@ def create_montandon_similarity_relationships():
             'MATCH (node:MontandonItem) RETURN node.id AS id',
             database_='neo4j',
         )
-        item_ids = [record['id'] for record in records]
+        item_ids: list[str] = [record['id'] for record in records]
         for item_id_batch in batched(item_ids, NETWORK_INSERT_BATCH_SIZE):
             for index_name, embedding_property, relationship_type in similarity_indexes:
                 driver.execute_query(
