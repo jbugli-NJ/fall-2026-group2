@@ -8,7 +8,6 @@ from collections.abc import Generator, Iterable
 import gzip
 import json
 import logging
-import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -25,6 +24,7 @@ from monty_tool.boto3_utils.s3_utils import (
 )
 from monty_tool.embeddings.generate import EMBEDDING_MODEL_NAME
 from monty_tool.network.node_data import montandon_items_to_node_data
+from monty_tool.tools.resources import get_env_bucket_name
 
 
 # Logger
@@ -42,35 +42,15 @@ BATCH_SIZE = 128
 
 # Helpers
 
-def _bucket_name() -> str:
-    """
-    Retrieve the selected bucket name from the environment.
-    """
-    bucket = os.getenv('AWS_BUCKET', '').strip()
-    if bucket  == '':
-        logger.warning('AWS_BUCKET is unset! Defaulting to dats-capstone')
-        bucket = 'dats-capstone'
-    return bucket
-
-
 def _raw_gzip_keys(bucket: S3Bucket) -> list[str]:
     """
-    Return all gzipped JSONL object keys under the raw-data prefix.
+    Return all gzipped JSONL object keys under the raw data prefix.
     """
     return sorted(
         obj.key
         for obj in bucket.objects.filter(Prefix=RAW_PREFIX)
         if obj.key.endswith('.jsonl.gz')
     )
-
-
-def _read_gzip(path: Path) -> Generator[Any, None, None]:
-    """
-    Generator to return `.gzip` file contents.
-    """
-    with gzip.open(path, 'rt', encoding='utf-8') as file:
-        for line in file:
-            yield json.loads(line)
 
 
 def _montandon_items(path: Path) -> Generator[MontandonItem, None, None]:
@@ -126,7 +106,7 @@ def _process_gzip(
 
 
 def main():
-    bucket_name = _bucket_name()
+    bucket_name = get_env_bucket_name()
     bucket = get_bucket(bucket_name)
     raw_keys = _raw_gzip_keys(bucket)
     if not raw_keys:
