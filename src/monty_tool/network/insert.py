@@ -128,6 +128,7 @@ def _similarity_query(
         cast(
             LiteralString,
             f"""
+            CYPHER 25
             UNWIND $item_ids AS item_id
             MATCH (source:MontandonItem {{id: item_id}})
             WHERE source.`{embedding_property}` IS NOT NULL
