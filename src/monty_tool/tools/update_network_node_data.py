@@ -211,11 +211,11 @@ def main():
         )
 
     embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-    with TemporaryDirectory() as temporary_directory:
-        temporary_path = Path(temporary_directory)
+    with TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
         for raw_key in raw_keys:
-            input_path = temporary_path.joinpath('input.jsonl.gz')
-            output_path = temporary_path.joinpath('output.jsonl.gz')
+            input_path = tmp_path.joinpath('input.jsonl.gz')
+            output_path = tmp_path.joinpath('output.jsonl.gz')
             output_key = MONTANDON_NODE_DATA_BUCKET_PREFIX + Path(raw_key).name
             _process_and_upload(
                 bucket=bucket,
@@ -235,8 +235,8 @@ def main():
             bucket_name=bucket_name,
             input_key=GO_EVENT_BUCKET_KEY,
             output_key=GO_EVENT_NODE_DATA_BUCKET_KEY,
-            input_path=temporary_path / 'go-event-input.jsonl.gz',
-            output_path=temporary_path / 'go-event-output.jsonl.gz',
+            input_path=tmp_path.joinpath('go-event-input.jsonl.gz'),
+            output_path=tmp_path.joinpath('go-event-output.jsonl.gz'),
             processor=_process_go_event_gzip,
         )
         _process_and_upload(
@@ -244,8 +244,8 @@ def main():
             bucket_name=bucket_name,
             input_key=GO_APPEAL_BUCKET_KEY,
             output_key=GO_APPEAL_NODE_DATA_BUCKET_KEY,
-            input_path=temporary_path / 'go-appeal-input.jsonl.gz',
-            output_path=temporary_path / 'go-appeal-output.jsonl.gz',
+            input_path=tmp_path.joinpath('go-appeal-input.jsonl.gz'),
+            output_path=tmp_path.joinpath('go-appeal-output.jsonl.gz'),
             processor=_process_go_appeal_gzip,
         )
 
