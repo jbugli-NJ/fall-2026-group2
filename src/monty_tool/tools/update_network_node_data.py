@@ -43,7 +43,7 @@ from monty_tool.tools.resources import (
 # Logger
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 # Constants
