@@ -66,6 +66,7 @@ uv run update-network-node-data
 
 `setup_network` downloads that node data and rebuilds the local Neo4j graph.
 Use carefully because this clears the existing local graph before loading new data.
+This must be run after the initial Docker compose step to set up the Neo4j instance.
 
 ```bash
 uv run setup-network
