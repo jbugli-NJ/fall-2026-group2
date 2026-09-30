@@ -11,6 +11,16 @@ from neo4j import GraphDatabase
 
 _DATABASE_URI = 'neo4j://localhost:7687'
 
+MONTANDON_DESCRIPTION_VECTOR_INDEX = (
+    'montandon_description_embedding_index'
+)
+MONTANDON_KEYWORDS_VECTOR_INDEX = 'montandon_keywords_embedding_index'
+MONTANDON_IMPACT_VECTOR_INDEX = 'montandon_impact_embedding_index'
+
+SIMILARITY_NEIGHBOR_LIMIT = 20
+SIMILARITY_THRESHOLD = 0.95
+NETWORK_INSERT_BATCH_SIZE = 1000
+
 
 # Connection helper
 

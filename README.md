@@ -50,3 +50,24 @@ The browser UI can be used for exploration and basic queries.
 
 This project uses `nbstripout` in development dependencies, enforcing it in `.gitattributes` so that notebook outputs are not committed.
 Set this up locally with `uv run nbstripout --install` to activate the output filter after syncing.
+
+### Building a local network from S3 data
+
+Tools are available to populate the local Neo4j instance with saved data in an S3 bucket.
+This has 2 steps:
+1. Set `AWS_BUCKET` in the environment to point at the target bucket (likely `dats-capstone`)
+2. <ake sure AWS credentials are available to the CLI and boto3
+
+`update_network_node_data` reads the source files under `aidan.carlisle@gwu.edu/raw/` and `aidan.carlisle@gwu.edu/go/`. It validates the records, generates Montandon embeddings, and writes the resulting node data under `aidan.carlisle@gwu.edu/node_data/`.
+
+```bash
+uv run update-network-node-data
+```
+
+`setup_network` downloads that node data and rebuilds the local Neo4j graph.
+Use carefully because this clears the existing local graph before loading new data.
+This must be run after the initial Docker compose step to set up the Neo4j instance.
+
+```bash
+uv run setup-network
+```

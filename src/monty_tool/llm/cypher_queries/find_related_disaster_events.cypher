@@ -22,10 +22,10 @@ CALL {
          'same_country', country.code, NULL
   UNION ALL
   WITH event
-  MATCH (event)-[:SAME_DAY_START]-(related:Event)
-  WHERE $relation_kind = 'same_start_day'
+  MATCH (event)-[:STARTED_ON]->(:EventDay)<-[:STARTED_ON]-(related:Event)
+  WHERE $relation_kind = 'same_start_day' AND related.id <> event.id
   RETURN related.id, related.title, related.start_datetime,
-         'same_start_day', 'SAME_DAY_START', NULL
+         'same_start_day', 'STARTED_ON', NULL
   UNION ALL
   WITH event
   MATCH (related:Event {corr_id: event.corr_id})

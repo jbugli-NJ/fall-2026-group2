@@ -10,6 +10,8 @@ from monty_tool.api_schemas import (
     MontandonImpactProperties,
     MontandonItem,
 )
+from sentence_transformers import SentenceTransformer
+
 from monty_tool.embeddings.generate import generate_embeddings
 from monty_tool.network.schemas import (
     GOAppealNodeData,
@@ -22,11 +24,12 @@ from monty_tool.network.schemas import (
 
 def montandon_items_to_node_data(
     items: list[MontandonItem],
+    embedding_model: SentenceTransformer,
     ) -> list[MontandonItemNodeData]:
     """
     Generate embeddings and network graph data from Montandon records.
     """
-    embeddings = generate_embeddings(items=items)
+    embeddings = generate_embeddings(items=items, model=embedding_model)
     node_data: list[MontandonItemNodeData] = []
     for item, embedding in zip(items, embeddings, strict=True):
         if item.id != embedding.item_id:

@@ -13,6 +13,7 @@ from monty_tool.embeddings.schemas import MontandonItemEmbeddings, Embedding
 # Constants
 
 EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
+EMBEDDING_DIMENSIONS = 384
 
 
 # Helpers
@@ -83,13 +84,13 @@ def _generate_item_embeddings(
 
 def generate_embeddings(
     items: list[MontandonItem],
+    model: SentenceTransformer,
     ) -> list[MontandonItemEmbeddings]:
     """
     Generate embedding vectors for a list of Montandon records.
     """
     if not items:
         return []
-    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
     return [
         _generate_item_embeddings(item, model)
         for item in items

@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "boto3>=1.43.104",
     "matplotlib>=3.11.2",
     "neo4j>=6.3.1",
     "polars>=1.44.2",
@@ -22,6 +23,8 @@ dependencies = [
 
 [project.scripts]
 monty-tool = "monty_tool:main"
+setup-network = "monty_tool.tools.setup_network:main"
+update-network-node-data = "monty_tool.tools.update_network_node_data:main"
 
 [project.optional-dependencies]
 test = [
