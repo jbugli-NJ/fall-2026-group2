@@ -16,7 +16,10 @@ from contextlib import nullcontext
 from tempfile import TemporaryDirectory
 
 from monty_tool.boto3_utils.s3_utils import get_bucket
-from monty_tool.news.s3_storage import download_collection_cache
+from monty_tool.news.s3_storage import (
+    download_collection_cache,
+    upload_news_snapshot,
+)
 from monty_tool.tools.resources import get_env_bucket_name
 
 def positive_int(value: str) -> int:
@@ -57,6 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--s3-source-key",
         help="S3 object key of the disaster collection; omit to use --cache-dir.",
+    )
+    parser.add_argument(
+        "--s3-upload",
+        action="store_true",
+        help="Upload news snapshots to S3 after --execute.",
     )
     parser.add_argument(
         "--no-geometry",
@@ -102,6 +110,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.execute and args.request_limit is None:
         parser.error("--execute requires --request-limit.")
+
+    if args.s3_upload and not args.execute:
+        parser.error("--s3-upload requires --execute.")
 
     source_context = (
         TemporaryDirectory()
@@ -167,6 +178,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         page_size=args.page_size,
         refresh_after=timedelta(hours=args.refresh_hours),
     )
+    if args.s3_upload:
+        bucket = get_bucket(get_env_bucket_name())
+        for snapshot in [*summary.collected, *summary.reused]:
+            upload_news_snapshot(bucket, snapshot)
     print(summary.model_dump_json(indent=2))
 
     return 1 if summary.stop_reason == "error" else 0
