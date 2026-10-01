@@ -12,7 +12,12 @@ from monty_tool.news.pipeline import (
     select_disaster_records,
 )
 from monty_tool.news.runner import run_news_collection
+from contextlib import nullcontext
+from tempfile import TemporaryDirectory
 
+from monty_tool.boto3_utils.s3_utils import get_bucket
+from monty_tool.news.s3_storage import download_collection_cache
+from monty_tool.tools.resources import get_env_bucket_name
 
 def positive_int(value: str) -> int:
     number = int(value)
@@ -48,6 +53,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--collection", required=True)
     parser.add_argument(
         "--cache-dir", type=Path, default=Path("data/raw")
+    )
+    parser.add_argument(
+        "--s3-source-key",
+        help="S3 object key of the disaster collection; omit to use --cache-dir.",
     )
     parser.add_argument(
         "--no-geometry",
@@ -94,22 +103,41 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.execute and args.request_limit is None:
         parser.error("--execute requires --request-limit.")
 
-    records = load_collection(
-        args.collection,
-        cache_dir=args.cache_dir,
-        geometry=not args.no_geometry,
+    source_context = (
+        TemporaryDirectory()
+        if args.s3_source_key
+        else nullcontext(args.cache_dir)
     )
-    events = select_disaster_records(
-        records,
-        start_date=args.start_date,
-        end_date=args.end_date,
-        max_records=args.max_records,
-    )
-    jobs = prepare_news_jobs(
-        events,
-        days_before=args.days_before,
-        days_after=args.days_after,
-    )
+
+    with source_context as source_directory:
+        cache_dir = Path(source_directory)
+
+        if args.s3_source_key:
+            bucket = get_bucket(get_env_bucket_name())
+            download_collection_cache(
+                bucket,
+                source_key=args.s3_source_key,
+                collection=args.collection,
+                cache_dir=cache_dir,
+                geometry=not args.no_geometry,
+            )
+
+        records = load_collection(
+            args.collection,
+            cache_dir=cache_dir,
+            geometry=not args.no_geometry,
+        )
+        events = select_disaster_records(
+            records,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            max_records=args.max_records,
+        )
+        jobs = prepare_news_jobs(
+            events,
+            days_before=args.days_before,
+            days_after=args.days_after,
+        )
 
     if args.dry_run:
         plan = {
