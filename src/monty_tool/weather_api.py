@@ -1,13 +1,7 @@
 """
-Minimal NASA POWER client.
-
-This file handles the POWER connection and returns its raw payload.
-It does not inspect or transform Montandon records directly.
-
-Receives a point and a date range, and handles the POWER request.
+Minimal NASA POWER client to connect to the POWER API and
+return weather data for coordinates.
 """
-
-from __future__ import annotations
 
 from datetime import date
 
@@ -16,8 +10,6 @@ import requests
 
 # POWER serves daily values for a single point per request; there is no
 # bulk endpoint, so callers pulling many events should cache results
-# (see `go_api.py` for the gzipped JSON Lines pattern) rather than
-# re-requesting.
 POWER_API_URL = 'https://power.larc.nasa.gov/api/temporal/daily/point'
 
 # Parameters chosen to cover the hazards Montandon records most often:
@@ -70,10 +62,6 @@ def get_weather_data(
     """
     Retrieve daily weather for one point over a date range.
 
-    POWER needs no API key: the endpoint is open, and the `NASA_KEY` in
-    `.env` belongs to api.nasa.gov, a separate service that does not
-    gate this one.
-
     `lat`/`lon` must describe an actual point. Only point-located
     Montandon records (GDACS) qualify; the bounding-box centre of a
     country-level Polygon record is not where the event happened.
@@ -99,8 +87,7 @@ def get_weather_data(
 
     response = requests.get(POWER_API_URL, params=params, timeout=30)
 
-    # Separated from the errors below because it is the one failure
-    # worth retrying: the request was fine, the pace was not.
+    # Separated from the errors below because it is the only retryable error
     if response.status_code == 429:
         raise PowerRateLimitError(
             'NASA POWER refused the request: HTTP 429 (too many requests).'
