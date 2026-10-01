@@ -16,7 +16,6 @@ from typing import Any
 # Logger
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
 
 
 # Bucket resources
