@@ -963,3 +963,35 @@ def test_cli_dry_run_uses_s3_source(cli_environment, monkeypatch, capsys):
     assert not cache_dir.exists()
     run.assert_not_called()
     search.assert_not_called()
+
+def test_cli_execute_uploads_news_snapshots(
+    cli_environment, monkeypatch, tmp_path, capsys
+):
+    arguments, load, run, search = cli_environment
+    bucket = Mock()
+    get_bucket = Mock(return_value=bucket)
+    upload = Mock()
+    new = tmp_path / "new.json"
+    reused = tmp_path / "reused.json"
+
+    run.side_effect = None
+    run.return_value = runner.NewsCollectionRun(
+        collected=[new],
+        reused=[reused],
+    )
+    monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
+    monkeypatch.setattr(cli, "get_bucket", get_bucket)
+    monkeypatch.setattr(cli, "upload_news_snapshot", upload)
+
+    assert cli.main([
+        *arguments, "--execute", "--request-limit", "2", "--s3-upload",
+    ]) == 0
+
+    get_bucket.assert_called_once_with("test-bucket")
+    assert [item.args for item in upload.call_args_list] == [
+        (bucket, new),
+        (bucket, reused),
+    ]
+    run.assert_called_once()
+    search.assert_not_called()
+    capsys.readouterr()
