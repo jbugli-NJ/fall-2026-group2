@@ -101,10 +101,10 @@ def test_get_event_weather_passes_the_query_through(api: Mock):
 
 def test_pull_returns_weather_results(api: Mock):
     """
-    Confirms Montandon Items produce a list of event-linked WeatherResults.
+    Confirms matching queries share a request and return independent item results.
     """
     results = retrieval.pull_event_weather(
-        [_item('a'), _item('b')], delay_seconds=0, max_workers=1,
+        [_item('a'), _item('b')], delay_seconds=0, max_workers=5,
     )
 
     assert isinstance(results, list)
@@ -115,6 +115,55 @@ def test_pull_returns_weather_results(api: Mock):
     assert results[0].units['T2M'] == 'C'
     assert len(results[0].days) == 11
     assert results[0].summary()['total_precipitation'] == 44.0
+    api.assert_called_once()
+    results[0].days[0].temperature_mean = 99.0
+    results[0].sources.append('changed')
+    results[0].units['T2M'] = 'changed'
+    assert results[1].days[0].temperature_mean == 21.0
+    assert results[1].sources == ['MERRA2']
+    assert results[1].units['T2M'] == 'C'
+
+
+@pytest.mark.parametrize('overrides', [
+    {'geometry': {'type': 'Point', 'coordinates': [-76.83, 5.42]}},
+    {'geometry': {'type': 'Point', 'coordinates': [-75.83, 4.42]}},
+    {'properties': {'start_datetime': '2024-01-11T00:00:00Z'}},
+    {'properties': {'end_datetime': '2024-01-13T00:00:00Z'}},
+])
+def test_different_coordinates_or_dates_make_separate_requests(api: Mock, overrides):
+    """
+    Confirms either coordinate or date changing produces a separate request.
+    """
+    results = retrieval.pull_event_weather(
+        [_item('a'), _item('b', **overrides)], delay_seconds=0, max_workers=1,
+    )
+
+    assert api.call_count == 2
+    assert [result.item_id for result in results] == ['a', 'b']
+
+
+def test_shared_lookup_reuses_successes(api: Mock):
+    """
+    Confirms matching failures share an attempt and later calls reuse sucesses.
+    """
+    api.side_effect = [RequestsConnectionError('simulated drop'), _payload()]
+    results_by_query = {}
+
+    def collect():
+        """
+        Collect matching queries using the same successful-results lookup.
+        """
+        return retrieval.pull_event_weather(
+            [_item('a'), _item('b')], delay_seconds=0, max_workers=1,
+            results_by_query=results_by_query,
+        )
+
+    assert collect() == []
+    assert results_by_query == {}
+    assert api.call_count == 1
+    assert [result.item_id for result in collect()] == ['a', 'b']
+    assert [result.item_id for result in collect()] == ['a', 'b']
+    assert api.call_count == 2
 
 
 def test_empty_input_returns_empty_list(api: Mock):
@@ -167,7 +216,11 @@ def test_a_failed_request_does_not_end_the_run(api: Mock, caplog):
     api.side_effect = [_payload(), RequestsConnectionError('simulated drop'), _payload()]
 
     results = retrieval.pull_event_weather(
-        [_item('a'), _item('b'), _item('c')], delay_seconds=0, max_workers=1,
+        [
+            _item(item_id, geometry={'type': 'Point', 'coordinates': [-76.83 + i, 4.42]})
+            for i, item_id in enumerate(['a', 'b', 'c'])
+        ],
+        delay_seconds=0, max_workers=1,
     )
 
     assert [result.item_id for result in results] == ['a', 'c']
@@ -176,9 +229,9 @@ def test_a_failed_request_does_not_end_the_run(api: Mock, caplog):
 
 # Tests: pacing and padding
 
-def test_the_courtesy_delay_is_applied_per_record(api: Mock, monkeypatch):
+def test_the_courtesy_delay_is_applied_per_request(api: Mock, monkeypatch):
     """
-    Confirms each successful request is paced and skipped Items earn no pause.
+    Confirms successful requests are paced but skipped and duplicate Items are not.
     """
     sleeps = []
     monkeypatch.setattr(retrieval.time, 'sleep', sleeps.append)
@@ -188,7 +241,7 @@ def test_the_courtesy_delay_is_applied_per_record(api: Mock, monkeypatch):
         delay_seconds=0.2, max_workers=1,
     )
 
-    assert sleeps == [0.2, 0.2]
+    assert sleeps == [0.2]
 
 
 def test_window_padding_reaches_the_query(api: Mock):
@@ -223,7 +276,10 @@ def test_results_keep_input_order(monkeypatch, max_workers):
     monkeypatch.setattr(retrieval, '_fetch_with_backoff', fetch)
 
     results = retrieval.pull_event_weather(
-        [_item('a'), _item('b'), _item('c')],
+        [
+            _item(item_id, geometry={'type': 'Point', 'coordinates': [-76.83 + i, 4.42]})
+            for i, item_id in enumerate(['a', 'b', 'c'])
+        ],
         delay_seconds=0, max_workers=max_workers,
     )
 
@@ -251,7 +307,12 @@ def test_requests_run_concurrently(monkeypatch):
 
     monkeypatch.setattr(retrieval, '_fetch_with_backoff', fetch)
     results = retrieval.pull_event_weather(
-        [_item(str(number)) for number in range(12)],
+        [
+            _item(str(number), geometry={
+                'type': 'Point', 'coordinates': [-76.83 + number, 4.42],
+            })
+            for number in range(12)
+        ],
         delay_seconds=0, max_workers=4,
     )
 

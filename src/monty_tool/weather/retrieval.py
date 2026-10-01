@@ -6,9 +6,9 @@ Retrieve weather for Montandon records.
 
 import logging
 import time
-from collections import deque
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import date
 
 from requests import RequestException
 
@@ -29,11 +29,10 @@ POWER_REQUEST_DELAY_SECONDS = 0.2
 # https://power.larc.nasa.gov/docs/tutorials/service-data-request/api/#__tabbed_2_2
 MAX_WORKERS = 5
 
-# Bound queued requests while collecting results in input order.
-QUEUE_DEPTH_PER_WORKER = 4
-
 RATE_LIMIT_BACKOFF_SECONDS = 5.0
 RATE_LIMIT_RETRIES = 3
+
+WeatherQueryKey = tuple[float, float, date, date]
 
 
 # Single-record retrieval
@@ -113,13 +112,16 @@ def pull_event_weather(
     delay_seconds: float = POWER_REQUEST_DELAY_SECONDS,
     days_before: int | None = None,
     days_after: int | None = None,
+    *,
+    results_by_query: dict[WeatherQueryKey, WeatherResult] | None = None,
     ) -> list[WeatherResult]:
     """
     Fetch weather for Montandon Items and return results in input order.
 
     Records POWER cannot answer for are logged and skipped. Failed requests
     are logged and omitted, while rate-limited requests are retried with
-    backoff. Each call fetches fresh data and performs no local caching.
+    backoff. Matching coordinates and date ranges share one request. Pass
+    results_by_query to reuse successful queries across collection calls.
     """
     if max_workers < 1:
         raise ValueError('max_workers must be at least 1.')
@@ -133,8 +135,15 @@ def pull_event_weather(
     counts = {'pulled': 0, 'skipped': 0, 'failed': 0}
     queries = _iter_queries(items, padding, counts)
     results: list[WeatherResult] = []
+    if results_by_query is None:
+        results_by_query = {}
+    futures_by_query: dict[WeatherQueryKey, Future[WeatherResult]] = {}
 
-    def record(query: WeatherQuery, future: Future[WeatherResult]) -> None:
+    def record(
+        query: WeatherQuery,
+        key: WeatherQueryKey,
+        future: Future[WeatherResult],
+        ) -> None:
         """
         Collect one finished result, or log its failure.
         """
@@ -147,20 +156,28 @@ def pull_event_weather(
             )
             counts['failed'] += 1
             return
-        results.append(result)
+        results_by_query[key] = result
+        results.append(result.model_copy(update={'item_id': query.item_id}, deep=True))
         counts['pulled'] += 1
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        pending: deque[tuple[WeatherQuery, Future[WeatherResult]]] = deque()
-        queue_depth = max_workers * QUEUE_DEPTH_PER_WORKER
+        pending: list[tuple[WeatherQuery, WeatherQueryKey, Future[WeatherResult]]] = []
         for query in queries:
-            pending.append((
-                query, pool.submit(_fetch_with_backoff, query, delay_seconds),
-            ))
-            while len(pending) >= queue_depth:
-                record(*pending.popleft())
-        while pending:
-            record(*pending.popleft())
+            key = (
+                query.latitude, query.longitude, query.start_date, query.end_date,
+            )
+            future = futures_by_query.get(key)
+            if future is None:
+                if key in results_by_query:
+                    future = Future()
+                    future.set_result(results_by_query[key])
+                else:
+                    future = pool.submit(_fetch_with_backoff, query, delay_seconds)
+                futures_by_query[key] = future
+            pending.append((query, key, future))
+
+    for query, key, future in pending:
+        record(query, key, future)
 
     logger.info(
         'Weather pull complete: %d retrieved, %d skipped, %d failed.',

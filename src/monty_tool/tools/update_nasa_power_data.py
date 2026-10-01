@@ -23,7 +23,7 @@ from monty_tool.tools.resources import (
     get_env_bucket_name,
     read_gzip,
 )
-from monty_tool.weather.retrieval import pull_event_weather
+from monty_tool.weather.retrieval import WeatherQueryKey, pull_event_weather
 from monty_tool.weather.schemas import WeatherResult
 
 
@@ -112,15 +112,16 @@ def main() -> None:
         logger.info(f'Loaded {len(existing_ids)} existing NASA POWER results.')
 
         items = _new_point_items(bucket, tmp_path / 'montandon.jsonl.gz', existing_ids)
+        results_by_query: dict[WeatherQueryKey, WeatherResult] = {}
 
         for i, batch in enumerate(batched(items, BATCH_SIZE)):
-            results = pull_event_weather(list(batch))
+            results = pull_event_weather(list(batch), results_by_query=results_by_query)
             with gzip.open(weather_path, 'at', encoding='utf-8') as file:
                 for result in results:
                     file.write(result.model_dump_json() + '\n')
             upload_object(bucket, weather_path, NASA_POWER_BUCKET_KEY)
             logger.info(
-                f"Uploaded batch {i+1} ({len(results)} results)"
+                f"Uploaded batch {i+1} ({len(results)} results) "
                 f"to s3://{bucket_name}/{NASA_POWER_BUCKET_KEY}"
             )
 

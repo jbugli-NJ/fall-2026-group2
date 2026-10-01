@@ -95,5 +95,9 @@ def test_uploads_completed_batch_before_later_failure(monkeypatch: pytest.Monkey
         tool.main()
 
     assert [len(call.args[0]) for call in fetch.call_args_list] == [500, 1]
+    assert (
+        fetch.call_args_list[0].kwargs['results_by_query']
+        is fetch.call_args_list[1].kwargs['results_by_query']
+    )
     assert len(uploads) == 1
     assert [record['item_id'] for record in uploads[0]] == list(map(str, range(500)))
