@@ -933,3 +933,33 @@ def test_cli_supports_no_geometry_cache(
     run.assert_not_called()
     search.assert_not_called()
     capsys.readouterr()
+
+def test_cli_dry_run_uses_s3_source(cli_environment, monkeypatch, capsys):
+    arguments, load, run, search = cli_environment
+    bucket = Mock()
+    get_bucket = Mock(return_value=bucket)
+    download = Mock()
+
+    monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
+    monkeypatch.setattr(cli, "get_bucket", get_bucket)
+    monkeypatch.setattr(cli, "download_collection_cache", download)
+
+    source_key = "aidan.carlisle@gwu.edu/raw/gdacs-events.jsonl.gz"
+    exit_code = cli.main([
+        *arguments, "--dry-run", "--s3-source-key", source_key,
+    ])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["planned_jobs"] == 1
+    get_bucket.assert_called_once_with("test-bucket")
+    download.assert_called_once()
+    assert download.call_args.args == (bucket,)
+    assert download.call_args.kwargs["source_key"] == source_key
+
+    cache_dir = download.call_args.kwargs["cache_dir"]
+    load.assert_called_once_with(
+        "gdacs-events", cache_dir=cache_dir, geometry=True,
+    )
+    assert not cache_dir.exists()
+    run.assert_not_called()
+    search.assert_not_called()
