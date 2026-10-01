@@ -81,22 +81,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--request-limit",
         type=positive_int,
-        help="Rolling 24-hour request budget; required with --execute.",
+        help="Maximum NewsAPI requests per run; required with --execute.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("outputs/news-collection"),
     )
-    parser.add_argument(
-        "--state-path",
-        type=Path,
-        default=Path("data/news-collection/state.sqlite3"),
-        help="Persistent request-budget database shared across runs.",
-    )
 
     return parser
-
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
@@ -158,7 +151,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "page_size": args.page_size,
             "refresh_hours": args.refresh_hours,
             "output_dir": str(args.output_dir),
-            "state_path": str(args.state_path),
             "jobs": [
                 {
                     "collection": job.event.collection,
@@ -173,7 +165,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = run_news_collection(
         jobs,
         output_dir=args.output_dir,
-        state_path=args.state_path,
         request_limit=args.request_limit,
         page_size=args.page_size,
         refresh_after=timedelta(hours=args.refresh_hours),

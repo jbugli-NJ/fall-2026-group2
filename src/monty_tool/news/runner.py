@@ -28,16 +28,11 @@ def run_news_collection(
     jobs: Iterable[NewsCollectionJob],
     *,
     output_dir: Path,
-    state_path: Path,
     request_limit: int,
     page_size: int = 100,
     refresh_after: timedelta = timedelta(hours=24),
 ) -> NewsCollectionRun:
-    """Collect missing or expired searches within a shared request budget.
-
-    Run only one collection worker for a given output directory at a time.
-    Storage failures propagate to the caller.
-    """
+    """Collect searches within one run's request limit."""
     if type(request_limit) is not int or request_limit < 1:
         raise ValueError("request_limit must be a positive integer.")
 
@@ -49,6 +44,7 @@ def run_news_collection(
         refresh_after=refresh_after,
     )
     summary = NewsCollectionRun()
+    requests_made = 0
 
     for job in jobs:
         key = news_job_key(job, page_size=page_size)
@@ -57,11 +53,14 @@ def run_news_collection(
             summary.reused.append(recent[key])
             continue
 
+        if requests_made >= request_limit:
+            summary.stop_reason = "budget_exhausted"
+            break
+
+        requests_made += 1
         output = collect_news_job(
             job,
             output_dir=output_dir,
-            state_path=state_path,
-            request_limit=request_limit,
             page_size=page_size,
         )
         report = json.loads(output.read_text(encoding="utf-8"))
@@ -69,18 +68,14 @@ def run_news_collection(
 
         if status in {"ok", "empty"}:
             summary.collected.append(output)
-            # Also prevent duplicate searches within this run.
             recent[key] = output
             continue
 
-        if status == "budget_exhausted":
-            summary.stop_reason = "budget_exhausted"
-        elif status == "error":
+        if status == "error":
             summary.stop_reason = "error"
-        else:
-            raise ValueError(f"Unexpected collection status: {status!r}")
+            summary.stop_report = output
+            break
 
-        summary.stop_report = output
-        break
+        raise ValueError(f"Unexpected collection status: {status!r}")
 
     return summary
