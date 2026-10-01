@@ -36,13 +36,9 @@ WEATHER_CACHE_DIR = DEFAULT_CACHE_DIR.parent / 'weather'
 # below is shaped by that.
 POWER_REQUEST_DELAY_SECONDS = 0.2
 
-# Measured throughput rises close to linearly to 8 concurrent requests
-# (1.5 to 10 requests/second) with no throttling and flat latency, which
-# brings that pull under 90 minutes. POWER publishes no rate limit: the
-# team monitors usage and throttles to keep access equitable, so this
-# stops at the last value known to be well behaved rather than climbing
-# until something breaks.
-MAX_WORKERS = 8
+# Capping workers at 5 in line with docs:
+# https://power.larc.nasa.gov/docs/tutorials/service-data-request/api/#__tabbed_2_2
+MAX_WORKERS = 5
 
 # Queued work is capped at this multiple of the worker count, so pulling
 # from a generator of 43,000 records does not build the whole queue in
