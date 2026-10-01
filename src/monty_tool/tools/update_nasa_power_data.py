@@ -107,11 +107,11 @@ def main() -> None:
     bucket = get_bucket(bucket_name)
     with TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        weather_path = tmp_path / 'weather.jsonl.gz'
+        weather_path = tmp_path.joinpath('weather.jsonl.gz')
         existing_ids = _download_existing(bucket, weather_path)
         logger.info(f'Loaded {len(existing_ids)} existing NASA POWER results.')
 
-        items = _new_point_items(bucket, tmp_path / 'montandon.jsonl.gz', existing_ids)
+        items = _new_point_items(bucket, tmp_path.joinpath('montandon.jsonl.gz'), existing_ids)
         results_by_query: dict[WeatherQueryKey, WeatherResult] = {}
 
         for i, batch in enumerate(batched(items, BATCH_SIZE)):
