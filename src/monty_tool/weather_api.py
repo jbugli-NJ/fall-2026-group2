@@ -1,12 +1,13 @@
 """
 Minimal NASA POWER client to connect to the POWER API and
-return weather data for coordinates.
+return validated weather data for coordinates.
 """
 
 from datetime import date
 
 import requests
 
+from monty_tool.weather.schemas import FILL_VALUE as FILL_VALUE, POWERResponse
 
 # POWER serves daily values for a single point per request; there is no
 # bulk endpoint, so callers pulling many events should cache results
@@ -33,12 +34,6 @@ DEFAULT_COMMUNITY = 'RE'
 # sits outside POWER's coverage entirely.
 POWER_START_DATE = date(1981, 1, 1)
 
-# POWER reports absent observations as this sentinel rather than null.
-# It is deliberately NOT applied here: this module stays pure transport,
-# so the parsing layer converts it to None. Averaging a column that
-# still holds -999.0 silently corrupts the result instead of failing.
-FILL_VALUE = -999.0
-
 
 class PowerRateLimitError(RuntimeError):
     """
@@ -58,7 +53,7 @@ def get_weather_data(
     *,
     parameters: tuple[str, ...] = DEFAULT_PARAMETERS,
     community: str = DEFAULT_COMMUNITY,
-    ) -> dict:
+    ) -> POWERResponse:
     """
     Retrieve daily weather for one point over a date range.
 
@@ -66,9 +61,11 @@ def get_weather_data(
     Montandon records (GDACS) qualify; the bounding-box centre of a
     country-level Polygon record is not where the event happened.
 
-    The returned payload is raw POWER JSON, including `FILL_VALUE`
-    entries for dates POWER has no data for. POWER lags real time, so
-    recent events can come back short of their full range or empty.
+    Returns a POWERResponse containing the fields used by weather processing,
+    including `FILL_VALUE` entries for missing data.
+    Call `model_dump()` for a nested Python dictionary or `model_dump_json()`
+    for JSON. POWER lags real time, so recent events can come back short
+    of their full range or empty.
     """
     if start > end:
         raise ValueError('start must be on or before end.')
@@ -103,4 +100,4 @@ def get_weather_data(
             f'{response.text[:200]}'
         )
 
-    return response.json()
+    return POWERResponse.model_validate(response.json())

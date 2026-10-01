@@ -21,7 +21,7 @@ from monty_tool.data_cache import DEFAULT_CACHE_DIR
 from monty_tool.event_context import EventContext
 from monty_tool.weather_api import PowerRateLimitError, get_weather_data
 from monty_tool.weather.query import build_weather_query
-from monty_tool.weather.schemas import WeatherQuery, WeatherResult, build_weather_result
+from monty_tool.weather.schemas import WeatherQuery, WeatherResult
 
 
 logger = logging.getLogger(__name__)
@@ -63,13 +63,13 @@ def get_event_weather(query: WeatherQuery) -> WeatherResult:
 
     Request failures propagate to the caller's existing error handling.
     """
-    payload = get_weather_data(
+    response = get_weather_data(
         query.latitude,
         query.longitude,
         query.start_date,
         query.end_date,
     )
-    return build_weather_result(query, payload)
+    return response.to_weather_result(query)
 
 
 # Cache utilities

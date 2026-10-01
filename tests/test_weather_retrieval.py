@@ -18,17 +18,17 @@ from requests import ConnectionError as RequestsConnectionError
 from monty_tool.event_context import EventContext
 from monty_tool.weather_api import PowerRateLimitError
 from monty_tool.weather import retrieval
-from monty_tool.weather.schemas import WeatherQuery
+from monty_tool.weather.schemas import POWERResponse, WeatherQuery
 
 
 # Test object helpers
 
-def _payload(start: str = '20260903', days: int = 3) -> dict:
+def _payload(start: str = '20260903', days: int = 3) -> POWERResponse:
     """
     A POWER response covering `days` days from `start`.
     """
     stamps = [f'{start[:6]}{int(start[6:]) + offset:02d}' for offset in range(days)]
-    return {
+    return POWERResponse.model_validate({
         'geometry': {'type': 'Point', 'coordinates': [-76.83, 4.42, 950.0]},
         'properties': {'parameter': {
             'T2M': {stamp: 21.0 for stamp in stamps},
@@ -44,7 +44,7 @@ def _payload(start: str = '20260903', days: int = 3) -> dict:
             'T2M': {'units': 'C', 'longname': 'Temperature at 2 Meters'},
             'PRECTOTCORR': {'units': 'mm/day', 'longname': 'Precipitation Corrected'},
         },
-    }
+    })
 
 
 def _context(item_id: str = 'gdacs-event-1', **overrides) -> EventContext:
@@ -391,7 +391,7 @@ def test_a_record_cut_mid_write_is_discarded(tmp_path: Path):
 
 # Tests: concurrency
 
-def _latency_tracker(payload: dict, delay: float = 0.01):
+def _latency_tracker(payload: POWERResponse, delay: float = 0.01):
     """
     A POWER stand-in that records how many requests overlap.
     """
