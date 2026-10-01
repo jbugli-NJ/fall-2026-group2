@@ -16,7 +16,7 @@ import pytest
 from requests import ConnectionError as RequestsConnectionError
 
 from monty_tool.event_context import EventContext
-from monty_tool.weather_api import PowerRateLimitError
+from monty_tool.weather.api import PowerRateLimitError
 from monty_tool.weather import retrieval
 from monty_tool.weather.schemas import POWERResponse, WeatherQuery
 

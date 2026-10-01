@@ -19,7 +19,7 @@ from requests import RequestException
 from monty_tool.api_schemas import MontandonItem
 from monty_tool.data_cache import DEFAULT_CACHE_DIR
 from monty_tool.event_context import EventContext
-from monty_tool.weather_api import PowerRateLimitError, get_weather_data
+from monty_tool.weather.api import PowerRateLimitError, get_weather_data
 from monty_tool.weather.query import build_weather_query
 from monty_tool.weather.schemas import WeatherQuery, WeatherResult
 

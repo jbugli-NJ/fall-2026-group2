@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 from monty_tool.api_schemas import MontandonItem
 from monty_tool.event_context import EventContext, build_event_context
-from monty_tool.weather_api import POWER_START_DATE
+from monty_tool.weather.api import POWER_START_DATE
 from monty_tool.weather.schemas import WeatherQuery
 
 

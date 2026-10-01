@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
-from monty_tool import weather_api
+from monty_tool.weather import api
 from monty_tool.weather.schemas import POWERResponse
 
 
@@ -28,11 +28,11 @@ def test_client_returns_validated_response(monkeypatch):
         'parameters': {'T2M': {'units': 'C', 'longname': 'Temperature at 2 Meters'}},
     }
     monkeypatch.setattr(
-        weather_api.requests, 'get',
+        api.requests, 'get',
         Mock(return_value=Mock(status_code=200, json=Mock(return_value=payload))),
     )
 
-    response = weather_api.get_weather_data(
+    response = api.get_weather_data(
         40.7128, -74.006, date(2025, 1, 1), date(2025, 1, 1),
     )
 
@@ -45,9 +45,9 @@ def test_client_rejects_invalid_response(monkeypatch):
     Confirms the client rejects an invalid response even when HTTP succeeds.
     """
     monkeypatch.setattr(
-        weather_api.requests, 'get',
+        api.requests, 'get',
         Mock(return_value=Mock(status_code=200, json=Mock(return_value={}))),
     )
 
     with pytest.raises(ValidationError):
-        weather_api.get_weather_data(0, 0, date(2025, 1, 1), date(2025, 1, 7))
+        api.get_weather_data(0, 0, date(2025, 1, 1), date(2025, 1, 7))
