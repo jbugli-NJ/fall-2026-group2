@@ -173,25 +173,14 @@ def test_query_carries_the_record_identity():
     {'type': 'Polygon', 'coordinates': [[[0, 0], [0, 1], [1, 1], [0, 0]]]},
     None,
 ])
-def test_records_without_a_point_are_refused(geometry):
+def test_records_without_a_point_are_skipped(geometry):
     """
-    Confirms non-point records raise instead of being given a bbox centre.
+    Confirms non-point records return None instead of using a bbox centre.
 
     A country-level Polygon's bounding box can span a continent, so its
     centre is not where the event happened.
     """
-    with pytest.raises(ValueError, match='no point geometry'):
-        build_weather_query(_item(geometry=geometry))
-
-
-def test_refusal_names_the_record_and_its_geometry():
-    """
-    Confirms the error says which record failed and why, for bulk pulls.
-    """
-    with pytest.raises(ValueError, match="'gdacs-event-1'.*Polygon"):
-        build_weather_query(_item(geometry={
-            'type': 'Polygon', 'coordinates': [[[0, 0], [0, 1], [1, 1], [0, 0]]],
-        }))
+    assert build_weather_query(_item(geometry=geometry)) is None
 
 
 def test_events_before_power_coverage_are_refused():

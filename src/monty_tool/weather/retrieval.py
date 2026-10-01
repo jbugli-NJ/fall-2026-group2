@@ -96,10 +96,15 @@ def _iter_queries(
     """
     for item in items:
         try:
-            yield build_weather_query(item, **padding)
+            query = build_weather_query(item, **padding)
         except ValueError as error:
             logger.debug('Skipping %s: %s', item.id, error)
             counts['skipped'] += 1
+            continue
+        if query is None:
+            counts['skipped'] += 1
+            continue
+        yield query
 
 
 def pull_event_weather(
