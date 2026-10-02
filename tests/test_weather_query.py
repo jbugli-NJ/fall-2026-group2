@@ -97,6 +97,7 @@ def test_window_extends_before_and_after_the_event():
     Confirms the default window pads the event on both sides.
     """
     result = build_weather_query(_item())
+    assert result is not None
 
     # Event runs 10-12 Sept; 7 days before and 1 after.
     assert result.start_date == date(2026, 9, 3)
@@ -118,6 +119,7 @@ def test_window_padding_is_configurable():
     Confirms callers can widen or narrow the window.
     """
     result = build_weather_query(_item(), days_before=0, days_after=0)
+    assert result is not None
 
     assert result.start_date == date(2026, 9, 10)
     assert result.end_date == date(2026, 9, 12)
@@ -138,6 +140,7 @@ def test_window_end_is_clamped_to_today():
     result = build_weather_query(_context(
         end_datetime=datetime(2026, 9, 30, tzinfo=timezone.utc),
     ))
+    assert result is not None
 
     assert result.end_date == TODAY
 
@@ -151,6 +154,8 @@ def test_accepts_an_event_context_directly():
     """
     from_item = build_weather_query(_item())
     from_context = build_weather_query(_context(item_id='gdacs-event-1'))
+    assert from_item is not None
+    assert from_context is not None
 
     assert from_item.start_date == from_context.start_date
     assert from_item.end_date == from_context.end_date
@@ -163,6 +168,7 @@ def test_query_carries_the_record_identity():
     """
     result = build_weather_query(_item())
 
+    assert result is not None
     assert result.item_id == 'gdacs-event-1'
     assert (result.latitude, result.longitude) == (4.42, -76.83)
 
@@ -202,6 +208,7 @@ def test_padding_that_predates_coverage_is_trimmed_not_refused():
         start_datetime=datetime(1981, 1, 3, tzinfo=timezone.utc),
         end_datetime=datetime(1981, 1, 4, tzinfo=timezone.utc),
     ))
+    assert result is not None
 
     # 7 days before 3 Jan 1981 would be 27 Dec 1980, outside coverage.
     assert result.start_date == date(1981, 1, 1)

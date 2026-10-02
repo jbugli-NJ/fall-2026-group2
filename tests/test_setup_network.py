@@ -3,6 +3,7 @@ Tests for the network setup tool.
 """
 
 import gzip
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
@@ -21,7 +22,7 @@ def weather_json():
     """
     return WeatherResult(
         item_id='event-1', latitude=10, longitude=20,
-        start_date='2024-01-01', end_date='2024-01-03',
+        start_date=date(2024, 1, 1), end_date=date(2024, 1, 3),
     ).model_dump_json()
 
 
