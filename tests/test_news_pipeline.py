@@ -1105,3 +1105,63 @@ def test_cli_execute_uploads_news_snapshots(
     run.assert_called_once()
     search.assert_not_called()
     capsys.readouterr()
+
+def test_cli_reuses_s3_result_with_fresh_output_dir(
+    monkeypatch, tmp_path, capsys, fixed_news_today
+):
+    objects: dict[str, bytes] = {}
+    bucket = Mock()
+    bucket.objects.filter.side_effect = lambda Prefix: [
+        Mock(key=key) for key in objects if key.startswith(Prefix)
+    ]
+    bucket.upload_file.side_effect = lambda filename, key: (
+        objects.__setitem__(key, Path(filename).read_bytes())
+    )
+    bucket.download_file.side_effect = lambda key, filename: (
+        Path(filename).write_bytes(objects[key])
+    )
+
+    monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
+    monkeypatch.setattr(cli, "get_bucket", lambda _name: bucket)
+    monkeypatch.setattr(
+        cli,
+        "load_collection",
+        lambda *_args, **_kwargs: [
+            make_record("cli-event", source_id="cli-source")
+        ],
+    )
+    search = Mock(
+        side_effect=lambda query, **_kwargs: NewsSearchResult(
+            **query.model_dump(),
+            total_results=0,
+            articles=[],
+        )
+    )
+    monkeypatch.setattr(news_api, "search_news", search)
+
+    arguments = [
+        "--execute", "--s3-upload",
+        "--collection", "gdacs-events",
+        "--start-date", "2026-09-01",
+        "--end-date", "2026-09-29",
+        "--max-records", "1",
+        "--request-limit", "1",
+    ]
+
+    assert cli.main([
+        *arguments, "--output-dir", str(tmp_path / "first")
+    ]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert len(first["collected"]) == 1
+    assert first["reused"] == []
+    assert search.call_count == 1
+    assert len(objects) == 1
+
+    assert cli.main([
+        *arguments, "--output-dir", str(tmp_path / "second")
+    ]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["collected"] == []
+    assert len(second["reused"]) == 1
+    assert search.call_count == 1
+    assert len(objects) == 1
