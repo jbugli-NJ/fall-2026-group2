@@ -21,6 +21,15 @@ from monty_tool.news.schemas import NewsArticle, NewsQuery, NewsSearchResult
 from monty_tool.news.history import load_recent_snapshots, news_job_key
 from monty_tool.news import runner
 from monty_tool.news import cli
+from pathlib import Path
+from typing import cast
+
+from monty_tool.boto3_utils.s3_protocols import S3Bucket
+from monty_tool.news.s3_storage import (
+    download_news_snapshot,
+    news_snapshot_key,
+    upload_news_snapshot,
+)
 
 def make_record(
     item_id: str,
@@ -483,6 +492,97 @@ def write_history_snapshot(path, job, *, status, finished_at):
     path.write_text(json.dumps(report), encoding="utf-8")
     return path
 
+def test_s3_upload_uses_stable_search_key(tmp_path, collection_job):
+    snapshot = write_history_snapshot(
+        tmp_path / "news-result.json",
+        collection_job,
+        status="ok",
+        finished_at=datetime(2026, 9, 29, tzinfo=timezone.utc),
+    )
+    bucket = Mock()
+
+    key = upload_news_snapshot(cast(S3Bucket, bucket), snapshot)
+
+    assert key == news_snapshot_key(collection_job)
+    bucket.upload_file.assert_called_once_with(snapshot, key)
+
+
+def test_s3_news_snapshot_missing(tmp_path, collection_job):
+    bucket = Mock()
+    bucket.objects.filter.return_value = []
+    key = news_snapshot_key(collection_job)
+
+    found = download_news_snapshot(
+        cast(S3Bucket, bucket),
+        job=collection_job,
+        output_dir=tmp_path,
+    )
+
+    assert found is None
+    bucket.objects.filter.assert_called_once_with(Prefix=key)
+    bucket.download_file.assert_not_called()
+
+
+def test_s3_news_snapshot_reuses_old_result(tmp_path, collection_job):
+    source = write_history_snapshot(
+        tmp_path / "source.json",
+        collection_job,
+        status="ok",
+        finished_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    bucket = Mock()
+    key = news_snapshot_key(collection_job)
+    bucket.objects.filter.return_value = [Mock(key=key)]
+    bucket.download_file.side_effect = (
+        lambda _key, destination: Path(destination).write_bytes(
+            source.read_bytes()
+        )
+    )
+
+    found = download_news_snapshot(
+        cast(S3Bucket, bucket),
+        job=collection_job,
+        output_dir=tmp_path,
+    )
+
+    assert found is not None
+    assert found.read_bytes() == source.read_bytes()
+    bucket.objects.filter.assert_called_once_with(Prefix=key)
+    bucket.download_file.assert_called_once_with(key, found)
+
+def test_s3_news_snapshot_rejects_invalid_json(tmp_path, collection_job):
+    bucket = Mock()
+    key = news_snapshot_key(collection_job)
+    bucket.objects.filter.return_value = [Mock(key=key)]
+    bucket.download_file.side_effect = (
+        lambda _key, destination: Path(destination).write_text(
+            "{invalid", encoding="utf-8"
+        )
+    )
+
+    with pytest.raises(ValueError, match="Invalid S3 news snapshot"):
+        download_news_snapshot(
+            cast(S3Bucket, bucket),
+            job=collection_job,
+            output_dir=tmp_path,
+        )
+
+
+def test_s3_news_snapshot_does_not_hide_permission_error(
+    tmp_path, collection_job
+):
+    bucket = Mock()
+    bucket.objects.filter.side_effect = PermissionError("access denied")
+
+    with pytest.raises(PermissionError, match="access denied"):
+        download_news_snapshot(
+            cast(S3Bucket, bucket),
+            job=collection_job,
+            output_dir=tmp_path,
+        )
+
+    bucket.download_file.assert_not_called()
+
 
 @pytest.mark.parametrize(
     "changed_field",
@@ -635,6 +735,38 @@ def test_runner_reuses_results_across_runs(
     assert second.collected == []
     assert second.reused == first.collected
     assert fake_collection_search.call_count == 1
+
+def test_runner_reuses_s3_result_without_newsapi(
+    monkeypatch, tmp_path, collection_job, fake_collection_search
+):
+    stored = write_history_snapshot(
+        tmp_path / "stored.json",
+        collection_job,
+        status="ok",
+        finished_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    bucket = Mock()
+    download = Mock(return_value=stored)
+    monkeypatch.setattr(runner, "download_news_snapshot", download)
+    output_dir = tmp_path / "results"
+
+    summary = runner.run_news_collection(
+        [collection_job],
+        output_dir=output_dir,
+        request_limit=1,
+        s3_bucket=cast(S3Bucket, bucket),
+    )
+
+    assert summary.stop_reason == "completed"
+    assert summary.collected == []
+    assert summary.reused == [stored]
+    fake_collection_search.assert_not_called()
+    download.assert_called_once_with(
+        bucket,
+        job=collection_job,
+        output_dir=output_dir,
+        page_size=100,
+    )
 
 def test_runner_request_limit_resets_each_run(
     tmp_path, collection_job, fake_collection_search
@@ -875,6 +1007,7 @@ def test_cli_passes_execution_settings_and_reports_status(
         "request_limit": 2,
         "page_size": 50,
         "refresh_after": timedelta(hours=12),
+        "s3_bucket": None,
     }
 
     output = json.loads(capsys.readouterr().out)
@@ -964,6 +1097,7 @@ def test_cli_execute_uploads_news_snapshots(
     ]) == 0
 
     get_bucket.assert_called_once_with("test-bucket")
+    assert run.call_args.kwargs["s3_bucket"] is bucket
     assert [item.args for item in upload.call_args_list] == [
         (bucket, new),
         (bucket, reused),

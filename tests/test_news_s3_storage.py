@@ -57,12 +57,12 @@ def test_download_rejects_other_prefix(tmp_path: Path) -> None:
     bucket.download_file.assert_not_called()
 
 
-def test_upload_news_snapshot(tmp_path: Path) -> None:
+def test_upload_news_snapshot_rejects_invalid_report(tmp_path: Path) -> None:
     bucket = Mock()
     snapshot = tmp_path / "news-123.json"
     snapshot.write_text("{}", encoding="utf-8")
 
-    key = upload_news_snapshot(cast(S3Bucket, bucket), snapshot)
+    with pytest.raises(ValueError, match="Invalid news snapshot"):
+        upload_news_snapshot(cast(S3Bucket, bucket), snapshot)
 
-    assert key == NEWS_ARTICLES_PREFIX + "news-123.json"
-    bucket.upload_file.assert_called_once_with(snapshot, key)
+    bucket.upload_file.assert_not_called()
