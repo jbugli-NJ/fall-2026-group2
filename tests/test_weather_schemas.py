@@ -9,10 +9,28 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from monty_tool.weather.schemas import POWERResponse, WeatherQuery
+from monty_tool.weather.schemas import POWERResponse, WeatherQuery, WeatherResult
 
 
 # Test object helpers
+
+@pytest.mark.parametrize('changes', [
+    {'latitude': 91}, {'longitude': float('nan')}, {'elevation': float('inf')},
+    {'end_date': '2023-01-01'}, {'item_id': ' '},
+    {'days': [{'date': '2024-01-04'}]},
+    {'days': [{'date': '2024-01-01'}] * 2},
+    {'days': [{'date': '2024-01-01', 'wind_speed': float('inf')}]},
+])
+def test_weather_result_rejects_invalid_measurements(changes):
+    """
+    Validate identity, coordinates, dates, and finite daily measurements at input.
+    """
+    data = {
+        'item_id': 'event-1', 'latitude': 10, 'longitude': 20,
+        'start_date': '2024-01-01', 'end_date': '2024-01-03',
+    }
+    with pytest.raises(ValidationError):
+        WeatherResult.model_validate(data | changes)
 
 def _query(**overrides) -> WeatherQuery:
     """

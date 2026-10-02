@@ -46,7 +46,6 @@ class WeatherQuery(BaseModel):
     Carries `item_id` so results can be joined back to the record they
     came from, the same way `NewsQuery` does.
     """
-
     item_id: str
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
@@ -70,6 +69,7 @@ class WeatherDay(BaseModel):
     a requested range can come back with no data. A missing value is
     None here, never the -999.0 sentinel POWER sends.
     """
+    model_config = ConfigDict(allow_inf_nan=False)
 
     date: date
     temperature_mean: float | None = None
@@ -95,10 +95,11 @@ class WeatherResult(BaseModel):
     """
     POWER results linked back to the originating Montandon record.
     """
+    model_config = ConfigDict(allow_inf_nan=False)
 
-    item_id: str
-    latitude: float
-    longitude: float
+    item_id: str = Field(min_length=1)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
     start_date: date
     end_date: date
 
@@ -111,6 +112,24 @@ class WeatherResult(BaseModel):
     sources: list[str] = Field(default_factory=list)
     units: dict[str, str] = Field(default_factory=dict)
     days: list[WeatherDay] = Field(default_factory=list)
+
+    @model_validator(mode='after')
+    def validate_measurements(self) -> WeatherResult:
+        """
+        Require an identified retrieval with unique daily dates inside its period.
+        """
+        if not self.item_id.strip():
+            raise ValueError('item_id must not be blank.')
+        if self.start_date > self.end_date:
+            raise ValueError('start_date must be on or before end_date.')
+        dates = set()
+        for day in self.days:
+            if not self.start_date <= day.date <= self.end_date:
+                raise ValueError(f'Weather date {day.date} is outside the retrieval period.')
+            if day.date in dates:
+                raise ValueError(f'Duplicate weather date {day.date}.')
+            dates.add(day.date)
+        return self
 
     @property
     def missing_days(self) -> int:

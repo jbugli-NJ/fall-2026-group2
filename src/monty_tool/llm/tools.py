@@ -17,6 +17,7 @@ from pydantic import (
 )
 from requests import RequestException
 from neo4j import RoutingControl
+from neo4j.time import Date as Neo4jDate
 
 from monty_tool.event_context import EventContext
 from monty_tool.news.query import build_news_query
@@ -265,7 +266,7 @@ def _json_value(value: Any) -> Any:
                 output.append(serialized)
         return output
 
-    if isinstance(value, (date, datetime, time)):
+    if isinstance(value, (date, datetime, time, Neo4jDate)):
         return value.isoformat()
 
     return value
@@ -314,7 +315,10 @@ class QueryTools:
                 "type": "function",
                 "function": {
                     "name": "get_disaster_context",
-                    "description": "Get one Montandon event and its impacts using an event_id returned by search_disaster_events.",
+                    "description": (
+                        "Get one Montandon event, its impacts, and weather data (if available) "
+                        "using an event_id returned by search_disaster_events."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {"event_id": {"type": "string"}},
