@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 from monty_tool.news.collector import collect_news_job
 from monty_tool.news.history import load_recent_snapshots, news_job_key
 from monty_tool.news.pipeline import NewsCollectionJob
+from monty_tool.boto3_utils.s3_protocols import S3Bucket
+from monty_tool.news.s3_storage import download_news_snapshot
 
 
 class NewsCollectionRun(BaseModel):
@@ -31,6 +33,7 @@ def run_news_collection(
     request_limit: int,
     page_size: int = 100,
     refresh_after: timedelta = timedelta(hours=24),
+    s3_bucket: S3Bucket | None = None,
 ) -> NewsCollectionRun:
     """Collect searches within one run's request limit."""
     if type(request_limit) is not int or request_limit < 1:
@@ -52,7 +55,17 @@ def run_news_collection(
         if key in recent:
             summary.reused.append(recent[key])
             continue
-
+        if s3_bucket is not None:
+            stored = download_news_snapshot(
+                s3_bucket,
+                job=job,
+                output_dir=output_dir,
+                page_size=page_size,
+            )
+            if stored is not None:
+                summary.reused.append(stored)
+                recent[key] = stored
+                continue
         if requests_made >= request_limit:
             summary.stop_reason = "budget_exhausted"
             break

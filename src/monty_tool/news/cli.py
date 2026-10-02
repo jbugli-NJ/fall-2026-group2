@@ -162,17 +162,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
         return 0
 
+    result_bucket = (
+        get_bucket(get_env_bucket_name()) if args.s3_upload else None
+    )
     summary = run_news_collection(
         jobs,
         output_dir=args.output_dir,
         request_limit=args.request_limit,
         page_size=args.page_size,
         refresh_after=timedelta(hours=args.refresh_hours),
+        s3_bucket=result_bucket,
     )
-    if args.s3_upload:
-        bucket = get_bucket(get_env_bucket_name())
+    if result_bucket is not None:
         for snapshot in [*summary.collected, *summary.reused]:
-            upload_news_snapshot(bucket, snapshot)
+            upload_news_snapshot(result_bucket, snapshot)
     print(summary.model_dump_json(indent=2))
 
     return 1 if summary.stop_reason == "error" else 0
