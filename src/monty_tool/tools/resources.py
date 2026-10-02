@@ -18,9 +18,36 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+# Environment helpers
+
+def get_env_bucket_name() -> str:
+    """
+    Retrieve the selected bucket name from the environment.
+    """
+    bucket = os.getenv('AWS_BUCKET', '').strip()
+    if bucket  == '':
+        logger.warning('AWS_BUCKET is unset! Defaulting to dats-capstone')
+        bucket = 'dats-capstone'
+    return bucket
+
+
+def get_env_bucket_prefix() -> str:
+    """
+    Retrieve the selected S3 folder prefix with one trailing slash.
+    """
+    prefix = os.getenv('AWS_BUCKET_PREFIX', '').strip().strip('/')
+    if prefix == '':
+        logger.warning(
+            'AWS_BUCKET_PREFIX is unset or blank! '
+            'Defaulting to aidan.carlisle@gwu.edu/'
+        )
+        return 'aidan.carlisle@gwu.edu/'
+    return prefix + '/'
+
+
 # Bucket resources
 
-BUCKET_DATA_PREFIX = 'aidan.carlisle@gwu.edu/'
+BUCKET_DATA_PREFIX = get_env_bucket_prefix()
 
 RAW_BUCKET_PREFIX = BUCKET_DATA_PREFIX + 'raw/'
 GO_BUCKET_PREFIX = BUCKET_DATA_PREFIX + 'go/'
@@ -40,19 +67,6 @@ GO_EVENT_NODE_DATA_BUCKET_KEY = (
 GO_APPEAL_NODE_DATA_BUCKET_KEY = (
     GO_APPEAL_NODE_DATA_BUCKET_PREFIX + 'appeal.jsonl.gz'
 )
-
-
-# Environment helpers
-
-def get_env_bucket_name() -> str:
-    """
-    Retrieve the selected bucket name from the environment.
-    """
-    bucket = os.getenv('AWS_BUCKET', '').strip()
-    if bucket  == '':
-        logger.warning('AWS_BUCKET is unset! Defaulting to dats-capstone')
-        bucket = 'dats-capstone'
-    return bucket
 
 
 # File parsing
