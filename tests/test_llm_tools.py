@@ -16,6 +16,26 @@ from monty_tool.llm import tools
 
 # Tests
 
+@pytest.mark.parametrize('metric', ['elevation', 'mean_temperature', 'precipitation_total'])
+def test_disaster_search_rejects_inverted_weather_ranges(metric):
+    """
+    Reject contradictory lower and upper bounds before executing a graph query.
+    """
+    with pytest.raises(ValueError, match=f'min_{metric}'):
+        tools.DisasterEventSearchArguments.model_validate({f'min_{metric}': 10, f'max_{metric}': 5})
+
+
+@pytest.mark.parametrize('bounds', [
+    {'max_elevation': float('inf')}, {'min_mean_temperature': float('nan')},
+    {'min_precipitation_total': -1},
+])
+def test_disaster_search_rejects_invalid_weather_bounds(bounds):
+    """
+    Require finite weather thresholds and nonnegative precipitation.
+    """
+    with pytest.raises(ValueError):
+        tools.DisasterEventSearchArguments.model_validate(bounds)
+
 def test_load_cypher_query_completes():
     """
     Checks that importlib can be used to load the package with Cypher query templates.
