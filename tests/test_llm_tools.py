@@ -7,7 +7,7 @@ Tests for LLM tools.
 from datetime import date, datetime, time
 from typing import Any, cast, get_args
 from unittest.mock import Mock, ANY
-from neo4j.time import Date as Neo4jDate
+from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 
 import pytest
 
@@ -72,6 +72,7 @@ def test_graph_search_arguments_validates_dates():
         ('flood', 'flood'),
         (date(2026, 9, 27), '2026-09-27'),
         (Neo4jDate(2026, 9, 27), '2026-09-27'),
+        (Neo4jDateTime(2026, 9, 14, 10, 0), '2026-09-14T10:00:00.000000000'),
         (
             datetime(2026, 9, 27, 14, 30, 15),
             '2026-09-27T14:30:15',
