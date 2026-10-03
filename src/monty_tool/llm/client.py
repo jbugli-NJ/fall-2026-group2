@@ -322,8 +322,9 @@ class QueryAssistant:
                     "Use response tools for IFRC events and appeals. Use get_event_news "
                     "for articles already stored in the graph; use search_news only "
                     "when fresh reporting is needed. Articles returned by "
-                    "get_event_news are search results for an event, not verified "
-                    "reports about that event. Base your answer on tool results and "
+                    "get_event_news are unverified search candidates; some may be unrelated. "
+                    "When listing them, explicitly call them candidates, not confirmed "
+                    "reports about the event. Base your answer on tool results and "
                     "distinguish graph records from news. Answer in the user's language."
                 ),
             },
