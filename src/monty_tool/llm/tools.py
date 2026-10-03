@@ -156,6 +156,7 @@ type CypherTemplateFile = Literal[
     'find_related_disaster_events.cypher',
     'search_response_events.cypher',
     'get_response_context.cypher',
+    'get_event_news.cypher',
 ]
 
 def _load_cypher_query(name: CypherTemplateFile) -> LiteralString:
@@ -425,6 +426,25 @@ class QueryTools:
             {
                 "type": "function",
                 "function": {
+                    "name": "get_event_news",
+                    "description": (
+                        "Get saved NewsAPI article candidates retrieved for an "
+                        "existing disaster event by event_id. These are search "
+                        "results, not verified reports about the event."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "event_id": {"type": "string"},
+                        },
+                        "required": ["event_id"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "search_news",
                     "description": "Search NewsAPI with an English query and a date range.",
                     "parameters": {
@@ -569,6 +589,13 @@ class QueryTools:
                     arguments,
                     EventIdArguments,
                     "get_response_context.cypher",
+                    "Supply a non-empty event_id.",
+                )
+            if name == "get_event_news":
+                return self._run_graph_query(
+                    arguments,
+                    EventIdArguments,
+                    "get_event_news.cypher",
                     "Supply a non-empty event_id.",
                 )
             if name == "search_news":
