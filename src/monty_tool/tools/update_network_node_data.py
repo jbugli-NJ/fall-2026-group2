@@ -22,7 +22,7 @@ from monty_tool.boto3_utils.s3_utils import (
     get_bucket,
     upload_object,
 )
-from monty_tool.embeddings.generate import EMBEDDING_MODEL_NAME
+from monty_tool.embeddings.generate import EMBEDDING_MODEL
 from monty_tool.network.node_data import (
     go_appeals_to_node_data,
     go_events_to_node_data,
@@ -210,7 +210,10 @@ def main():
             f'No gzip JSONL files found under {RAW_BUCKET_PREFIX!r}'
         )
 
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    embedding_model = SentenceTransformer(
+        EMBEDDING_MODEL.value,
+        revision=EMBEDDING_MODEL.revision,
+    )
     with TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         for raw_key in raw_keys:

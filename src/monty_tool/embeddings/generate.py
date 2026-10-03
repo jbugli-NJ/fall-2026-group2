@@ -8,11 +8,12 @@ from sentence_transformers import SentenceTransformer
 
 from monty_tool.api_schemas import MontandonImpactProperties, MontandonItem
 from monty_tool.embeddings.schemas import MontandonItemEmbeddings, Embedding
+from monty_tool.utils.versions import FrozenModel
 
 
 # Constants
 
-EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
+EMBEDDING_MODEL = FrozenModel.MINILM_V6
 EMBEDDING_DIMENSIONS = 384
 
 

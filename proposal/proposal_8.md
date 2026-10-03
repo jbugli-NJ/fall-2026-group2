@@ -104,11 +104,12 @@ PHASE 3: NETWORK ANALYSIS & REPORTING TOOLS (Weeks 5-8)
 - Completing any lingering network insertion pipelines and tools
 - Refine NewsAPI collection pipeline
 - Complete a deployed app to demo the full network setup
+- Complete an initial benchmarking effort for factual retrieval using the network, testing accuracy and tool call behavior across an initial model candidate set
 
 [Week 6: App refinement and direction-setting]
 - Refine the demo app and/or change course as needed based on instruction feedback, potentially:
   - Involving more classical modeling using the data bank records
-  - Benchmarking LLM recommendations to compare efficacy and tool call behavior
+  - Expanding benchmarking for LLM recommendations across more/different questions, new models, etc.
   - Transitioning from local execution to an API with more intelligent frontier models
 - Draft report on initial findings
 

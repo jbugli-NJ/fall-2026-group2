@@ -44,6 +44,42 @@ project instead starts with the curated Montandon data bank and uses external ar
 additional context. STAC provides a common structure for spatiotemporal metadata
 \cite{ogc2025stac}, which is relevant because Montandon uses a modified STAC approach.
 
+Adding weather and news to Montandon requires matching records across sources.
+GDIS does this for EM-DAT, adding administrative boundaries and coordinates while
+keeping the original event identifiers \cite{rosvold2021gdis}. Missing locations
+and later EM-DAT updates can leave gaps or mismatches in the joined data.
+EM-DAT itself combines disaster loss reports from multiple sources and documents
+how it selects and checks the figures \cite{delforge2025emdat}. Its uneven
+reporting across countries and years also limits comparisons.
+
+News can provide both impact figures and relationships between responders.
+Comfort and Haase reconstructed Hurricane Katrina's response network from news
+reports, then examined organizational interactions after communications were
+damaged \cite{comfort2006communication}. Our graph has some similarities
+in spirit, using recorded relationships, shared attributes, and more
+to connect disaster and IFRC response records.
+Li et al. used LLMs and conventional NLP to extract climate impact
+records from online reports \cite{li2024climateimpacts}. They compared three
+models against an existing database and found that accuracy varied by field.
+Our news pipeline currently retrieves and ranks articles; extracting potential
+network relationships extracting facts from them would extend that work.
+
+The graph also gives an LLM access to records beyond its training data.
+GraphRAG builds its graph from documents and summarizes connected groups of
+entities, reporting more comprehensive answers to wide-ranging questions than
+a conventional RAG baseline \cite{edge2024graphrag}. We build from structured
+records and retrieve through predefined Cypher queries. Generating queries directly
+is another option; Ozsoy et al. assembled 44,387 question-to-Cypher examples and
+improved reference query agreement through fine-tuning \cite{ozsoy2025text2cypher}.
+Our assistant chooses a tool and its arguments, leaving the Cypher fixed.
+
+That interface can be evaluated using the tasks like those in the Berkeley Function
+Calling Leaderboard: choosing functions, supplying arguments, making several
+calls, and recognizing when no call is needed \cite{patil2025bfcl}. The benchmark
+finds that models still struggle with longer tasks despite strong performance on
+single calls. We plan to test some of these behaviours on Montandon and IFRC GO questions
+and check the resulting answers against the records returned.
+
 \section{Solution and Methodology}
 
 This section will describe data access, feature generation, graph construction, and the query setup.
