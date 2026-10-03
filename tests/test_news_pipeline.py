@@ -32,6 +32,7 @@ from monty_tool.news.s3_storage import (
     read_news_snapshot,
     iter_news_snapshots,
 )
+from monty_tool.network.node_data import news_result_to_node_data
 
 def make_record(
     item_id: str,
@@ -355,6 +356,39 @@ def make_search_result(
         ],
     )
 
+def test_news_result_to_node_data_preserves_article_and_source(collection_job):
+    result = make_search_result(collection_job, 1)
+    s3_uri = f"s3://test-bucket/{news_snapshot_key(collection_job)}"
+
+    rows = news_result_to_node_data(
+        collection_job, result, snapshot_s3_uri=s3_uri
+    )
+
+    assert rows == [
+        {
+            "url": "https://example.com/articles/0",
+            "title": "Earthquake report 0",
+            "description": "Test description 0",
+            "source_id": None,
+            "source_name": "Test News",
+            "published_at": datetime(2026, 9, 10, 12, tzinfo=timezone.utc),
+            "event_id": collection_job.event.item_id,
+            "snapshot_s3_uri": s3_uri,
+        }
+    ]
+
+
+def test_news_result_to_node_data_rejects_different_event(collection_job):
+    result = make_search_result(collection_job, 1).model_copy(
+        update={"item_id": "different-event"}
+    )
+
+    with pytest.raises(ValueError, match="does not match"):
+        news_result_to_node_data(
+            collection_job,
+            result,
+            snapshot_s3_uri="s3://test-bucket/news.json",
+        )
 
 @pytest.mark.parametrize("article_count", [0, 100])
 def test_collection_preserves_complete_result(
