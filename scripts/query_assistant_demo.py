@@ -13,7 +13,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from transformers import set_seed
+
 from monty_tool.llm.client import QueryAssistant
+from monty_tool.utils.versions import SEED
 
 
 # Constants
@@ -24,6 +27,7 @@ OUTPUT_DIRECTORY = Path('outputs')
 # Entrypoint
 
 def main():
+    set_seed(SEED)
     timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
     output_path = OUTPUT_DIRECTORY.joinpath(f"query_assistant_graph_demo_{timestamp}.json")
     assistant = QueryAssistant()

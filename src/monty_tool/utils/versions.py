@@ -7,6 +7,11 @@ Storage for seeds / hashes to improve reproducibility.
 from enum import StrEnum
 
 
+# Seed
+
+SEED = 2026
+
+
 # Model enum
 
 class FrozenModel(StrEnum):
