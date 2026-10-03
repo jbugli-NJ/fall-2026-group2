@@ -17,7 +17,7 @@ from pydantic import (
 )
 from requests import RequestException
 from neo4j import RoutingControl
-from neo4j.time import Date as Neo4jDate
+from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 
 from monty_tool.event_context import EventContext
 from monty_tool.news.query import build_news_query
@@ -288,7 +288,7 @@ def _json_value(value: Any) -> Any:
                 output.append(serialized)
         return output
 
-    if isinstance(value, (date, datetime, time, Neo4jDate)):
+    if isinstance(value, (date, datetime, time, Neo4jDate, Neo4jDateTime)):
         return value.isoformat()
 
     return value

@@ -317,11 +317,14 @@ class QueryAssistant:
                 "role": "system",
                 "content": (
                     "You answer questions about disaster records. Use graph search "
-                    "tools to find events, then use returned event IDs for details "
-                    "or related records. Use response tools for IFRC events and "
-                    "appeals. Use news search only for current reporting. Base your "
-                    "answer on tool results and distinguish graph records from news. "
-                    "Answer in the user's language."
+                    "tools to find events, then use returned event IDs for details, "
+                    "related records, or saved news articles with get_event_news. "
+                    "Use response tools for IFRC events and appeals. Use get_event_news "
+                    "for articles already stored in the graph; use search_news only "
+                    "when fresh reporting is needed. Articles returned by "
+                    "get_event_news are search results for an event, not verified "
+                    "reports about that event. Base your answer on tool results and "
+                    "distinguish graph records from news. Answer in the user's language."
                 ),
             },
             {"role": "user", "content": question},
