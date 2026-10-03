@@ -9,9 +9,10 @@ from monty_tool.news.s3_storage import (
     NEWS_ARTICLES_PREFIX,
     download_collection_cache,
     upload_news_snapshot,
+    list_news_snapshot_keys,
 )
 from monty_tool.tools.resources import RAW_BUCKET_PREFIX
-
+from types import SimpleNamespace
 
 @pytest.mark.parametrize(
     ("geometry", "filename"),
@@ -66,3 +67,17 @@ def test_upload_news_snapshot_rejects_invalid_report(tmp_path: Path) -> None:
         upload_news_snapshot(cast(S3Bucket, bucket), snapshot)
 
     bucket.upload_file.assert_not_called()
+
+def test_list_news_snapshot_keys_selects_json_in_job_prefix() -> None:
+    bucket = Mock()
+    prefix = f"{NEWS_ARTICLES_PREFIX}by-job/"
+    bucket.objects.filter.return_value = [
+        SimpleNamespace(key=prefix + "b.json"),
+        SimpleNamespace(key=prefix + "notes.txt"),
+        SimpleNamespace(key=prefix + "a.json"),
+    ]
+
+    result = list_news_snapshot_keys(cast(S3Bucket, bucket))
+
+    assert result == [prefix + "a.json", prefix + "b.json"]
+    bucket.objects.filter.assert_called_once_with(Prefix=prefix)

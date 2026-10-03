@@ -29,6 +29,8 @@ from monty_tool.news.s3_storage import (
     download_news_snapshot,
     news_snapshot_key,
     upload_news_snapshot,
+    read_news_snapshot,
+    iter_news_snapshots,
 )
 
 def make_record(
@@ -506,6 +508,60 @@ def test_s3_upload_uses_stable_search_key(tmp_path, collection_job):
     assert key == news_snapshot_key(collection_job)
     bucket.upload_file.assert_called_once_with(snapshot, key)
 
+def test_read_news_snapshot_accepts_matching_key(
+    tmp_path, collection_job, history_now
+):
+    snapshot = write_history_snapshot(
+        tmp_path / "news-result.json",
+        collection_job,
+        status="ok",
+        finished_at=history_now,
+    )
+    key = news_snapshot_key(collection_job)
+
+    job, result = read_news_snapshot(snapshot, key=key)
+
+    assert job == collection_job
+    assert result.item_id == collection_job.event.item_id
+    assert len(result.articles) == 1
+
+
+def test_read_news_snapshot_rejects_wrong_key(
+    tmp_path, collection_job, history_now
+):
+    snapshot = write_history_snapshot(
+        tmp_path / "news-result.json",
+        collection_job,
+        status="ok",
+        finished_at=history_now,
+    )
+
+    with pytest.raises(ValueError, match="Invalid S3 news snapshot"):
+        read_news_snapshot(snapshot, key="wrong/by-job/result.json")
+
+def test_iter_news_snapshots_downloads_saved_result(
+    tmp_path, collection_job, history_now
+):
+    snapshot = write_history_snapshot(
+        tmp_path / "news-result.json",
+        collection_job,
+        status="ok",
+        finished_at=history_now,
+    )
+    key = news_snapshot_key(collection_job)
+    bucket = Mock()
+    bucket.objects.filter.return_value = [Mock(key=key)]
+    bucket.download_file.side_effect = (
+        lambda _key, filename: Path(filename).write_bytes(snapshot.read_bytes())
+    )
+
+    found = list(iter_news_snapshots(cast(S3Bucket, bucket)))
+
+    assert len(found) == 1
+    assert found[0][0] == key
+    assert found[0][1] == collection_job
+    assert len(found[0][2].articles) == 1
+    assert bucket.download_file.call_args.args[0] == key
 
 def test_s3_news_snapshot_missing(tmp_path, collection_job):
     bucket = Mock()

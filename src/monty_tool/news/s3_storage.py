@@ -10,9 +10,19 @@ from monty_tool.tools.resources import BUCKET_DATA_PREFIX, RAW_BUCKET_PREFIX
 from monty_tool.news.history import news_job_key
 from monty_tool.news.pipeline import NewsCollectionJob
 from monty_tool.news.schemas import NewsSearchResult
-
+from collections.abc import Iterator
+from tempfile import TemporaryDirectory
 
 NEWS_ARTICLES_PREFIX = BUCKET_DATA_PREFIX + "newsapi_articles/"
+
+def list_news_snapshot_keys(bucket: S3Bucket) -> list[str]:
+    """List saved news-search results for network loading."""
+    prefix = f"{NEWS_ARTICLES_PREFIX}by-job/"
+    return sorted(
+        obj.key
+        for obj in bucket.objects.filter(Prefix=prefix)
+        if obj.key.endswith(".json")
+    )
 
 def news_snapshot_key(
     job: NewsCollectionJob, *, page_size: int = 100
@@ -22,6 +32,54 @@ def news_snapshot_key(
         f"{NEWS_ARTICLES_PREFIX}by-job/"
         f"{news_job_key(job, page_size=page_size)}.json"
     )
+
+def read_news_snapshot(
+    path: Path, *, key: str
+) -> tuple[NewsCollectionJob, NewsSearchResult]:
+    """Validate a saved search result and return its job and articles."""
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        job = NewsCollectionJob.model_validate(report["job"])
+        result = NewsSearchResult.model_validate(report["result"])
+        parameters = report["search_parameters"]
+        page_size = parameters["page_size"]
+
+        if type(page_size) is not int or not 1 <= page_size <= 100:
+            raise ValueError("Invalid page size.")
+
+        if (
+            report["schema_version"] != 1
+            or parameters != {
+                "page_size": page_size,
+                "language": "en",
+                "sort_by": "relevancy",
+                "page": 1,
+            }
+            or report["status"] != ("ok" if result.articles else "empty")
+            or job.event.item_id != job.query.item_id
+            or result.item_id != job.query.item_id
+            or result.query != job.query.query
+            or result.from_date != job.query.from_date
+            or result.to_date != job.query.to_date
+            or key != news_snapshot_key(job, page_size=page_size)
+        ):
+            raise ValueError("Snapshot contents do not match its S3 key.")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid S3 news snapshot: {key}") from exc
+
+    return job, result
+
+def iter_news_snapshots(
+    bucket: S3Bucket,
+) -> Iterator[tuple[str, NewsCollectionJob, NewsSearchResult]]:
+    """Download and validate saved results one at a time."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "snapshot.json"
+
+        for key in list_news_snapshot_keys(bucket):
+            download_object(bucket, key, path)
+            job, result = read_news_snapshot(path, key=key)
+            yield key, job, result
 
 def download_news_snapshot(
     bucket: S3Bucket,
