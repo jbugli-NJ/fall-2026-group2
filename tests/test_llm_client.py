@@ -162,6 +162,28 @@ def test_query_assistant_executes_tool_calls_before_answering(
         call('get_disaster_context', {'event_id': 'event-1'}),
     ]
 
+def test_query_assistant_executes_saved_news_tool(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    assistant = _query_assistant(monkeypatch)
+    saved_news = {
+        'status': 'ok',
+        'rows': [{'event_id': 'event-1', 'title': 'Flood update'}],
+    }
+    execute = Mock(return_value=saved_news)
+    monkeypatch.setattr(assistant.tools, 'execute', execute)
+    assistant._generate = Mock(side_effect=[
+        '<tool_call>{"name": "get_event_news", '
+        '"arguments": {"event_id": "event-1"}}</tool_call>',
+        'One saved article candidate was found.',
+    ])
+
+    result = assistant.ask('Show saved news for event-1.')
+
+    execute.assert_called_once_with('get_event_news', {'event_id': 'event-1'})
+    assert result['tool_results'][0]['result'] == saved_news
+    assert result['answer'] == 'One saved article candidate was found.'
+
 
 @pytest.mark.parametrize(
     'response',
