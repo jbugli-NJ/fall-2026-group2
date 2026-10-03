@@ -137,6 +137,7 @@ def test_query_tools_has_definitions():
         ),
         ('search_response_events', {'country_code': 'JPN'}, 'search_response_events.cypher'),
         ('get_response_context', {'event_id': 'event-1'}, 'get_response_context.cypher'),
+        ('get_event_news', {'event_id': 'event-1'}, 'get_event_news.cypher'),
     ],
 )
 def test_query_tools_routes_graph_tools(
@@ -165,6 +166,7 @@ def test_query_tools_routes_graph_tools(
         ('find_related_disaster_events', {'event_id': 'event-1', 'relation_kind': 'nonexistent'}),
         ('search_response_events', {'from_date': '2026-09-20', 'to_date': '2026-09-19'}),
         ('get_response_context', {'event_id': ''}),
+        ('get_event_news', {}),
     ],
 )
 def test_query_tools_reject_invalid_graph_tool_arguments(
