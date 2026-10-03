@@ -1,3 +1,9 @@
+# The front-end library is run via `uv run --with streamlit` rather than
+# added to pyproject.toml, so CI never installs it and pyright cannot
+# resolve its attributes. Suppressed here rather than in the project
+# config, to keep the spike self-contained.
+# pyright: reportAttributeAccessIssue=false, reportMissingImports=false
+
 """
 Spike: a Streamlit front end for QueryAssistant, for issue #44.
 
