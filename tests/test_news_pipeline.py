@@ -16,12 +16,20 @@ from requests.exceptions import Timeout
 
 from monty_tool import news_api
 from monty_tool.news import collector
-from monty_tool.news.budget import reserve_news_request
 from monty_tool.news.pipeline import NewsCollectionJob
 from monty_tool.news.schemas import NewsArticle, NewsQuery, NewsSearchResult
 from monty_tool.news.history import load_recent_snapshots, news_job_key
 from monty_tool.news import runner
 from monty_tool.news import cli
+from pathlib import Path
+from typing import cast
+
+from monty_tool.boto3_utils.s3_protocols import S3Bucket
+from monty_tool.news.s3_storage import (
+    download_news_snapshot,
+    news_snapshot_key,
+    upload_news_snapshot,
+)
 
 def make_record(
     item_id: str,
@@ -357,8 +365,6 @@ def test_collection_preserves_complete_result(
     output = collector.collect_news_job(
         collection_job,
         output_dir=tmp_path / "results",
-        state_path=tmp_path / "state.sqlite3",
-        request_limit=1,
     )
     report = json.loads(output.read_text(encoding="utf-8"))
 
@@ -377,41 +383,29 @@ def test_collection_preserves_complete_result(
     assert not list(output.parent.glob("*.tmp"))
 
 
-def test_collection_blocks_requests_when_budget_is_used(
+def test_collector_does_not_enforce_request_limit(
     monkeypatch, tmp_path, collection_job
 ):
     search = Mock(return_value=make_search_result(collection_job, 1))
     monkeypatch.setattr(news_api, "search_news", search)
-    settings = {
-        "output_dir": tmp_path / "results",
-        "state_path": tmp_path / "state.sqlite3",
-        "request_limit": 1,
-    }
+    output_dir = tmp_path / "results"
 
-    first = collector.collect_news_job(collection_job, **settings)
-    first_contents = first.read_text(encoding="utf-8")
-    second = collector.collect_news_job(collection_job, **settings)
-    report = json.loads(second.read_text(encoding="utf-8"))
+    first = collector.collect_news_job(collection_job, output_dir=output_dir)
+    second = collector.collect_news_job(collection_job, output_dir=output_dir)
 
     assert first != second
-    assert first.read_text(encoding="utf-8") == first_contents
-    assert len(list((tmp_path / "results").glob("*.json"))) == 2
-    assert search.call_count == 1
-    assert report["status"] == "budget_exhausted"
-    assert report["request_attempted"] is False
-    assert report["result"] is None
+    assert len(list(output_dir.glob("*.json"))) == 2
+    assert search.call_count == 2
 
 
 @pytest.mark.parametrize("error_type", [Timeout, RuntimeError, ValueError])
-def test_collection_records_search_failure_without_refunding_budget(
+def test_collection_records_search_failure(
     monkeypatch, tmp_path, collection_job, error_type
 ):
     search = Mock(side_effect=error_type("sensitive-test-message"))
     monkeypatch.setattr(news_api, "search_news", search)
     settings = {
         "output_dir": tmp_path / "results",
-        "state_path": tmp_path / "state.sqlite3",
-        "request_limit": 1,
     }
 
     output = collector.collect_news_job(collection_job, **settings)
@@ -424,11 +418,7 @@ def test_collection_records_search_failure_without_refunding_budget(
     assert report["error"] == {"type": error_type.__name__}
     assert "sensitive-test-message" not in contents
 
-    second = collector.collect_news_job(collection_job, **settings)
-    second_report = json.loads(second.read_text(encoding="utf-8"))
-
-    assert second_report["status"] == "budget_exhausted"
-    assert search.call_count == 1
+    search.assert_called_once()
 
 
 def test_collection_propagates_storage_failure(
@@ -442,42 +432,32 @@ def test_collection_propagates_storage_failure(
         Mock(side_effect=OSError("Simulated storage failure")),
     )
     output_dir = tmp_path / "results"
-    state_path = tmp_path / "state.sqlite3"
 
     with pytest.raises(OSError, match="Simulated storage failure"):
         collector.collect_news_job(
             collection_job,
             output_dir=output_dir,
-            state_path=state_path,
-            request_limit=1,
         )
 
     search.assert_called_once()
     assert not list(output_dir.glob("*.json"))
     assert not list(output_dir.glob("*.tmp"))
-    assert reserve_news_request(state_path, request_limit=1) is False
-
 
 @pytest.mark.parametrize("page_size", [0, 101, -1, True, 1.5])
 def test_collection_rejects_invalid_page_size_before_request(
     monkeypatch, tmp_path, collection_job, page_size
 ):
     search = Mock()
-    reserve = Mock()
     monkeypatch.setattr(news_api, "search_news", search)
-    monkeypatch.setattr(collector, "reserve_news_request", reserve)
 
     with pytest.raises(ValueError, match="page_size"):
         collector.collect_news_job(
             collection_job,
             output_dir=tmp_path / "results",
-            state_path=tmp_path / "state.sqlite3",
-            request_limit=1,
             page_size=page_size,
         )
 
     search.assert_not_called()
-    reserve.assert_not_called()
 
 @pytest.fixture
 def history_now():
@@ -511,6 +491,97 @@ def write_history_snapshot(path, job, *, status, finished_at):
     }
     path.write_text(json.dumps(report), encoding="utf-8")
     return path
+
+def test_s3_upload_uses_stable_search_key(tmp_path, collection_job):
+    snapshot = write_history_snapshot(
+        tmp_path / "news-result.json",
+        collection_job,
+        status="ok",
+        finished_at=datetime(2026, 9, 29, tzinfo=timezone.utc),
+    )
+    bucket = Mock()
+
+    key = upload_news_snapshot(cast(S3Bucket, bucket), snapshot)
+
+    assert key == news_snapshot_key(collection_job)
+    bucket.upload_file.assert_called_once_with(snapshot, key)
+
+
+def test_s3_news_snapshot_missing(tmp_path, collection_job):
+    bucket = Mock()
+    bucket.objects.filter.return_value = []
+    key = news_snapshot_key(collection_job)
+
+    found = download_news_snapshot(
+        cast(S3Bucket, bucket),
+        job=collection_job,
+        output_dir=tmp_path,
+    )
+
+    assert found is None
+    bucket.objects.filter.assert_called_once_with(Prefix=key)
+    bucket.download_file.assert_not_called()
+
+
+def test_s3_news_snapshot_reuses_old_result(tmp_path, collection_job):
+    source = write_history_snapshot(
+        tmp_path / "source.json",
+        collection_job,
+        status="ok",
+        finished_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    bucket = Mock()
+    key = news_snapshot_key(collection_job)
+    bucket.objects.filter.return_value = [Mock(key=key)]
+    bucket.download_file.side_effect = (
+        lambda _key, destination: Path(destination).write_bytes(
+            source.read_bytes()
+        )
+    )
+
+    found = download_news_snapshot(
+        cast(S3Bucket, bucket),
+        job=collection_job,
+        output_dir=tmp_path,
+    )
+
+    assert found is not None
+    assert found.read_bytes() == source.read_bytes()
+    bucket.objects.filter.assert_called_once_with(Prefix=key)
+    bucket.download_file.assert_called_once_with(key, found)
+
+def test_s3_news_snapshot_rejects_invalid_json(tmp_path, collection_job):
+    bucket = Mock()
+    key = news_snapshot_key(collection_job)
+    bucket.objects.filter.return_value = [Mock(key=key)]
+    bucket.download_file.side_effect = (
+        lambda _key, destination: Path(destination).write_text(
+            "{invalid", encoding="utf-8"
+        )
+    )
+
+    with pytest.raises(ValueError, match="Invalid S3 news snapshot"):
+        download_news_snapshot(
+            cast(S3Bucket, bucket),
+            job=collection_job,
+            output_dir=tmp_path,
+        )
+
+
+def test_s3_news_snapshot_does_not_hide_permission_error(
+    tmp_path, collection_job
+):
+    bucket = Mock()
+    bucket.objects.filter.side_effect = PermissionError("access denied")
+
+    with pytest.raises(PermissionError, match="access denied"):
+        download_news_snapshot(
+            cast(S3Bucket, bucket),
+            job=collection_job,
+            output_dir=tmp_path,
+        )
+
+    bucket.download_file.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -652,10 +723,8 @@ def test_runner_reuses_results_across_runs(
 ):
     settings = {
         "output_dir": tmp_path / "results",
-        "state_path": tmp_path / "state.sqlite3",
         "request_limit": 1,
     }
-
     first = runner.run_news_collection([collection_job], **settings)
     second = runner.run_news_collection([collection_job], **settings)
 
@@ -667,6 +736,60 @@ def test_runner_reuses_results_across_runs(
     assert second.reused == first.collected
     assert fake_collection_search.call_count == 1
 
+def test_runner_reuses_s3_result_without_newsapi(
+    monkeypatch, tmp_path, collection_job, fake_collection_search
+):
+    stored = write_history_snapshot(
+        tmp_path / "stored.json",
+        collection_job,
+        status="ok",
+        finished_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    bucket = Mock()
+    download = Mock(return_value=stored)
+    monkeypatch.setattr(runner, "download_news_snapshot", download)
+    output_dir = tmp_path / "results"
+
+    summary = runner.run_news_collection(
+        [collection_job],
+        output_dir=output_dir,
+        request_limit=1,
+        s3_bucket=cast(S3Bucket, bucket),
+    )
+
+    assert summary.stop_reason == "completed"
+    assert summary.collected == []
+    assert summary.reused == [stored]
+    fake_collection_search.assert_not_called()
+    download.assert_called_once_with(
+        bucket,
+        job=collection_job,
+        output_dir=output_dir,
+        page_size=100,
+    )
+
+def test_runner_request_limit_resets_each_run(
+    tmp_path, collection_job, fake_collection_search
+):
+    jobs = make_runner_jobs(collection_job, 2)
+    output_dir = tmp_path / "results"
+
+    first = runner.run_news_collection(
+        [jobs[0]],
+        output_dir=output_dir,
+        request_limit=1,
+    )
+    second = runner.run_news_collection(
+        [jobs[1]],
+        output_dir=output_dir,
+        request_limit=1,
+    )
+
+    assert first.stop_reason == "completed"
+    assert second.stop_reason == "completed"
+    assert len(first.collected) == 1
+    assert len(second.collected) == 1
+    assert fake_collection_search.call_count == 2
 
 def test_runner_skips_duplicates_within_one_run(
     tmp_path, collection_job, fake_collection_search
@@ -674,7 +797,6 @@ def test_runner_skips_duplicates_within_one_run(
     summary = runner.run_news_collection(
         [collection_job, collection_job],
         output_dir=tmp_path / "results",
-        state_path=tmp_path / "state.sqlite3",
         request_limit=1,
     )
 
@@ -683,31 +805,23 @@ def test_runner_skips_duplicates_within_one_run(
     assert summary.reused == summary.collected
     assert fake_collection_search.call_count == 1
 
-
-def test_runner_stops_at_shared_budget(
+def test_runner_stops_at_per_run_request_limit(
     tmp_path, collection_job, fake_collection_search
 ):
     jobs = make_runner_jobs(collection_job, 3)
+    output_dir = tmp_path / "results"
 
     summary = runner.run_news_collection(
         jobs,
-        output_dir=tmp_path / "results",
-        state_path=tmp_path / "state.sqlite3",
+        output_dir=output_dir,
         request_limit=1,
     )
 
     assert summary.stop_reason == "budget_exhausted"
     assert len(summary.collected) == 1
-    assert summary.stop_report is not None
+    assert summary.stop_report is None
     assert fake_collection_search.call_count == 1
-
-    report = json.loads(
-        summary.stop_report.read_text(encoding="utf-8")
-    )
-    assert report["job"]["query"]["query"] == jobs[1].query.query
-    assert report["request_attempted"] is False
-    assert len(list((tmp_path / "results").glob("news-*.json"))) == 2
-
+    assert len(list(output_dir.glob("news-*.json"))) == 1
 
 @pytest.mark.parametrize("error_type", [Timeout, RuntimeError])
 def test_runner_stops_on_search_error(
@@ -719,7 +833,6 @@ def test_runner_stops_on_search_error(
     summary = runner.run_news_collection(
         jobs,
         output_dir=tmp_path / "results",
-        state_path=tmp_path / "state.sqlite3",
         request_limit=3,
     )
 
@@ -750,7 +863,6 @@ def test_runner_refreshes_expired_snapshot(
     summary = runner.run_news_collection(
         [collection_job],
         output_dir=output_dir,
-        state_path=tmp_path / "state.sqlite3",
         request_limit=1,
     )
 
@@ -772,7 +884,6 @@ def test_runner_propagates_storage_failure(
         runner.run_news_collection(
             make_runner_jobs(collection_job, 3),
             output_dir=tmp_path / "results",
-            state_path=tmp_path / "state.sqlite3",
             request_limit=3,
         )
 
@@ -784,7 +895,6 @@ def test_runner_handles_empty_job_list(tmp_path, fake_collection_search):
     summary = runner.run_news_collection(
         [],
         output_dir=tmp_path / "results",
-        state_path=tmp_path / "state.sqlite3",
         request_limit=1,
     )
 
@@ -813,7 +923,6 @@ def cli_environment(monkeypatch, tmp_path, fixed_news_today):
         "--end-date", "2026-09-29",
         "--max-records", "1",
         "--output-dir", str(tmp_path / "results"),
-        "--state-path", str(tmp_path / "state.sqlite3"),
     ]
     return arguments, load, run, search
 
@@ -895,10 +1004,10 @@ def test_cli_passes_execution_settings_and_reports_status(
     assert jobs[0].event.item_id == "cli-event"
     assert run.call_args.kwargs == {
         "output_dir": tmp_path / "results",
-        "state_path": tmp_path / "state.sqlite3",
         "request_limit": 2,
         "page_size": 50,
         "refresh_after": timedelta(hours=12),
+        "s3_bucket": None,
     }
 
     output = json.loads(capsys.readouterr().out)
@@ -933,3 +1042,126 @@ def test_cli_supports_no_geometry_cache(
     run.assert_not_called()
     search.assert_not_called()
     capsys.readouterr()
+
+def test_cli_dry_run_uses_s3_source(cli_environment, monkeypatch, capsys):
+    arguments, load, run, search = cli_environment
+    bucket = Mock()
+    get_bucket = Mock(return_value=bucket)
+    download = Mock()
+
+    monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
+    monkeypatch.setattr(cli, "get_bucket", get_bucket)
+    monkeypatch.setattr(cli, "download_collection_cache", download)
+
+    source_key = "aidan.carlisle@gwu.edu/raw/gdacs-events.jsonl.gz"
+    exit_code = cli.main([
+        *arguments, "--dry-run", "--s3-source-key", source_key,
+    ])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["planned_jobs"] == 1
+    get_bucket.assert_called_once_with("test-bucket")
+    download.assert_called_once()
+    assert download.call_args.args == (bucket,)
+    assert download.call_args.kwargs["source_key"] == source_key
+
+    cache_dir = download.call_args.kwargs["cache_dir"]
+    load.assert_called_once_with(
+        "gdacs-events", cache_dir=cache_dir, geometry=True,
+    )
+    assert not cache_dir.exists()
+    run.assert_not_called()
+    search.assert_not_called()
+
+def test_cli_execute_uploads_news_snapshots(
+    cli_environment, monkeypatch, tmp_path, capsys
+):
+    arguments, load, run, search = cli_environment
+    bucket = Mock()
+    get_bucket = Mock(return_value=bucket)
+    upload = Mock()
+    new = tmp_path / "new.json"
+    reused = tmp_path / "reused.json"
+
+    run.side_effect = None
+    run.return_value = runner.NewsCollectionRun(
+        collected=[new],
+        reused=[reused],
+    )
+    monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
+    monkeypatch.setattr(cli, "get_bucket", get_bucket)
+    monkeypatch.setattr(cli, "upload_news_snapshot", upload)
+
+    assert cli.main([
+        *arguments, "--execute", "--request-limit", "2", "--s3-upload",
+    ]) == 0
+
+    get_bucket.assert_called_once_with("test-bucket")
+    assert run.call_args.kwargs["s3_bucket"] is bucket
+    assert [item.args for item in upload.call_args_list] == [
+        (bucket, new),
+        (bucket, reused),
+    ]
+    run.assert_called_once()
+    search.assert_not_called()
+    capsys.readouterr()
+
+def test_cli_reuses_s3_result_with_fresh_output_dir(
+    monkeypatch, tmp_path, capsys, fixed_news_today
+):
+    objects: dict[str, bytes] = {}
+    bucket = Mock()
+    bucket.objects.filter.side_effect = lambda Prefix: [
+        Mock(key=key) for key in objects if key.startswith(Prefix)
+    ]
+    bucket.upload_file.side_effect = lambda filename, key: (
+        objects.__setitem__(key, Path(filename).read_bytes())
+    )
+    bucket.download_file.side_effect = lambda key, filename: (
+        Path(filename).write_bytes(objects[key])
+    )
+
+    monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
+    monkeypatch.setattr(cli, "get_bucket", lambda _name: bucket)
+    monkeypatch.setattr(
+        cli,
+        "load_collection",
+        lambda *_args, **_kwargs: [
+            make_record("cli-event", source_id="cli-source")
+        ],
+    )
+    search = Mock(
+        side_effect=lambda query, **_kwargs: NewsSearchResult(
+            **query.model_dump(),
+            total_results=0,
+            articles=[],
+        )
+    )
+    monkeypatch.setattr(news_api, "search_news", search)
+
+    arguments = [
+        "--execute", "--s3-upload",
+        "--collection", "gdacs-events",
+        "--start-date", "2026-09-01",
+        "--end-date", "2026-09-29",
+        "--max-records", "1",
+        "--request-limit", "1",
+    ]
+
+    assert cli.main([
+        *arguments, "--output-dir", str(tmp_path / "first")
+    ]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert len(first["collected"]) == 1
+    assert first["reused"] == []
+    assert search.call_count == 1
+    assert len(objects) == 1
+
+    assert cli.main([
+        *arguments, "--output-dir", str(tmp_path / "second")
+    ]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["collected"] == []
+    assert len(second["reused"]) == 1
+    assert search.call_count == 1
+    assert len(objects) == 1

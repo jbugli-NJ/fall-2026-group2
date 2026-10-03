@@ -11,7 +11,6 @@ from uuid import uuid4
 from requests.exceptions import RequestException
 
 from monty_tool import news_api
-from monty_tool.news.budget import reserve_news_request
 from monty_tool.news.pipeline import NewsCollectionJob
 
 
@@ -50,11 +49,9 @@ def collect_news_job(
     job: NewsCollectionJob,
     *,
     output_dir: Path,
-    state_path: Path,
-    request_limit: int,
     page_size: int = 100,
 ) -> Path:
-    """Reserve one request, collect candidates, and save the outcome."""
+    """Collect one search and save its outcome."""
     if type(page_size) is not int or not 1 <= page_size <= 100:
         raise ValueError("page_size must be an integer between 1 and 100.")
 
@@ -79,29 +76,25 @@ def collect_news_job(
             "sort_by": "relevancy",
             "page": 1,
         },
-        "request_attempted": False,
-        "status": "budget_exhausted",
+        "request_attempted": True,
+        "status": "error",
         "result": None,
         "error": None,
     }
 
-    if reserve_news_request(state_path, request_limit=request_limit):
-        report["request_attempted"] = True
+    try:
+        result = news_api.search_news(
+            job.query,
+            page_size=page_size,
+            language="en",
+            sort_by="relevancy",
+        )
+        report["status"] = "ok" if result.articles else "empty"
+        report["result"] = result.model_dump(mode="json")
 
-        try:
-            result = news_api.search_news(
-                job.query,
-                page_size=page_size,
-                language="en",
-                sort_by="relevancy",
-            )
-            report["status"] = "ok" if result.articles else "empty"
-            report["result"] = result.model_dump(mode="json")
-
-        except (RequestException, RuntimeError, ValueError) as exc:
-            report["status"] = "error"
-            # Do not persist potentially sensitive exception messages.
-            report["error"] = {"type": type(exc).__name__}
+    except (RequestException, RuntimeError, ValueError) as exc:
+        # Do not persist potentially sensitive exception messages.
+        report["error"] = {"type": type(exc).__name__}
 
     report["finished_at"] = datetime.now(timezone.utc).isoformat()
     return _save_snapshot(output_dir, report)
