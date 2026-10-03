@@ -1,0 +1,5 @@
+# Dark is the default for the issue #44 spike demo, so the page does not
+# come up light because of whatever the presenting machine prefers.
+# Viewers can still switch via Settings -> Theme.
+[theme]
+base = "dark"
