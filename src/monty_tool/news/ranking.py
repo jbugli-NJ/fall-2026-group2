@@ -6,12 +6,14 @@ from functools import lru_cache
 from sentence_transformers import CrossEncoder
 
 from monty_tool.news.schemas import NewsArticle
+from monty_tool.utils.versions import FrozenModel
 
 
 @lru_cache(maxsize=1)
 def _get_ranker() -> CrossEncoder:
     """Load the ranking model once per Python process, when first needed."""
-    return CrossEncoder("cross-encoder/ms-marco-MiniLM-L6-v2", device="cpu")
+    model = FrozenModel.MS_MARCO_MINILM_L6_V2
+    return CrossEncoder(model.value, revision=model.revision, device="cpu")
 
 
 def rank_news_articles(
@@ -19,7 +21,8 @@ def rank_news_articles(
     *,
     reference_text: str,
 ) -> list[NewsArticle]:
-    """Return all candidates in relevance order, leaving the input unchanged.
+    """
+    Return all candidates in relevance order, leaving the input unchanged.
 
     reference_text describes the requested news or disaster event in English.
     Ranking uses titles and descriptions; it does not verify event identity.

@@ -14,6 +14,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from monty_tool.event_context import EventContext
 from monty_tool.llm.tools import NewsArguments, NewsTools, QueryTools
+from monty_tool.utils.versions import FrozenModel
 
 
 def parse_tool_calls(text: str) -> list[dict[str, Any]]:
@@ -70,7 +71,7 @@ class LocalNewsAssistant:
     def __init__(
         self,
         items: list[EventContext],
-        model_id: str = "Qwen/Qwen3-1.7B",
+        model_id: FrozenModel = FrozenModel.QWEN3_1_7B,
     ):
         self.tools = NewsTools(items)
 
@@ -85,10 +86,14 @@ class LocalNewsAssistant:
             else torch.float16
         )
 
-        self.tokenizer: Any = AutoTokenizer.from_pretrained(model_id)
+        self.tokenizer: Any = AutoTokenizer.from_pretrained(
+            model_id.value,
+            revision=model_id.revision,
+        )
 
         self.model: Any = AutoModelForCausalLM.from_pretrained(
-            model_id,
+            model_id.value,
+            revision=model_id.revision,
             dtype=dtype,
         )
 
@@ -244,7 +249,7 @@ class QueryAssistant:
     _CONTEXT_LIMIT = 32_768
     def __init__(
         self,
-        model_id: str = "Qwen/Qwen3-1.7B",
+        model_id: FrozenModel = FrozenModel.QWEN3_1_7B,
         ):
         self.tools = QueryTools()
         self.device = "cuda" if torch.cuda.is_available() else (
@@ -252,9 +257,13 @@ class QueryAssistant:
         )
         dtype = torch.bfloat16 if self.device == "cpu" else torch.float16
 
-        self.tokenizer: Any = AutoTokenizer.from_pretrained(model_id)
+        self.tokenizer: Any = AutoTokenizer.from_pretrained(
+            model_id.value,
+            revision=model_id.revision,
+        )
         self.model: Any = AutoModelForCausalLM.from_pretrained(
-            model_id,
+            model_id.value,
+            revision=model_id.revision,
             dtype=dtype,
         )
         self.model.to(self.device)
