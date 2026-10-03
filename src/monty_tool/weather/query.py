@@ -4,12 +4,16 @@ Build NASA POWER queries from Montandon records or shared event context.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 
 from monty_tool.api_schemas import MontandonItem
 from monty_tool.event_context import EventContext, build_event_context
-from monty_tool.weather_api import POWER_START_DATE
+from monty_tool.weather.api import POWER_START_DATE
 from monty_tool.weather.schemas import WeatherQuery
+
+
+logger = logging.getLogger(__name__)
 
 
 # Weather before an event is the causal signal, not a footnote: the
@@ -24,12 +28,12 @@ def build_weather_query(
     item: MontandonItem | EventContext,
     days_before: int = DEFAULT_DAYS_BEFORE,
     days_after: int = DEFAULT_DAYS_AFTER,
-    ) -> WeatherQuery:
+    ) -> WeatherQuery | None:
     """
     Build a weather query for one point-located record.
 
-    Raises `ValueError` for records POWER cannot answer for: those with
-    no point geometry, and those predating its coverage.
+    Logs and returns None for records without point geometry. Raises
+    ValueError for invalid padding or dates outside POWER's coverage.
     """
     if days_before < 0 or days_after < 0:
         raise ValueError('days_before and days_after must not be negative.')
@@ -39,17 +43,16 @@ def build_weather_query(
     else:
         context = build_event_context(item)
 
-    # `EventContext` only carries coordinates for Point geometry, and
-    # that restriction is the reason: a country-level Polygon's bounding
-    # box can span a continent, so its centre is not where the event
-    # happened. Those records need a spatial step of their own before
-    # they can be given a point.
+    # `EventContext` only carries coordinates for Point geometry;
+    # a country-level Polygon's bounding box can span a continent,
+    # so its centre is not where the event happened.
     if context.longitude is None or context.latitude is None:
-        raise ValueError(
+        logger.warning(
             f'{context.item_id!r} has no point geometry '
             f'(geometry_type={context.geometry_type!r}); '
             f'POWER needs a single point.'
         )
+        return None
 
     event_start = context.start_datetime.date()
     event_end = context.end_datetime.date()

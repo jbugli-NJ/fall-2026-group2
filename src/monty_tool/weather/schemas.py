@@ -12,7 +12,31 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from monty_tool.weather_api import FILL_VALUE
+# POWER reports absent observations as a sentinel rather than null.
+# WeatherResult converts it to None; the response model keeps it unchanged.
+FILL_VALUE = -999.0
+
+
+class POWERHeader(BaseModel):
+    """
+    The header fields needed for provenance and missing-value handling.
+    """
+    model_config = ConfigDict(extra='ignore')
+
+    sources: list[str] = Field(default_factory=list)
+    fill_value: float = FILL_VALUE
+    start: str
+    end: str
+
+
+class POWERParameterInfo(BaseModel):
+    """
+    Units and full name for one parameter.
+    """
+    model_config = ConfigDict(extra='ignore')
+
+    units: str
+    longname: str
 
 
 class WeatherQuery(BaseModel):
@@ -22,7 +46,6 @@ class WeatherQuery(BaseModel):
     Carries `item_id` so results can be joined back to the record they
     came from, the same way `NewsQuery` does.
     """
-
     item_id: str
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
@@ -36,51 +59,6 @@ class WeatherQuery(BaseModel):
         return self
 
 
-# POWER response schemas
-
-class POWERHeader(BaseModel):
-    """
-    The `header` block of a POWER response.
-    """
-
-    model_config = ConfigDict(extra='ignore')
-
-    # Which reanalysis the values came from, e.g. MERRA2. Worth keeping:
-    # it is the provenance for every value in the response.
-    sources: list[str] = Field(default_factory=list)
-    fill_value: float = FILL_VALUE
-    start: str
-    end: str
-
-
-class POWERParameterInfo(BaseModel):
-    """
-    Units and full name for one parameter, from the `parameters` block.
-    """
-
-    model_config = ConfigDict(extra='ignore')
-
-    units: str
-    longname: str
-
-
-class POWERResponse(BaseModel):
-    """
-    Validated response returned directly by POWER.
-
-    POWER nests values parameter-first, then date:
-    `properties.parameter.T2M.20240101`. That shape is preserved here and
-    transposed into per-day rows by `WeatherResult`.
-    """
-
-    model_config = ConfigDict(extra='ignore')
-
-    geometry: dict
-    properties: dict
-    header: POWERHeader
-    parameters: dict[str, POWERParameterInfo] = Field(default_factory=dict)
-
-
 # Result schemas
 
 class WeatherDay(BaseModel):
@@ -91,6 +69,7 @@ class WeatherDay(BaseModel):
     a requested range can come back with no data. A missing value is
     None here, never the -999.0 sentinel POWER sends.
     """
+    model_config = ConfigDict(allow_inf_nan=False)
 
     date: date
     temperature_mean: float | None = None
@@ -116,10 +95,11 @@ class WeatherResult(BaseModel):
     """
     POWER results linked back to the originating Montandon record.
     """
+    model_config = ConfigDict(allow_inf_nan=False)
 
-    item_id: str
-    latitude: float
-    longitude: float
+    item_id: str = Field(min_length=1)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
     start_date: date
     end_date: date
 
@@ -132,6 +112,24 @@ class WeatherResult(BaseModel):
     sources: list[str] = Field(default_factory=list)
     units: dict[str, str] = Field(default_factory=dict)
     days: list[WeatherDay] = Field(default_factory=list)
+
+    @model_validator(mode='after')
+    def validate_measurements(self) -> WeatherResult:
+        """
+        Require an identified retrieval with unique daily dates inside its period.
+        """
+        if not self.item_id.strip():
+            raise ValueError('item_id must not be blank.')
+        if self.start_date > self.end_date:
+            raise ValueError('start_date must be on or before end_date.')
+        dates = set()
+        for day in self.days:
+            if not self.start_date <= day.date <= self.end_date:
+                raise ValueError(f'Weather date {day.date} is outside the retrieval period.')
+            if day.date in dates:
+                raise ValueError(f'Duplicate weather date {day.date}.')
+            dates.add(day.date)
+        return self
 
     @property
     def missing_days(self) -> int:
@@ -209,57 +207,67 @@ class WeatherResult(BaseModel):
         }
 
 
-def build_weather_result(
-    query: WeatherQuery,
-    payload: dict,
-    ) -> WeatherResult:
+class POWERResponse(BaseModel):
     """
-    Transpose a raw POWER payload into per-day rows for one record.
+    Validated response, retaining the fields used by WeatherResult.
 
-    POWER's own `fill_value` is read from the response header rather
-    than assumed, and every occurrence becomes None.
+    Values stay indexed by parameter, then date. Call model_dump() to
+    get these fields as a nested Python dictionary.
     """
-    response = POWERResponse.model_validate(payload)
-    fill_value = response.header.fill_value
+    model_config = ConfigDict(extra='ignore')
 
-    parameter_values = response.properties.get('parameter', {})
+    geometry: dict
+    properties: dict
+    header: POWERHeader
+    parameters: dict[str, POWERParameterInfo] = Field(default_factory=dict)
 
-    # Collect each date once across all parameters; a parameter can be
-    # short of the full range without the others being.
-    day_values: dict[date, dict[str, float]] = {}
-    for parameter, values in parameter_values.items():
-        field = PARAMETER_FIELDS.get(parameter)
-        if field is None:
-            continue
-        for stamp, value in values.items():
-            if value == fill_value:
+    def to_weather_result(self, query: WeatherQuery) -> WeatherResult:
+        """
+        Transpose a POWER response into per-day rows for one record.
+
+        POWER's own `fill_value` is read from the response header rather
+        than assumed, and every occurrence becomes None.
+        """
+        fill_value = self.header.fill_value
+
+        parameter_values = self.properties.get('parameter', {})
+
+        # Collect each date once across all parameters; a parameter can be
+        # short of the full range without the others being.
+        day_values: dict[date, dict[str, float]] = {}
+        for parameter, values in parameter_values.items():
+            field = PARAMETER_FIELDS.get(parameter)
+            if field is None:
                 continue
-            day = datetime.strptime(stamp, '%Y%m%d').date()
-            day_values.setdefault(day, {})[field] = value
+            for stamp, value in values.items():
+                if value == fill_value:
+                    continue
+                day = datetime.strptime(stamp, '%Y%m%d').date()
+                day_values.setdefault(day, {})[field] = value
 
-    # Emit a row for every requested day, not just the days POWER
-    # answered for. A dense series means downstream code can count gaps
-    # and align events by day offset; dropping the gaps instead would
-    # make a truncated range look like a complete short one.
-    days = []
-    day = query.start_date
-    while day <= query.end_date:
-        days.append(WeatherDay(date=day, **day_values.get(day, {})))
-        day += timedelta(days=1)
+        # Emit a row for every requested day, not just the days POWER
+        # answered for. A dense series means downstream code can count gaps
+        # and align events by day offset; dropping the gaps instead would
+        # make a truncated range look like a complete short one.
+        days = []
+        day = query.start_date
+        while day <= query.end_date:
+            days.append(WeatherDay(date=day, **day_values.get(day, {})))
+            day += timedelta(days=1)
 
-    coordinates = response.geometry.get('coordinates') or []
+        coordinates = self.geometry.get('coordinates') or []
 
-    return WeatherResult(
-        item_id=query.item_id,
-        latitude=query.latitude,
-        longitude=query.longitude,
-        start_date=query.start_date,
-        end_date=query.end_date,
-        elevation=coordinates[2] if len(coordinates) > 2 else None,
-        sources=response.header.sources,
-        units={
-            name: info.units
-            for name, info in response.parameters.items()
-        },
-        days=days,
-    )
+        return WeatherResult(
+            item_id=query.item_id,
+            latitude=query.latitude,
+            longitude=query.longitude,
+            start_date=query.start_date,
+            end_date=query.end_date,
+            elevation=coordinates[2] if len(coordinates) > 2 else None,
+            sources=self.header.sources,
+            units={
+                name: info.units
+                for name, info in self.parameters.items()
+            },
+            days=days,
+        )

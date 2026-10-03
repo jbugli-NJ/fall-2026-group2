@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, TypeVar
 
 from pydantic import TypeAdapter, ValidationError
+from botocore.exceptions import ClientError
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.boto3_utils.s3_utils import download_object, get_bucket
@@ -35,10 +36,12 @@ from monty_tool.network.schemas import (
     GOEventNodeData,
     MontandonItemNodeData,
 )
+from monty_tool.network.weather import insert_weather_properties, validated_weather_node_data
 from monty_tool.tools.resources import (
     GO_APPEAL_NODE_DATA_BUCKET_KEY,
     GO_EVENT_NODE_DATA_BUCKET_KEY,
     MONTANDON_NODE_DATA_BUCKET_PREFIX,
+    NASA_POWER_BUCKET_KEY,
     get_env_bucket_name,
     read_gzip,
 )
@@ -60,6 +63,43 @@ NodeData = TypeVar('NodeData')
 
 
 # Helpers
+
+def _download_validated_weather(bucket: S3Bucket, bucket_name: str, tmp_path: Path) -> Path:
+    """
+    Download and validate weather data from the S3 bucket.
+    """
+    path = tmp_path.joinpath('weather.jsonl.gz')
+    uri = f's3://{bucket_name}/{NASA_POWER_BUCKET_KEY}'
+    logger.info('Downloading %s', uri)
+    try:
+        download_object(bucket, NASA_POWER_BUCKET_KEY, path)
+    except ClientError as error:
+        if error.response['Error']['Code'] in {'404', 'NoSuchKey', 'NotFound'}:
+            raise ValueError(f'Required NASA POWER input is missing: {uri}') from error
+        raise
+    seen_ids: set[str] = set()
+    for line_number, node in enumerate(validated_weather_node_data(path), start=1):
+        if node['item_id'] in seen_ids:
+            raise ValueError(
+                f'Duplicate weather item_id {node["item_id"]!r} in {path} at line {line_number}'
+            )
+        seen_ids.add(node['item_id'])
+    logger.info('Validated %d NASA POWER records', len(seen_ids))
+    if not seen_ids:
+        logger.warning('NASA POWER input is empty; rebuilding without weather properties.')
+    return path
+
+
+def _insert_weather_data(path: Path) -> None:
+    """
+    Stream weather properties into existing Montandon nodes in batches.
+    """
+    count = 0
+    with get_graph_db_driver() as driver:
+        for batch in batched(validated_weather_node_data(path), NETWORK_INSERT_BATCH_SIZE):
+            count += insert_weather_properties(driver, list(batch))
+    logger.info('Attached NASA POWER properties to %d Montandon nodes', count)
+
 
 def _montandon_node_data_keys(bucket: S3Bucket) -> list[str]:
     """
@@ -143,10 +183,11 @@ def main():
             f'{MONTANDON_NODE_DATA_BUCKET_PREFIX!r}'
         )
 
-    clear_db()
-    initialize_db()
     with TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
+        weather_path = _download_validated_weather(bucket, bucket_name, tmp_path)
+        clear_db()
+        initialize_db()
         for key in montandon_keys:
             _insert_montandon_node_data(
                 bucket=bucket,
@@ -154,6 +195,7 @@ def main():
                 key=key,
                 tmp_path=tmp_path,
             )
+        _insert_weather_data(weather_path)
         initialize_vector_indexes()
         create_montandon_deterministic_relationships()
         create_montandon_similarity_relationships()
