@@ -17,7 +17,7 @@ from pydantic import (
 )
 from requests import RequestException
 from neo4j import RoutingControl
-from neo4j.time import Date as Neo4jDate
+from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 
 from monty_tool.event_context import EventContext
 from monty_tool.news.query import build_news_query
@@ -156,6 +156,7 @@ type CypherTemplateFile = Literal[
     'find_related_disaster_events.cypher',
     'search_response_events.cypher',
     'get_response_context.cypher',
+    'get_event_news.cypher',
 ]
 
 def _load_cypher_query(name: CypherTemplateFile) -> LiteralString:
@@ -287,7 +288,7 @@ def _json_value(value: Any) -> Any:
                 output.append(serialized)
         return output
 
-    if isinstance(value, (date, datetime, time, Neo4jDate)):
+    if isinstance(value, (date, datetime, time, Neo4jDate, Neo4jDateTime)):
         return value.isoformat()
 
     return value
@@ -417,6 +418,25 @@ class QueryTools:
                     "parameters": {
                         "type": "object",
                         "properties": {"event_id": {"type": "string"}},
+                        "required": ["event_id"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_event_news",
+                    "description": (
+                        "Get saved NewsAPI article candidates retrieved for an "
+                        "existing disaster event by event_id. These are search "
+                        "results, not verified reports about the event."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "event_id": {"type": "string"},
+                        },
                         "required": ["event_id"],
                         "additionalProperties": False,
                     },
@@ -569,6 +589,13 @@ class QueryTools:
                     arguments,
                     EventIdArguments,
                     "get_response_context.cypher",
+                    "Supply a non-empty event_id.",
+                )
+            if name == "get_event_news":
+                return self._run_graph_query(
+                    arguments,
+                    EventIdArguments,
+                    "get_event_news.cypher",
                     "Supply a non-empty event_id.",
                 )
             if name == "search_news":
