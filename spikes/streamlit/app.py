@@ -153,7 +153,6 @@ def answer_real(question: str) -> tuple[str, list]:
 
 st.set_page_config(page_title='Montandon query assistant', layout='centered')
 st.title('Montandon query assistant')
-st.caption('UI spike for issue #44 — graph answers with visible provenance')
 
 real = use_real_assistant()
 if real:
