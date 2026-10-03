@@ -17,8 +17,10 @@ from monty_tool.network.schemas import (
     GOAppealNodeData,
     GOEventNodeData,
     MontandonItemNodeData,
+    NewsArticleInsertData,
 )
-
+from monty_tool.news.pipeline import NewsCollectionJob
+from monty_tool.news.schemas import NewsSearchResult
 
 # Node data helper
 
@@ -140,3 +142,27 @@ def go_appeals_to_node_data(appeals: list[GOAppeal]) -> list[GOAppealNodeData]:
             'region_name': appeal.region.region_name,
         })
     return node_data
+
+def news_result_to_node_data(
+    job: NewsCollectionJob,
+    result: NewsSearchResult,
+    *,
+    snapshot_s3_uri: str,
+) -> list[NewsArticleInsertData]:
+    """Flatten articles for insertion into the disaster graph."""
+    if job.event.item_id != result.item_id:
+        raise ValueError("News result does not match its event.")
+
+    return [
+        {
+            "url": article.url,
+            "title": article.title,
+            "description": article.description,
+            "source_id": article.source.id,
+            "source_name": article.source.name,
+            "published_at": article.published_at,
+            "event_id": job.event.item_id,
+            "snapshot_s3_uri": snapshot_s3_uri,
+        }
+        for article in result.articles
+    ]
