@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> None:
 
     set_seed(SEED)
     assistant = QueryAssistant(model_id=args.model)
-    model_slug = re.sub(r'[^a-z0-9]+', '_', assistant.model.value.lower()).strip('-')
+    model_slug = re.sub(r'[^a-z0-9]+', '_', args.model.value.lower()).strip('_')
     output_path = Path('benchmarks').joinpath(f'{model_slug}.md')
     output_path.parent.mkdir(parents=True, exist_ok=True)
     started_at = datetime.now(timezone.utc)
