@@ -266,8 +266,8 @@ class QueryAssistant:
             model_id.value,
             revision=model_id.revision,
             dtype=dtype,
+            device_map=self.device,
         )
-        self.model.to(self.device)
         self.model.eval()
 
     def _generate(
