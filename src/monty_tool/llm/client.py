@@ -313,6 +313,7 @@ class QueryAssistant:
         Answer one question with up to ten tool calls.
         This exposes graph query tools.
         """
+        self.tools.tool_call_count = 0
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
