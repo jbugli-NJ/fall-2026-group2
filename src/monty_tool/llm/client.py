@@ -13,6 +13,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from monty_tool.event_context import EventContext
+from monty_tool.llm.schemas import QueryAssistantResponse
 from monty_tool.llm.tools import NewsArguments, NewsTools, QueryTools
 from monty_tool.utils.versions import FrozenModel
 
@@ -307,7 +308,7 @@ class QueryAssistant:
             skip_special_tokens=True,
         ).strip()
 
-    def ask(self, question: str) -> dict[str, Any]:
+    def ask(self, question: str) -> QueryAssistantResponse:
         """
         Answer one question with up to ten tool calls.
         This exposes graph query tools.
