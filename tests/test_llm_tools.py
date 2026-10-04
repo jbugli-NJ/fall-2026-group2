@@ -66,6 +66,18 @@ def test_graph_search_arguments_validates_dates():
         )
 
 
+@pytest.mark.parametrize('arguments', [
+    {},
+    {'from_date': '2026-09-20', 'to_date': '2026-09-20'},
+    {'from_date': '2026-09-19', 'to_date': '2026-09-20'},
+])
+def test_graph_search_accepts_complete_or_absent_date_ranges(arguments: dict[str, Any]):
+    """
+    Allow undated searches, exact days, and inclusive date ranges.
+    """
+    tools.GraphSearchArguments.model_validate(arguments)
+
+
 @pytest.mark.parametrize(
     ('value', 'expected'),
     [
@@ -163,9 +175,13 @@ def test_query_tools_routes_graph_tools(
     ('name', 'arguments'),
     [
         ( 'search_disaster_events', {'country_code': 'JP'}),
+        ('search_disaster_events', {'from_date': '2026-09-20'}),
+        ('search_disaster_events', {'to_date': '2026-09-20'}),
         ('get_disaster_context', {}),
         ('find_related_disaster_events', {'event_id': 'event-1', 'relation_kind': 'nonexistent'}),
         ('search_response_events', {'from_date': '2026-09-20', 'to_date': '2026-09-19'}),
+        ('search_response_events', {'from_date': '2026-09-20'}),
+        ('search_response_events', {'to_date': '2026-09-20'}),
         ('get_response_context', {'event_id': ''}),
         ('get_event_news', {}),
     ],

@@ -180,6 +180,11 @@ class GraphSearchArguments(BaseModel):
 
     @model_validator(mode="after")
     def validate_date_range(self) -> GraphSearchArguments:
+        """
+        Require both dates or neither in the expected order.
+        """
+        if (self.from_date is None) != (self.to_date is None):
+            raise ValueError("Supply both from_date and to_date, or neither.")
         if self.from_date is not None and self.to_date is not None:
             if self.from_date > self.to_date:
                 raise ValueError("from_date must be on or before to_date.")
@@ -290,7 +295,7 @@ class QueryTools:
                 "function": {
                     "name": "search_disaster_events",
                     "description": (
-                        "Find up to 10 newest matching disaster events. All filters are optional. "
+                        "Find up to 10 newest matching disaster events. Filters are optional; supply both dates or neither. "
                         "Dates filter event starts; use get_disaster_context for impacts and stored weather."
                     ),
                     "parameters": {
@@ -337,6 +342,7 @@ class QueryTools:
                                 "description": "Maximum retrieval-period precipitation total in mm.",
                             },
                         },
+                        "dependentRequired": {"from_date": ["to_date"], "to_date": ["from_date"]},
                         "additionalProperties": False,
                     },
                 },
@@ -381,7 +387,7 @@ class QueryTools:
                 "function": {
                     "name": "search_response_events",
                     "description": (
-                        "Find up to 10 newest matching IFRC events. All filters are optional. "
+                        "Find up to 10 newest matching IFRC events. Filters are optional; supply both dates or neither. "
                         "Dates filter event starts. For appeal details, fetch get_response_context next."
                     ),
                     "parameters": {
@@ -405,6 +411,7 @@ class QueryTools:
                                 "type": "string", "description": "Case-insensitive substring of the event title or summary.",
                             },
                         },
+                        "dependentRequired": {"from_date": ["to_date"], "to_date": ["from_date"]},
                         "additionalProperties": False,
                     },
                 },
@@ -501,7 +508,7 @@ class QueryTools:
                     arguments,
                     DisasterEventSearchArguments,
                     "search_disaster_events.cypher",
-                    "Supply optional country_code, hazard_code, dates, text, or finite "
+                    "Supply both from_date and to_date, or neither. Optional filters: country_code, hazard_code, text, or finite "
                     "min/max bounds for elevation, mean_temperature, or precipitation_total. "
                 )
             if name == "get_disaster_context":
@@ -523,7 +530,7 @@ class QueryTools:
                     arguments,
                     ResponseEventSearchArguments,
                     "search_response_events.cypher",
-                    "Supply optional country_code, disaster_type, dates, or text.",
+                    "Supply both from_date and to_date, or neither. Optional filters: country_code, disaster_type, or text.",
                 )
             if name == "get_response_context":
                 return self._run_graph_query(
