@@ -2,8 +2,7 @@
   {
     "research_question": "What affected-population count did IFRC GO record for \"Easter Sunday Attack in Sri Lanka\" beginning on 2019-05-16? Only return the exact number.",
     "full_answer_substrings": [
-      "3000",
-      "3,000"
+      "3000"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -17,8 +16,7 @@
   {
     "research_question": "How many people were reported affected by \"Ground movement in Kyrgyzstan\" beginning on 2006-12-26? Only return the exact number.",
     "full_answer_substrings": [
-      "12050",
-      "12,050"
+      "12050"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -46,12 +44,10 @@
   {
     "research_question": "How much funding was recorded as received for the IFRC appeal \"Malawi - Food Insecurity\" launched on 2015-09-17? Only return the exact number with decimals.",
     "full_answer_substrings": [
-      "873154.34",
-      "873,154.34"
+      "873154.34"
     ],
     "partial_answer_substrings": [
-      "873154",
-      "873,154"
+      "873154"
     ],
     "source_nodes": [
       {
@@ -122,8 +118,7 @@
   {
     "research_question": "What affected-population count did IFRC GO record for \"Philippines - Typhoon Rai (Odette)\" beginning on 2021-12-14? Only return the exact number.",
     "full_answer_substrings": [
-      "1851409",
-      "1,851,409"
+      "1851409"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -183,8 +178,7 @@
   {
     "research_question": "How many beneficiaries were recorded for the IFRC appeal \"Ethiopia - Earthquake\" launched on 2025-01-20? Only return the exact number.",
     "full_answer_substrings": [
-      "10000",
-      "10,000"
+      "10000"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -198,8 +192,7 @@
   {
     "research_question": "What affected-population count did IFRC GO record for \"China: Floods\" beginning on 2018-07-13? Only return the exact number.",
     "full_answer_substrings": [
-      "1381000",
-      "1,381,000"
+      "1381000"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -275,8 +268,7 @@
   {
     "research_question": "How many beneficiaries were recorded for the IFRC appeal \"Tanzania - Floods\" launched on 2016-01-31? Only return the exact number.",
     "full_answer_substrings": [
-      "8500",
-      "8,500"
+      "8500"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -290,8 +282,7 @@
   {
     "research_question": "How many beneficiaries were recorded for the IFRC appeal \"Benin - Floods\" launched on 2021-10-22? Only return the exact number.",
     "full_answer_substrings": [
-      "9000",
-      "9,000"
+      "9000"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -333,8 +324,7 @@
   {
     "research_question": "What affected-population count did IFRC GO record for \"Regional Population Movement - Afghanistan | Preparedness and Response\" beginning on 2021-08-06? Only return the exact number.",
     "full_answer_substrings": [
-      "9500000",
-      "9,500,000"
+      "9500000"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -348,8 +338,7 @@
   {
     "research_question": "How many people were reported affected by \"Ground movement in China\" beginning on 2025-01-07? Only return the exact number.",
     "full_answer_substrings": [
-      "46500",
-      "46,500"
+      "46500"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -377,8 +366,7 @@
   {
     "research_question": "How much funding was recorded as received for the IFRC appeal \"Cuba - Tornado\" launched on 2019-02-17? Only return the exact number.",
     "full_answer_substrings": [
-      "71911",
-      "71,911"
+      "71911"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
@@ -392,8 +380,7 @@
   {
     "research_question": "What damage cost was recorded for \"Flash flood in Democratic Republic of the Congo\" beginning on 2014-10-25? Only return the exact number.",
     "full_answer_substrings": [
-      "15000",
-      "15,000"
+      "15000"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [

@@ -47,12 +47,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def score_answer(benchmark: BenchmarkInput, answer: str) -> float:
     """
-    Award full, partial, or zero credit using stored answers.
+    Match literal answers at word boundaries, ignoring commas and case.
     """
-    answer = answer.lower()
-    if any(value.lower() in answer for value in benchmark.full_answer_substrings):
+    answer = answer.lower().replace(',', '')
+    if any(
+        re.search(rf"\b{re.escape(value.lower().replace(',', ''))}\b", answer)
+        for value in benchmark.full_answer_substrings
+    ):
         return 1.0
-    if any(value.lower() in answer for value in benchmark.partial_answer_substrings):
+    if any(
+        re.search(rf"\b{re.escape(value.lower().replace(',', ''))}\b", answer)
+        for value in benchmark.partial_answer_substrings
+    ):
         return 0.5
     return 0.0
 
