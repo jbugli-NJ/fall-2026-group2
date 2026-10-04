@@ -45,6 +45,7 @@ from monty_tool.tools.resources import (
     get_env_bucket_name,
     read_gzip,
 )
+from monty_tool.network.news import load_news_into_graph
 
 
 # Logger
@@ -218,6 +219,13 @@ def main():
         )
         insert_go_records_into_graph_db(event_data, appeal_data)
 
+        with get_graph_db_driver() as driver:
+            news_links = load_news_into_graph(
+                bucket,
+                bucket_name=bucket_name,
+                driver=driver,
+            )
+        logger.info("Loaded %d NewsAPI article-event links", news_links)
 
 if __name__ == '__main__':
     main()
