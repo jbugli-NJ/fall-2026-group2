@@ -290,9 +290,8 @@ class QueryTools:
                 "function": {
                     "name": "search_disaster_events",
                     "description": (
-                        "Find Montandon disaster events by place, hazard, date, text, "
-                        "elevation, mean temperature, or precipitation total. Weather "
-                        "bounds are inclusive and may have partial coverage. "
+                        "Find up to 10 newest matching disaster events. All filters are optional. "
+                        "Dates filter event starts; use get_disaster_context for impacts and stored weather."
                     ),
                     "parameters": {
                         "type": "object",
@@ -305,17 +304,23 @@ class QueryTools:
                                 "type": "string",
                                 "description": "Montandon hazard code.",
                             },
-                            "from_date": {"type": "string", "format": "date"},
-                            "to_date": {"type": "string", "format": "date"},
+                            "from_date": {
+                                "type": "string", "format": "date",
+                                "description": "Earliest event start date, inclusive.",
+                            },
+                            "to_date": {
+                                "type": "string", "format": "date",
+                                "description": "Latest event start date, inclusive. Set both dates equal to match one day.",
+                            },
                             "text": {
                                 "type": "string",
-                                "description": "Words to find in event titles and descriptions.",
+                                "description": "Case-insensitive substring of the event title or description.",
                             },
                             "min_elevation": {
-                                "type": "number", "description": "Minimum NASA POWER elevation in meters.",
+                                "type": "number", "description": "Minimum terrain elevation in meters above sea level.",
                             },
                             "max_elevation": {
-                                "type": "number", "description": "Maximum NASA POWER elevation in meters.",
+                                "type": "number", "description": "Maximum terrain elevation in meters above sea level.",
                             },
                             "min_mean_temperature": {
                                 "type": "number", "description": "Minimum retrieval-period mean temperature in degrees C.",
@@ -341,8 +346,8 @@ class QueryTools:
                 "function": {
                     "name": "get_disaster_context",
                     "description": (
-                        "Get one Montandon event, its impacts, and weather data (if available) "
-                        "using an event_id returned by search_disaster_events."
+                        "Fetch impacts and stored weather for an event_id from search_disaster_events, "
+                        "including counts, temperature extremes, precipitation, and wind speed when available."
                     ),
                     "parameters": {
                         "type": "object",
@@ -375,15 +380,30 @@ class QueryTools:
                 "type": "function",
                 "function": {
                     "name": "search_response_events",
-                    "description": "Find IFRC response events by place, disaster type, date, or text.",
+                    "description": (
+                        "Find up to 10 newest matching IFRC events. All filters are optional. "
+                        "Dates filter event starts. For appeal details, fetch get_response_context next."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "country_code": {"type": "string"},
-                            "disaster_type": {"type": "string"},
-                            "from_date": {"type": "string", "format": "date"},
-                            "to_date": {"type": "string", "format": "date"},
-                            "text": {"type": "string"},
+                            "country_code": {
+                                "type": "string", "description": "3-letter country code (e.g. MWI for Malawi).",
+                            },
+                            "disaster_type": {
+                                "type": "string", "description": "Case-insensitive substring of the recorded disaster type.",
+                            },
+                            "from_date": {
+                                "type": "string", "format": "date",
+                                "description": "Earliest event start date, inclusive; not the appeal launch date.",
+                            },
+                            "to_date": {
+                                "type": "string", "format": "date",
+                                "description": "Latest event start date, inclusive. Set both dates equal to match one day.",
+                            },
+                            "text": {
+                                "type": "string", "description": "Case-insensitive substring of the event title or summary.",
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -393,7 +413,10 @@ class QueryTools:
                 "type": "function",
                 "function": {
                     "name": "get_response_context",
-                    "description": "Get one IFRC response event and its linked appeals using an event_id returned by search_response_events.",
+                    "description": (
+                        "Fetch an IFRC event and linked appeals using an event_id from search_response_events. "
+                        "Includes affected population, appeal launch dates, beneficiaries, and funding."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {"event_id": {"type": "string"}},
