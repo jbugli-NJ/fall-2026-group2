@@ -1,4 +1,4 @@
-"""Verify both assistant news tools and ranking failure behavior offline."""
+"""Verify event news retrieval and ranking failure behavior offline."""
 
 from datetime import date, datetime, timezone
 from unittest.mock import Mock
@@ -7,18 +7,12 @@ import pytest
 
 from monty_tool import news_api
 from monty_tool.event_context import EventContext
-from monty_tool.llm.tools import NewsTools, QueryTools
+from monty_tool.llm.tools import NewsTools
 from monty_tool.news import ranking
 from monty_tool.news.schemas import NewsArticle, NewsQuery, NewsSearchResult, NewsSource
 from monty_tool.news.retrieval import collect_ranked_news
 
-def _execute(tool_kind: str) -> dict:
-    if tool_kind == "query":
-        return QueryTools().execute("search_news", {
-            "query": "earthquake", "location": "Japan",
-            "from_date": "2026-09-08", "to_date": "2026-09-22",
-        })
-
+def _execute() -> dict:
     event = EventContext(
         item_id="event-1", collection="events", correlation_id="correlation-1",
         roles=["event"], title="Japan earthquake", description=None,
@@ -31,17 +25,13 @@ def _execute(tool_kind: str) -> dict:
         "item_id": "event-1", "query": "earthquake Japan",
     })
 
-
-@pytest.mark.parametrize("tool_kind", ["query", "event"])
 @pytest.mark.parametrize("ranking_fails", [False, True])
 def test_tools_fetch_hundred_and_return_twenty_with_fallback(
-    monkeypatch: pytest.MonkeyPatch, tool_kind: str, ranking_fails: bool,
+    monkeypatch: pytest.MonkeyPatch, ranking_fails: bool,
 ) -> None:
     articles = [NewsArticle(
-        source=NewsSource(name="Example source"), title=(
-         f"Earthquake in Japan {number}"
-        if tool_kind == "event"
-        else f"Article {number}"),
+        source=NewsSource(name="Example source"),
+        title=f"Earthquake in Japan {number}",
         publishedAt=datetime(2026, 9, 10, tzinfo=timezone.utc),
         url=f"https://example.com/{number}",
     ) for number in range(30)]
@@ -64,7 +54,7 @@ def test_tools_fetch_hundred_and_return_twenty_with_fallback(
     monkeypatch.setattr(news_api, "search_news", fake_search)
     monkeypatch.setattr(ranking, "rank_news_articles", rank)
 
-    result = _execute(tool_kind)
+    result = _execute()
 
     assert result["status"] == "ok"
     assert result["total_results"] == 30
@@ -76,16 +66,11 @@ def test_tools_fetch_hundred_and_return_twenty_with_fallback(
     assert [a["url"] for a in result["articles"]] == [a.url for a in expected]
     assert fetched[0].articles == articles
     rank.assert_called_once_with(articles, reference_text="earthquake Japan")
-    if tool_kind == "query":
-        assert queries[0].from_date == date(2026, 9, 8)
-    else:
-        assert queries[0].from_date == date(2026, 9, 9)
+    assert queries[0].from_date == date(2026, 9, 9)
 
-
-@pytest.mark.parametrize("tool_kind", ["query", "event"])
 @pytest.mark.parametrize("search_fails", [False, True])
 def test_empty_search_and_search_error_remain_distinct(
-    monkeypatch: pytest.MonkeyPatch, tool_kind: str, search_fails: bool,
+    monkeypatch: pytest.MonkeyPatch, search_fails: bool,
 ) -> None:
     def fake_search(query: NewsQuery, *, page_size: int) -> NewsSearchResult:
         if search_fails:
@@ -99,7 +84,7 @@ def test_empty_search_and_search_error_remain_distinct(
     monkeypatch.setattr(news_api, "search_news", fake_search)
     monkeypatch.setattr(ranking, "rank_news_articles", rank)
 
-    result = _execute(tool_kind)
+    result = _execute()
 
     assert result["status"] == ("error" if search_fails else "empty")
     if search_fails:
@@ -145,7 +130,7 @@ def test_event_news_preserves_candidates_and_rank_order(
     ])
     monkeypatch.setattr(ranking, "rank_news_articles", rank)
 
-    result = _execute("event")
+    result = _execute()
 
     rank.assert_called_once_with(
         articles,
