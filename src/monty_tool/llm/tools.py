@@ -154,6 +154,7 @@ type CypherTemplateFile = Literal[
     'get_disaster_context.cypher',
     'find_related_disaster_events.cypher',
     'search_response_events.cypher',
+    'search_appeals.cypher',
     'get_response_context.cypher',
     'get_event_news.cypher',
 ]
@@ -247,6 +248,34 @@ class ResponseEventSearchArguments(GraphSearchArguments):
     """
     disaster_type: str | None = Field(default=None, min_length=1, max_length=100)
     text: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class AppealSearchArguments(GraphSearchArguments):
+    """
+    Filter IFRC appeals by country, disaster type, title, and launch dates.
+    """
+    disaster_type: str | None = Field(default=None, min_length=1, max_length=100)
+    text: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class QueryNewsArguments(BaseModel):
+    """
+    Arguments accepted by the direct NewsAPI tool.
+    """
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    query: str = Field(min_length=1, max_length=500)
+    from_date: date
+    to_date: date
+    location: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> QueryNewsArguments:
+        """
+        Require the NewsAPI date range to run forward in time.
+        """
+        if self.from_date > self.to_date:
+            raise ValueError("from_date must be on or before to_date.")
+        return self
 
 
 def _json_value(value: Any) -> Any:
@@ -403,7 +432,7 @@ class QueryTools:
                     "name": "search_response_events",
                     "description": (
                         "Find up to 10 newest matching IFRC events. Filters are optional; supply both dates or neither. "
-                        "Dates filter event starts. For appeal details, fetch get_response_context next."
+                        "Dates filter event starts; use search_appeals to search by appeal launch date."
                     ),
                     "parameters": {
                         "type": "object",
@@ -424,6 +453,40 @@ class QueryTools:
                             },
                             "text": {
                                 "type": "string", "description": "Case-insensitive substring of the event title or summary.",
+                            },
+                        },
+                        "dependentRequired": {"from_date": ["to_date"], "to_date": ["from_date"]},
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_appeals",
+                    "description": (
+                        "Find up to 10 newest matching IFRC appeals, including beneficiaries and funding. "
+                        "Filters are optional; supply both dates or neither. Dates filter appeal launches."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "country_code": {
+                                "type": "string", "description": "3-letter country code (e.g. MWI for Malawi).",
+                            },
+                            "disaster_type": {
+                                "type": "string", "description": "Case-insensitive substring of the recorded disaster type.",
+                            },
+                            "text": {
+                                "type": "string", "description": "Case-insensitive substring of the appeal title.",
+                            },
+                            "from_date": {
+                                "type": "string", "format": "date",
+                                "description": "Earliest appeal launch date, inclusive.",
+                            },
+                            "to_date": {
+                                "type": "string", "format": "date",
+                                "description": "Latest appeal launch date, inclusive. Set both dates equal to match one day.",
                             },
                         },
                         "dependentRequired": {"from_date": ["to_date"], "to_date": ["from_date"]},
@@ -540,6 +603,12 @@ class QueryTools:
                     arguments,
                     ResponseEventSearchArguments,
                     "search_response_events.cypher",
+                )
+            if name == "search_appeals":
+                return self._run_graph_query(
+                    arguments,
+                    AppealSearchArguments,
+                    "search_appeals.cypher",
                 )
             if name == "get_response_context":
                 return self._run_graph_query(
