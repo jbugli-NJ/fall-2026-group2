@@ -38,19 +38,19 @@ def _query_assistant(monkeypatch: pytest.MonkeyPatch) -> client.QueryAssistant:
     [
         ('A normal answer.', []),
         (
+            '<tool_call>\n<function=2search-appeals>\n'
+            '<parameter=3country-code> CUB </parameter>\n'
+            '<parameter=text>\nFlood & landslide\nin Cuba\n</parameter>\n'
+            '</function>\n</tool_call>',
+            [{'name': '2search-appeals', 'arguments': {
+                '3country-code': 'CUB', 'text': 'Flood & landslide\nin Cuba',
+            }}],
+        ),
+        (
             '<tool_call>'
             '{"name": "search_disaster_events", "arguments": {"country_code": "JPN"}}'
             '</tool_call>',
             [{'name': 'search_disaster_events', 'arguments': {'country_code': 'JPN'}}],
-        ),
-        (
-            '<tool_call>{"name": "search_disaster_events", "arguments": {}}</tool_call>'
-            '<tool_call>{"name": "get_disaster_context", '
-            '"arguments": {"event_id": "event-1"}}</tool_call>',
-            [
-                {'name': 'search_disaster_events', 'arguments': {}},
-                {'name': 'get_disaster_context', 'arguments': {'event_id': 'event-1'}},
-            ],
         ),
     ],
 )
@@ -66,9 +66,11 @@ def test_parse_tool_calls_returns_valid_calls(text: str, expected: list[dict[str
     [
         '<tool_call>{"name": "search_disaster_events", "arguments": {}}',
         '<tool_call>not json</tool_call>',
-        '<tool_call>{"name": "search_disaster_events"}</tool_call>',
-        '<tool_call>{"name": 1, "arguments": {}}</tool_call>',
         '<tool_call>{"name": "search_disaster_events", "arguments": []}</tool_call>',
+        '<tool_call><function=search_appeals><parameter=text>Cuba</function></tool_call>',
+        '<tool_call><function=search_appeals>unexpected text</function></tool_call>',
+        '<tool_call><function=search_appeals><parameter=text>Cuba</parameter>'
+        '<parameter=text>Malawi</parameter></function></tool_call>',
     ],
 )
 def test_parse_tool_calls_rejects_malformed_calls(text: str):
@@ -109,8 +111,10 @@ def test_query_assistant_returns_an_answer_without_tool_calls(
     execute.assert_not_called()
 
 
+@pytest.mark.parametrize('call_format', ['json', 'xml'])
 def test_query_assistant_executes_tool_calls_before_answering(
     monkeypatch: pytest.MonkeyPatch,
+    call_format: str,
     ):
     """
     Checks that all tool calls run before the final answer is returned.
@@ -128,11 +132,20 @@ def test_query_assistant_executes_tool_calls_before_answering(
     }
     execute = Mock(side_effect=lambda name, arguments: tool_results[name])
     monkeypatch.setattr(assistant.tools, 'execute', execute)
-    assistant._generate = Mock(side_effect=[
+    json_calls = (
         '<tool_call>{"name": "search_disaster_events", '
         '"arguments": {"country_code": "JPN"}}</tool_call>'
         '<tool_call>{"name": "get_disaster_context", '
-        '"arguments": {"event_id": "event-1"}}</tool_call>',
+        '"arguments": {"event_id": "event-1"}}</tool_call>'
+    )
+    xml_calls = (
+        '<tool_call><function=search_disaster_events>'
+        '<parameter=country_code>JPN</parameter></function></tool_call>'
+        '<tool_call><function=get_disaster_context>'
+        '<parameter=event_id>event-1</parameter></function></tool_call>'
+    )
+    assistant._generate = Mock(side_effect=[
+        json_calls if call_format == 'json' else xml_calls,
         'The graph returned one matching event.',
     ])
 

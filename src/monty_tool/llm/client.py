@@ -18,9 +18,38 @@ from monty_tool.llm.tools import NewsArguments, NewsTools, QueryTools
 from monty_tool.utils.versions import FrozenModel
 
 
+def _parse_xml_tool_call(block: str) -> dict[str, Any]:
+    """
+    Parse Qwen-3.5 function tags into a dictionary with the tool name and arguments.
+    """
+    function = re.fullmatch(r'<function=([\w-]+)>\s*(.*?)\s*</function>', block, re.DOTALL)
+    if function is None:
+        raise ValueError('Expected one complete function block.')
+
+    parameters = function.group(2)
+    arguments = {}
+    cursor = 0
+    for parameter in re.finditer(
+        r'<parameter=([\w-]+)>(.*?)</parameter>', parameters, re.DOTALL,
+    ):
+        if parameters[cursor:parameter.start()].strip():
+            raise ValueError('Unexpected text between parameters.')
+        name = parameter.group(1)
+        if name in arguments:
+            raise ValueError(f'Duplicate parameter: {name}.')
+        arguments[name] = parameter.group(2).strip()
+        cursor = parameter.end()
+    if parameters[cursor:].strip():
+        raise ValueError('Expected complete parameter blocks.')
+    return {'name': function.group(1), 'arguments': arguments}
+
+
 def parse_tool_calls(text: str) -> list[dict[str, Any]]:
     """
-    Parse one or more Qwen3 tool calls and reject malformed calls.
+    Parse function tags and attempt to reject malformed calls.
+    Currently designed to support the following model families:
+    - Qwen-3
+    - Qwen-3.5
     """
 
     if "<tool_call>" not in text and "</tool_call>" not in text:
@@ -40,7 +69,11 @@ def parse_tool_calls(text: str) -> list[dict[str, Any]]:
 
     calls = []
     for block in blocks:
-        call = json.loads(block)
+        call = (
+            _parse_xml_tool_call(block)
+            if block.startswith('<function=')
+            else json.loads(block)
+        )
 
         if (
             not isinstance(call, dict)
