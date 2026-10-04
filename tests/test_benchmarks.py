@@ -50,10 +50,14 @@ def test_output():
     """
     output = BenchmarkOutput(
         benchmark_input=FIRST_INPUT, score=1, duration_seconds=0,
-        response={'answer': '3000', 'tool_results': [{'result': 'private trace'}]},
+        response={'answer': '3000', 'tool_results': [{
+            'call': {'name': 'search_disaster_events', 'arguments': {'text': 'Sri Lanka'}},
+            'result': 'private trace',
+        }]},
     )
     markdown = output.to_md(1)
     assert FIRST_INPUT.research_question in markdown
     assert '**Answer:** 3000' in markdown
     assert '**Tool calls:** 1' in markdown
+    assert '    - search_disaster_events: {"text": "Sri Lanka"}' in markdown
     assert 'private trace' not in markdown

@@ -4,6 +4,8 @@ Schemas for benchmark questions and their verification data.
 
 # Imports
 
+import json
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from monty_tool.llm.schemas import QueryAssistantResponse
@@ -58,6 +60,11 @@ class BenchmarkOutput(BaseModel):
             f'  - **Tool calls:** {tool_calls}',
         ]
         if self.response is not None:
+            for tool_result in self.response['tool_results']:
+                call = tool_result['call']
+                bullets.append(
+                    f'    - {call["name"]}: {json.dumps(call["arguments"], ensure_ascii=False)}'
+                )
             bullets.append(f'  - **Answer:** {self.response['answer']}')
         bullets.append('  - **Expected:** ' + '; '.join(benchmark.full_answer_substrings))
         if benchmark.partial_answer_substrings:
