@@ -1,10 +1,11 @@
 """
-Run a fact retrieval benchmark and save a markdown report for the model.
+Run a fact retrieval benchmark and save a model report and CSV summary.
 """
 
 # Imports
 
 import argparse
+import csv
 from datetime import datetime, timezone
 from importlib.resources import files
 import logging
@@ -118,9 +119,40 @@ def render_report(
     return '\n\n'.join(sections) + '\n'
 
 
+def append_summary(
+    path: Path,
+    model: FrozenModel,
+    outputs: list[BenchmarkOutput],
+    started_at: datetime,
+    total_questions: int,
+    ):
+    """
+    Append one run's aggregate statistics to a CSV covering all runs.
+    """
+    row = {
+        'model': model.value,
+        'revision': model.revision,
+        'started_at_utc': started_at.isoformat(),
+        'questions_completed': len(outputs),
+        'total_questions': total_questions,
+        'average_score': sum(output.score for output in outputs) / len(outputs) if outputs else 0.0,
+        'full_credit': sum(output.score == 1.0 for output in outputs),
+        'partial_credit': sum(output.score == 0.5 for output in outputs),
+        'zero_credit': sum(output.score == 0.0 for output in outputs),
+        'failures': sum(output.error is not None for output in outputs),
+        'total_seconds': sum(output.duration_seconds for output in outputs),
+    }
+    write_header = not path.exists() or path.stat().st_size == 0
+    with path.open('a', encoding='utf-8', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=list(row))
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
 def main(argv: list[str] | None = None) -> None:
     """
-    Run the benchmark and save a model-specific report.
+    Save a model-specific report and append this run to the comparison CSV.
     """
     args = build_parser().parse_args(argv)
     benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(
@@ -149,7 +181,10 @@ def main(argv: list[str] | None = None) -> None:
             total_questions=len(benchmarks),
         ), encoding='utf-8')
         logger.info(f'Question {number} qcore: {output.score:.2%}')
+    summary_path = output_path.parent / 'summary.csv'
+    append_summary(summary_path, args.model, outputs, started_at, len(benchmarks))
     logger.info(f'Saved benchmark report: {output_path}')
+    logger.info(f'Appended benchmark summary: {summary_path}')
 
 
 if __name__ == '__main__':

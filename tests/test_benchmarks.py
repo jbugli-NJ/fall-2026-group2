@@ -4,13 +4,17 @@ Tests for benchmark scoring and reports.
 
 # Imports
 
+import csv
+from datetime import datetime, timezone
 from importlib.resources import files
+from pathlib import Path
 
 from pydantic import TypeAdapter
 import pytest
 
 from monty_tool.benchmarks.schemas import BenchmarkInput, BenchmarkOutput
 from monty_tool.benchmarks import run_benchmark
+from monty_tool.utils.versions import FrozenModel
 
 
 # Benchmark inputs
@@ -102,3 +106,37 @@ def test_output():
     assert '**Tool calls:** 1' in markdown
     assert '    - search_disaster_events: {"text": "Sri Lanka"}' in markdown
     assert 'private trace' not in markdown
+
+
+def test_summary_appends_runs(tmp_path: Path):
+    """
+    Preserve earlier runs and aggregate mixed scores, failures, and empty runs.
+    """
+    path = tmp_path / 'summary.csv'
+    started_at = datetime(2026, 10, 4, tzinfo=timezone.utc)
+    outputs = [
+        BenchmarkOutput(benchmark_input=FIRST_INPUT, score=1, duration_seconds=2),
+        BenchmarkOutput(benchmark_input=FIRST_INPUT, score=.5, duration_seconds=3),
+        BenchmarkOutput(benchmark_input=FIRST_INPUT, score=0, duration_seconds=4, error='failed'),
+    ]
+    model = FrozenModel.QWEN3_1_7B
+    run_benchmark.append_summary(path, model, outputs, started_at, 3)
+    run_benchmark.append_summary(path, model, [], started_at, 0)
+    with path.open(newline='') as file:
+        rows = list(csv.DictReader(file))
+    assert len(rows) == 2
+    assert rows[0] == {
+        'model': model.value,
+        'revision': model.revision,
+        'started_at_utc': started_at.isoformat(),
+        'questions_completed': '3',
+        'total_questions': '3',
+        'average_score': '0.5',
+        'full_credit': '1',
+        'partial_credit': '1',
+        'zero_credit': '1',
+        'failures': '1',
+        'total_seconds': '9.0',
+    }
+    assert rows[1]['questions_completed'] == '0'
+    assert rows[1]['average_score'] == '0.0'
