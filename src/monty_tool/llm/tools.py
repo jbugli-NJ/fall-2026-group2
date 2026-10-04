@@ -278,6 +278,21 @@ def _json_value(value: Any) -> Any:
     return value
 
 
+def _validation_error_message(error: ValidationError) -> str:
+    """
+    Convert a Pydantic validation error into a message for the LLM.
+    """
+    messages = []
+    for detail in error.errors(include_url=False, include_context=False, include_input=False):
+        field = '.'.join(str(part) for part in detail['loc'])
+        message = (
+            'unsupported argument' if detail['type'] == 'extra_forbidden'
+            else detail['msg']
+        )
+        messages.append(f'- {field}: {message}' if field else f'- {message}')
+    return 'Invalid arguments:\n' + '\n'.join(messages)
+
+
 class QueryTools:
     """
     Graph and news tools available to QueryAssistant.
@@ -458,15 +473,14 @@ class QueryTools:
         arguments: dict[str, Any],
         argument_model: type[BaseModel],
         query_file: CypherTemplateFile,
-        error_message: str,
         ) -> dict[str, Any]:
         """
         Validate and run a graph query.
         """
         try:
             args = argument_model.model_validate(arguments)
-        except ValidationError:
-            return {"status": "error", "message": error_message}
+        except ValidationError as error:
+            return {"status": "error", "message": _validation_error_message(error)}
 
         try:
             with get_graph_db_driver() as driver:
@@ -508,43 +522,36 @@ class QueryTools:
                     arguments,
                     DisasterEventSearchArguments,
                     "search_disaster_events.cypher",
-                    "Supply both from_date and to_date, or neither. Optional filters: country_code, hazard_code, text, or finite "
-                    "min/max bounds for elevation, mean_temperature, or precipitation_total. "
                 )
             if name == "get_disaster_context":
                 return self._run_graph_query(
                     arguments,
                     EventIdArguments,
                     "get_disaster_context.cypher",
-                    "Supply a non-empty event_id.",
                 )
             if name == "find_related_disaster_events":
                 return self._run_graph_query(
                     arguments,
                     RelatedEventArguments,
                     "find_related_disaster_events.cypher",
-                    "Supply event_id and one supported relation_kind.",
                 )
             if name == "search_response_events":
                 return self._run_graph_query(
                     arguments,
                     ResponseEventSearchArguments,
                     "search_response_events.cypher",
-                    "Supply both from_date and to_date, or neither. Optional filters: country_code, disaster_type, or text.",
                 )
             if name == "get_response_context":
                 return self._run_graph_query(
                     arguments,
                     EventIdArguments,
                     "get_response_context.cypher",
-                    "Supply a non-empty event_id.",
                 )
             if name == "get_event_news":
                 return self._run_graph_query(
                     arguments,
                     EventIdArguments,
                     "get_event_news.cypher",
-                    "Supply a non-empty event_id.",
                 )
         except Exception as e:
             return {
