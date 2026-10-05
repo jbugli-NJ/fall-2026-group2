@@ -102,18 +102,18 @@
     "verification_query": "MATCH (n:Event {id: 'gdacs-event-1030550-5'}) RETURN n.weather_max_daily_mean_wind_speed AS answer, n.weather_wind_speed_unit AS unit"
   },
   {
-    "research_question": "For \"Forest fires in Australia\" beginning on 2026-07-23, what was the total observed precipitation, in mm at latitude -13.5219, longitude 132.2703, during 2026-07-16 through 2026-08-08, inclusive? Only return the exact number with decimals.",
+    "research_question": "For \"Forest fires in Australia\" beginning on 2026-09-08, what was the total observed precipitation, in mm at latitude -16.0503, longitude 130.4138, during 2026-09-01 through 2026-09-11, inclusive? Only return the exact number with decimals.",
     "full_answer_substrings": [
-      "0.2"
+      "0.37"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
       {
         "label": "Event",
-        "id": "gdacs-event-1029877-16"
+        "id": "gdacs-event-1031866-1"
       }
     ],
-    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1029877-16'}) RETURN n.weather_observed_precipitation_total AS answer, n.weather_observed_precipitation_total_unit AS unit"
+    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1031866-1'}) RETURN n.weather_observed_precipitation_total AS answer, n.weather_observed_precipitation_total_unit AS unit"
   },
   {
     "research_question": "What affected-population count did IFRC GO record for \"Philippines - Typhoon Rai (Odette)\" beginning on 2021-12-14? Only return the exact number.",
@@ -204,20 +204,20 @@
     "verification_query": "MATCH (n:GOEvent {id: 'go-event-3140'}) RETURN n.num_affected AS answer"
   },
   {
-    "research_question": "For \"Forest fires in Russian Federation\" beginning on 2026-08-14, what was the highest daily mean wind speed, in m/s at latitude 64.7234, longitude 76.2974, during 2026-08-07 through 2026-08-23, inclusive? Only return the exact number with decimals.",
+    "research_question": "For \"Forest fires in Russian Federation\" beginning on 2026-09-06, what was the highest daily mean wind speed, in m/s at latitude 51.2577, longitude 56.7652, during 2026-08-30 through 2026-09-09, inclusive? Only return the exact number with decimals.",
     "full_answer_substrings": [
-      "4.19"
+      "6.13"
     ],
     "partial_answer_substrings": [
-      "4"
+      "6"
     ],
     "source_nodes": [
       {
         "label": "Event",
-        "id": "gdacs-event-1030662-9"
+        "id": "gdacs-event-1031771-1"
       }
     ],
-    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1030662-9'}) RETURN n.weather_max_daily_mean_wind_speed AS answer, n.weather_wind_speed_unit AS unit"
+    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1031771-1'}) RETURN n.weather_max_daily_mean_wind_speed AS answer, n.weather_wind_speed_unit AS unit"
   },
   {
     "research_question": "For \"Forest fires in Australia\" beginning on 2026-05-04, what was the lowest temperature, in C at latitude -16.8639, longitude 132.7698, during 2026-04-27 through 2026-05-09, inclusive? Only return the exact number with decimals.",
@@ -336,18 +336,18 @@
     "verification_query": "MATCH (n:GOEvent {id: 'go-event-5567'}) RETURN n.num_affected AS answer"
   },
   {
-    "research_question": "How many people were reported affected by \"Ground movement in China\" beginning on 2025-01-07? Only return the exact number.",
+    "research_question": "How many people were reported injured in \"Ground movement in China\" beginning on 2025-01-07? Only return the exact number.",
     "full_answer_substrings": [
-      "46500"
+      "188"
     ],
     "partial_answer_substrings": [],
     "source_nodes": [
       {
         "label": "Impact",
-        "id": "emdat-impact-2025-0004-CHN-no_affected"
+        "id": "emdat-impact-2025-0004-CHN-no_injured"
       }
     ],
-    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2025-0004-CHN-no_affected'}) RETURN n.impact_value AS answer"
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2025-0004-CHN-no_injured'}) RETURN n.impact_value AS answer"
   },
   {
     "research_question": "How many deaths were recorded for \"Riverine flood in China\" beginning on 2010-08-21? Only return the exact number.",
@@ -408,20 +408,20 @@
     "verification_query": "MATCH (n:Event {id: 'gdacs-event-1031565-4'}) RETURN n.weather_observed_precipitation_total AS answer, n.weather_observed_precipitation_total_unit AS unit"
   },
   {
-    "research_question": "For \"Forest fires in Russian Federation\" beginning on 2026-08-13, what was the highest daily mean wind speed, in m/s at latitude 64.9101, longitude 83.881, during 2026-08-06 through 2026-08-26, inclusive? Only return the exact number with decimals.",
+    "research_question": "For \"Forest fires in Russian Federation\" beginning on 2026-08-22, what was the highest daily mean wind speed, in m/s at latitude 65.4974, longitude 112.5278, during 2026-08-15 through 2026-08-29, inclusive? Only return the exact number with decimals.",
     "full_answer_substrings": [
-      "4.34"
+      "1.76"
     ],
     "partial_answer_substrings": [
-      "4"
+      "1"
     ],
     "source_nodes": [
       {
         "label": "Event",
-        "id": "gdacs-event-1030814-6"
+        "id": "gdacs-event-1031202-1"
       }
     ],
-    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1030814-6'}) RETURN n.weather_max_daily_mean_wind_speed AS answer, n.weather_wind_speed_unit AS unit"
+    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1031202-1'}) RETURN n.weather_max_daily_mean_wind_speed AS answer, n.weather_wind_speed_unit AS unit"
   },
   {
     "research_question": "How much funding was recorded as received for the IFRC appeal \"Earthquake C\" launched on 1991-04-23? Only return the exact number.",
