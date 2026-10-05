@@ -9,13 +9,28 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from monty_tool.weather.schemas import (
-    WeatherQuery,
-    build_weather_result,
-)
+from monty_tool.weather.schemas import POWERResponse, WeatherQuery, WeatherResult
 
 
 # Test object helpers
+
+@pytest.mark.parametrize('changes', [
+    {'latitude': 91}, {'longitude': float('nan')}, {'elevation': float('inf')},
+    {'end_date': '2023-01-01'}, {'item_id': ' '},
+    {'days': [{'date': '2024-01-04'}]},
+    {'days': [{'date': '2024-01-01'}] * 2},
+    {'days': [{'date': '2024-01-01', 'wind_speed': float('inf')}]},
+])
+def test_weather_result_rejects_invalid_measurements(changes):
+    """
+    Validate identity, coordinates, dates, and finite daily measurements at input.
+    """
+    data = {
+        'item_id': 'event-1', 'latitude': 10, 'longitude': 20,
+        'start_date': '2024-01-01', 'end_date': '2024-01-03',
+    }
+    with pytest.raises(ValidationError):
+        WeatherResult.model_validate(data | changes)
 
 def _query(**overrides) -> WeatherQuery:
     """
@@ -32,7 +47,7 @@ def _query(**overrides) -> WeatherQuery:
     return WeatherQuery(**fields)
 
 
-def _payload(parameter: dict | None = None, **overrides) -> dict:
+def _payload(parameter: dict | None = None, **overrides) -> POWERResponse:
     """
     A POWER response shaped like the live API's, with real field names.
     """
@@ -56,7 +71,7 @@ def _payload(parameter: dict | None = None, **overrides) -> dict:
         },
     }
     payload.update(overrides)
-    return payload
+    return POWERResponse.model_validate(payload)
 
 
 # Tests: query validation
@@ -96,10 +111,10 @@ def test_fill_values_become_none():
     A -999.0 left in place averages silently instead of failing, so this
     is the difference between a missing day and a corrupt one.
     """
-    result = build_weather_result(_query(), _payload({
+    result = _payload({
         'T2M': {'20240101': 2.94, '20240102': -999.0, '20240103': 1.84},
         'PRECTOTCORR': {'20240101': -999.0, '20240102': 0.0, '20240103': 0.0},
-    }))
+    }).to_weather_result(_query())
 
     assert [day.temperature_mean for day in result.days] == [2.94, None, 1.84]
     assert [day.precipitation for day in result.days] == [None, 0.0, 0.0]
@@ -110,9 +125,9 @@ def test_fill_value_is_read_from_the_response_header():
     Confirms the sentinel comes from the payload, not a hardcoded default.
     """
     payload = _payload({'T2M': {'20240101': -77.0, '20240102': 1.31, '20240103': 1.84}})
-    payload['header']['fill_value'] = -77.0
+    payload.header.fill_value = -77.0
 
-    result = build_weather_result(_query(), payload)
+    result = payload.to_weather_result(_query())
 
     assert [day.temperature_mean for day in result.days] == [None, 1.31, 1.84]
 
@@ -121,9 +136,9 @@ def test_zero_is_kept_as_a_measurement():
     """
     Confirms a real zero is not mistaken for a missing value.
     """
-    result = build_weather_result(_query(), _payload({
+    result = _payload({
         'PRECTOTCORR': {'20240101': 0.0, '20240102': 0.0, '20240103': 0.0},
-    }))
+    }).to_weather_result(_query())
 
     assert [day.precipitation for day in result.days] == [0.0, 0.0, 0.0]
     assert result.missing_days == 0
@@ -139,10 +154,7 @@ def test_every_requested_day_gets_a_row():
     POWER lags real time, so a window running up to today routinely comes
     back short.
     """
-    result = build_weather_result(
-        _query(end_date=date(2024, 1, 5)),
-        _payload(),
-    )
+    result = _payload().to_weather_result(_query(end_date=date(2024, 1, 5)))
 
     assert [day.date for day in result.days] == [
         date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3),
@@ -156,10 +168,10 @@ def test_missing_days_counts_only_fully_empty_days():
     """
     Confirms a day holding any measurement is not counted as missing.
     """
-    result = build_weather_result(_query(end_date=date(2024, 1, 4)), _payload({
+    result = _payload({
         'T2M': {'20240101': 2.94, '20240102': -999.0},
         'PRECTOTCORR': {'20240101': 0.28, '20240102': 1.5},
-    }))
+    }).to_weather_result(_query(end_date=date(2024, 1, 4)))
 
     # 1 Jan is full, 2 Jan holds precipitation only, 3 and 4 Jan are absent.
     assert result.missing_days == 2
@@ -170,7 +182,7 @@ def test_complete_range_reports_complete():
     """
     Confirms a fully populated range is reported as complete.
     """
-    result = build_weather_result(_query(), _payload())
+    result = _payload().to_weather_result(_query())
 
     assert result.missing_days == 0
     assert result.is_complete is True
@@ -180,9 +192,9 @@ def test_days_are_ordered_chronologically():
     """
     Confirms the series is sorted by date, not by POWER's key order.
     """
-    result = build_weather_result(_query(), _payload({
+    result = _payload({
         'T2M': {'20240103': 1.84, '20240101': 2.94, '20240102': 1.31},
-    }))
+    }).to_weather_result(_query())
 
     assert [day.date.day for day in result.days] == [1, 2, 3]
     assert [day.temperature_mean for day in result.days] == [2.94, 1.31, 1.84]
@@ -192,9 +204,9 @@ def test_dates_outside_the_requested_range_are_dropped():
     """
     Confirms the series covers the requested window and nothing else.
     """
-    result = build_weather_result(_query(), _payload({
+    result = _payload({
         'T2M': {'20231231': 9.9, '20240101': 2.94, '20240104': 8.8},
-    }))
+    }).to_weather_result(_query())
 
     assert [day.date for day in result.days] == [
         date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3),
@@ -211,10 +223,10 @@ def test_unmapped_parameters_are_ignored():
     Requesting an extra POWER parameter should not break parsing before
     the model has a field for it.
     """
-    result = build_weather_result(_query(), _payload({
+    result = _payload({
         'T2M': {'20240101': 2.94, '20240102': 1.31, '20240103': 1.84},
         'RH2M': {'20240101': 70.0, '20240102': 71.0, '20240103': 72.0},
-    }))
+    }).to_weather_result(_query())
 
     assert result.days[0].temperature_mean == 2.94
     assert not hasattr(result.days[0], 'rh2m')
@@ -224,7 +236,7 @@ def test_units_and_sources_are_preserved():
     """
     Confirms units and provenance survive, so values are never bare numbers.
     """
-    result = build_weather_result(_query(), _payload())
+    result = _payload().to_weather_result(_query())
 
     assert result.units['T2M'] == 'C'
     assert result.units['PRECTOTCORR'] == 'mm/day'
@@ -235,7 +247,7 @@ def test_elevation_is_read_from_the_geometry():
     """
     Confirms elevation is taken from the third coordinate when present.
     """
-    result = build_weather_result(_query(), _payload())
+    result = _payload().to_weather_result(_query())
     assert result.elevation == 70.81
 
 
@@ -243,9 +255,9 @@ def test_missing_elevation_is_none():
     """
     Confirms a two-coordinate geometry yields no elevation rather than raising.
     """
-    result = build_weather_result(_query(), _payload(
+    result = _payload(
         geometry={'type': 'Point', 'coordinates': [-77.03, 38.9]},
-    ))
+    ).to_weather_result(_query())
     assert result.elevation is None
 
 
@@ -253,7 +265,7 @@ def test_result_carries_the_query_identity():
     """
     Confirms results stay joinable to the Montandon record they came from.
     """
-    result = build_weather_result(_query(item_id='gdacs-event-42'), _payload())
+    result = _payload().to_weather_result(_query(item_id='gdacs-event-42'))
 
     assert result.item_id == 'gdacs-event-42'
     assert (result.latitude, result.longitude) == (38.9, -77.03)
@@ -267,12 +279,12 @@ def test_summary_reports_totals_and_peaks():
     """
     Confirms the summary carries the figures a window is asked about.
     """
-    result = build_weather_result(_query(end_date=date(2024, 1, 4)), _payload({
+    result = _payload({
         'T2M_MAX': {'20240101': 5.0, '20240102': 9.0, '20240103': 7.0, '20240104': 6.0},
         'T2M_MIN': {'20240101': 1.0, '20240102': -2.0, '20240103': 3.0, '20240104': 0.0},
         'PRECTOTCORR': {'20240101': 1.0, '20240102': 12.5, '20240103': 0.0, '20240104': 2.5},
         'WS10M': {'20240101': 3.0, '20240102': 8.5, '20240103': 2.0, '20240104': 4.0},
-    }))
+    }).to_weather_result(_query(end_date=date(2024, 1, 4)))
 
     summary = result.summary()
 
@@ -292,10 +304,10 @@ def test_summary_reports_absence_as_none_not_zero():
     Reporting 0 mm of rain for days POWER never covered would read as a
     dry spell rather than missing data.
     """
-    result = build_weather_result(_query(), _payload({
+    result = _payload({
         'T2M': {'20240101': -999.0, '20240102': -999.0, '20240103': -999.0},
         'PRECTOTCORR': {'20240101': -999.0, '20240102': -999.0, '20240103': -999.0},
-    }))
+    }).to_weather_result(_query())
 
     summary = result.summary()
 
@@ -311,9 +323,9 @@ def test_summary_falls_back_to_mean_temperature():
     """
     Confirms temperature is still reported when only T2M was requested.
     """
-    result = build_weather_result(_query(), _payload({
+    result = _payload({
         'T2M': {'20240101': 2.0, '20240102': 8.0, '20240103': 5.0},
-    }))
+    }).to_weather_result(_query())
 
     summary = result.summary()
 
@@ -325,9 +337,9 @@ def test_summary_ignores_missing_days_in_its_totals():
     """
     Confirms gaps neither break the totals nor count towards them.
     """
-    result = build_weather_result(_query(end_date=date(2024, 1, 5)), _payload({
+    result = _payload({
         'PRECTOTCORR': {'20240101': 4.0, '20240103': 6.0},
-    }))
+    }).to_weather_result(_query(end_date=date(2024, 1, 5)))
 
     summary = result.summary()
 

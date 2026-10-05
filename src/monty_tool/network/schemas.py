@@ -4,13 +4,53 @@ Schemas for data stored in the Neo4j graph.
 
 # Imports
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import NotRequired, TypedDict
 
 from monty_tool.embeddings.schemas import Embedding
 
 
 # Schema
+
+class WeatherNodeProperties(TypedDict):
+    """
+    Flat weather properties attached to an existing Montandon node.
+    """
+    weather_source: str
+    weather_sources: list[str]
+    weather_latitude: float
+    weather_longitude: float
+    weather_elevation: float | None
+    weather_elevation_unit: str | None
+    weather_start_date: date
+    weather_end_date: date
+    weather_expected_days: int
+    weather_precipitation_measured_days: int
+    weather_temperature_mean_measured_days: int
+    weather_temperature_max_measured_days: int
+    weather_temperature_min_measured_days: int
+    weather_wind_speed_measured_days: int
+    weather_observed_precipitation_total: float | None
+    weather_peak_daily_precipitation: float | None
+    weather_peak_daily_precipitation_date: date | None
+    weather_mean_temperature: float | None
+    weather_max_temperature: float | None
+    weather_min_temperature: float | None
+    weather_max_daily_mean_wind_speed: float | None
+    weather_precipitation_unit: str | None
+    weather_observed_precipitation_total_unit: str | None
+    weather_temperature_mean_unit: str | None
+    weather_temperature_max_unit: str | None
+    weather_temperature_min_unit: str | None
+    weather_wind_speed_unit: str | None
+
+
+class WeatherNodeData(TypedDict):
+    """
+    Identify an existing Montandon node and its weather properties.
+    """
+    item_id: str
+    properties: WeatherNodeProperties
 
 class BaseNodeData(TypedDict):
     """

@@ -1,23 +1,16 @@
 """
-Minimal NASA POWER client.
-
-This file handles the POWER connection and returns its raw payload.
-It does not inspect or transform Montandon records directly.
-
-Receives a point and a date range, and handles the POWER request.
+Minimal NASA POWER client to connect to the POWER API and
+return validated weather data for coordinates.
 """
-
-from __future__ import annotations
 
 from datetime import date
 
 import requests
 
+from monty_tool.weather.schemas import FILL_VALUE as FILL_VALUE, POWERResponse
 
 # POWER serves daily values for a single point per request; there is no
 # bulk endpoint, so callers pulling many events should cache results
-# (see `go_api.py` for the gzipped JSON Lines pattern) rather than
-# re-requesting.
 POWER_API_URL = 'https://power.larc.nasa.gov/api/temporal/daily/point'
 
 # Parameters chosen to cover the hazards Montandon records most often:
@@ -41,12 +34,6 @@ DEFAULT_COMMUNITY = 'RE'
 # sits outside POWER's coverage entirely.
 POWER_START_DATE = date(1981, 1, 1)
 
-# POWER reports absent observations as this sentinel rather than null.
-# It is deliberately NOT applied here: this module stays pure transport,
-# so the parsing layer converts it to None. Averaging a column that
-# still holds -999.0 silently corrupts the result instead of failing.
-FILL_VALUE = -999.0
-
 
 class PowerRateLimitError(RuntimeError):
     """
@@ -66,21 +53,19 @@ def get_weather_data(
     *,
     parameters: tuple[str, ...] = DEFAULT_PARAMETERS,
     community: str = DEFAULT_COMMUNITY,
-    ) -> dict:
+    ) -> POWERResponse:
     """
     Retrieve daily weather for one point over a date range.
-
-    POWER needs no API key: the endpoint is open, and the `NASA_KEY` in
-    `.env` belongs to api.nasa.gov, a separate service that does not
-    gate this one.
 
     `lat`/`lon` must describe an actual point. Only point-located
     Montandon records (GDACS) qualify; the bounding-box centre of a
     country-level Polygon record is not where the event happened.
 
-    The returned payload is raw POWER JSON, including `FILL_VALUE`
-    entries for dates POWER has no data for. POWER lags real time, so
-    recent events can come back short of their full range or empty.
+    Returns a POWERResponse containing the fields used by weather processing,
+    including `FILL_VALUE` entries for missing data.
+    Call `model_dump()` for a nested Python dictionary or `model_dump_json()`
+    for JSON. POWER lags real time, so recent events can come back short
+    of their full range or empty.
     """
     if start > end:
         raise ValueError('start must be on or before end.')
@@ -99,8 +84,7 @@ def get_weather_data(
 
     response = requests.get(POWER_API_URL, params=params, timeout=30)
 
-    # Separated from the errors below because it is the one failure
-    # worth retrying: the request was fine, the pace was not.
+    # Separated from the errors below because it is the only retryable error
     if response.status_code == 429:
         raise PowerRateLimitError(
             'NASA POWER refused the request: HTTP 429 (too many requests).'
@@ -116,4 +100,4 @@ def get_weather_data(
             f'{response.text[:200]}'
         )
 
-    return response.json()
+    return POWERResponse.model_validate(response.json())

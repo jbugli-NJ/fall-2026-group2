@@ -7,6 +7,7 @@ Tests for LLM tools.
 from datetime import date, datetime, time
 from typing import Any, cast, get_args
 from unittest.mock import Mock, ANY
+from neo4j.time import Date as Neo4jDate
 
 import pytest
 
@@ -14,6 +15,26 @@ from monty_tool.llm import tools
 
 
 # Tests
+
+@pytest.mark.parametrize('metric', ['elevation', 'mean_temperature', 'precipitation_total'])
+def test_disaster_search_rejects_inverted_weather_ranges(metric):
+    """
+    Reject contradictory lower and upper bounds before executing a graph query.
+    """
+    with pytest.raises(ValueError, match=f'min_{metric}'):
+        tools.DisasterEventSearchArguments.model_validate({f'min_{metric}': 10, f'max_{metric}': 5})
+
+
+@pytest.mark.parametrize('bounds', [
+    {'max_elevation': float('inf')}, {'min_mean_temperature': float('nan')},
+    {'min_precipitation_total': -1},
+])
+def test_disaster_search_rejects_invalid_weather_bounds(bounds):
+    """
+    Require finite weather thresholds and nonnegative precipitation.
+    """
+    with pytest.raises(ValueError):
+        tools.DisasterEventSearchArguments.model_validate(bounds)
 
 def test_load_cypher_query_completes():
     """
@@ -50,6 +71,7 @@ def test_graph_search_arguments_validates_dates():
     [
         ('flood', 'flood'),
         (date(2026, 9, 27), '2026-09-27'),
+        (Neo4jDate(2026, 9, 27), '2026-09-27'),
         (
             datetime(2026, 9, 27, 14, 30, 15),
             '2026-09-27T14:30:15',

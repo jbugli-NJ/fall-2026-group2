@@ -17,6 +17,7 @@ from pydantic import (
 )
 from requests import RequestException
 from neo4j import RoutingControl
+from neo4j.time import Date as Neo4jDate
 
 from monty_tool.event_context import EventContext
 from monty_tool.news.query import build_news_query
@@ -191,6 +192,27 @@ class DisasterEventSearchArguments(GraphSearchArguments):
     """
     hazard_code: str | None = Field(default=None, min_length=1, max_length=100)
     text: str | None = Field(default=None, min_length=1, max_length=200)
+    min_elevation: float | None = Field(default=None, allow_inf_nan=False)
+    max_elevation: float | None = Field(default=None, allow_inf_nan=False)
+    min_mean_temperature: float | None = Field(default=None, allow_inf_nan=False)
+    max_mean_temperature: float | None = Field(default=None, allow_inf_nan=False)
+    min_precipitation_total: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    max_precipitation_total: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    @model_validator(mode='after')
+    def validate_weather_ranges(self) -> DisasterEventSearchArguments:
+        """
+        Require each supplied weather range to run from lower to higher values.
+        """
+        ranges = (
+            ('elevation', self.min_elevation, self.max_elevation),
+            ('mean_temperature', self.min_mean_temperature, self.max_mean_temperature),
+            ('precipitation_total', self.min_precipitation_total, self.max_precipitation_total),
+        )
+        for name, lower, upper in ranges:
+            if lower is not None and upper is not None and lower > upper:
+                raise ValueError(f'min_{name} must be on or below max_{name}.')
+        return self
 
 
 class EventIdArguments(BaseModel):
@@ -265,7 +287,7 @@ def _json_value(value: Any) -> Any:
                 output.append(serialized)
         return output
 
-    if isinstance(value, (date, datetime, time)):
+    if isinstance(value, (date, datetime, time, Neo4jDate)):
         return value.isoformat()
 
     return value
@@ -287,7 +309,11 @@ class QueryTools:
                 "type": "function",
                 "function": {
                     "name": "search_disaster_events",
-                    "description": "Find Montandon disaster events by place, hazard, date, or text.",
+                    "description": (
+                        "Find Montandon disaster events by place, hazard, date, text, "
+                        "elevation, mean temperature, or precipitation total. Weather "
+                        "bounds are inclusive and may have partial coverage. "
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -305,6 +331,26 @@ class QueryTools:
                                 "type": "string",
                                 "description": "Words to find in event titles and descriptions.",
                             },
+                            "min_elevation": {
+                                "type": "number", "description": "Minimum NASA POWER elevation in meters.",
+                            },
+                            "max_elevation": {
+                                "type": "number", "description": "Maximum NASA POWER elevation in meters.",
+                            },
+                            "min_mean_temperature": {
+                                "type": "number", "description": "Minimum retrieval-period mean temperature in degrees C.",
+                            },
+                            "max_mean_temperature": {
+                                "type": "number", "description": "Maximum retrieval-period mean temperature in degrees C.",
+                            },
+                            "min_precipitation_total": {
+                                "type": "number", "minimum": 0,
+                                "description": "Minimum retrieval-period precipitation total in mm.",
+                            },
+                            "max_precipitation_total": {
+                                "type": "number", "minimum": 0,
+                                "description": "Maximum retrieval-period precipitation total in mm.",
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -314,7 +360,10 @@ class QueryTools:
                 "type": "function",
                 "function": {
                     "name": "get_disaster_context",
-                    "description": "Get one Montandon event and its impacts using an event_id returned by search_disaster_events.",
+                    "description": (
+                        "Get one Montandon event, its impacts, and weather data (if available) "
+                        "using an event_id returned by search_disaster_events."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {"event_id": {"type": "string"}},
@@ -491,7 +540,8 @@ class QueryTools:
                     arguments,
                     DisasterEventSearchArguments,
                     "search_disaster_events.cypher",
-                    "Supply optional country_code, hazard_code, dates, or text.",
+                    "Supply optional country_code, hazard_code, dates, text, or finite "
+                    "min/max bounds for elevation, mean_temperature, or precipitation_total. "
                 )
             if name == "get_disaster_context":
                 return self._run_graph_query(
