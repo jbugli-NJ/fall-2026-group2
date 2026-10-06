@@ -17,11 +17,10 @@ from pydantic import (
 )
 from requests import RequestException
 from neo4j import RoutingControl
-from neo4j.time import Date as Neo4jDate
+from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 
 from monty_tool.event_context import EventContext
 from monty_tool.news.query import build_news_query
-from monty_tool.news.schemas import NewsQuery
 from monty_tool.news.retrieval import search_ranked_news
 from monty_tool.network.resources import get_graph_db_driver
 
@@ -156,6 +155,7 @@ type CypherTemplateFile = Literal[
     'find_related_disaster_events.cypher',
     'search_response_events.cypher',
     'get_response_context.cypher',
+    'get_event_news.cypher',
 ]
 
 def _load_cypher_query(name: CypherTemplateFile) -> LiteralString:
@@ -244,26 +244,6 @@ class ResponseEventSearchArguments(GraphSearchArguments):
     text: str | None = Field(default=None, min_length=1, max_length=200)
 
 
-class QueryNewsArguments(BaseModel):
-    """
-    Arguments accepted by the direct NewsAPI tool.
-    """
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    query: str = Field(min_length=1, max_length=500)
-    from_date: date
-    to_date: date
-    location: str | None = Field(default=None, min_length=1, max_length=100)
-
-    @model_validator(mode="after")
-    def validate_date_range(self) -> QueryNewsArguments:
-        """
-        Require the NewsAPI date range to run forward in time.
-        """
-        if self.from_date > self.to_date:
-            raise ValueError("from_date must be on or before to_date.")
-        return self
-
-
 def _json_value(value: Any) -> Any:
     """
     Convert Neo4j outputs into JSON, stripping embeddings.
@@ -287,7 +267,7 @@ def _json_value(value: Any) -> Any:
                 output.append(serialized)
         return output
 
-    if isinstance(value, (date, datetime, time, Neo4jDate)):
+    if isinstance(value, (date, datetime, time, Neo4jDate, Neo4jDateTime)):
         return value.isoformat()
 
     return value
@@ -425,17 +405,18 @@ class QueryTools:
             {
                 "type": "function",
                 "function": {
-                    "name": "search_news",
-                    "description": "Search NewsAPI with an English query and a date range.",
+                    "name": "get_event_news",
+                    "description": (
+                        "Get saved NewsAPI article candidates retrieved for an "
+                        "existing disaster event by event_id. These are search "
+                        "results, not verified reports about the event."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "minLength": 1, "maxLength": 500},
-                            "from_date": {"type": "string", "format": "date"},
-                            "to_date": {"type": "string", "format": "date"},
-                            "location": {"type": "string", "description": "Place named in the disaster question, when available.",},
+                            "event_id": {"type": "string"},
                         },
-                        "required": ["query", "from_date", "to_date"],
+                        "required": ["event_id"],
                         "additionalProperties": False,
                     },
                 },
@@ -471,49 +452,6 @@ class QueryTools:
         return {
             "status": "ok",
             "rows": [_json_value(record.data()) for record in records],
-        }
-
-    def _search_news(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """
-        Run a direct NewsAPI search using provided inputs.
-        """
-        try:
-            args = QueryNewsArguments.model_validate(arguments)
-        except ValidationError:
-            return {
-                "status": "error",
-                "message": "Supply query, from_date, and to_date as ISO dates.",
-            }
-
-        try:
-            news_query = args.query
-            if args.location and args.location.casefold() not in news_query.casefold():
-                news_query = f"{news_query} {args.location}"
-            if len(news_query) > 500:
-                return {
-                    "status": "error",
-                    "message": "News query exceeds 500 characters after adding location.",
-                }
-
-            result = search_ranked_news(
-                NewsQuery(
-                    item_id="query-assistant",
-                    query=news_query,
-                    from_date=args.from_date,
-                    to_date=args.to_date,
-                ),
-            )
-        except RequestException as e:
-            return {
-                "status": "error",
-                "message": f"NewsAPI connection failed: {type(e).__name__}",
-            }
-        except (RuntimeError, ValueError) as e:
-            return {"status": "error", "message": str(e)}
-
-        return {
-            "status": "ok" if result.articles else "empty",
-            **result.model_dump(mode="json"),
         }
 
     def execute(
@@ -571,8 +509,13 @@ class QueryTools:
                     "get_response_context.cypher",
                     "Supply a non-empty event_id.",
                 )
-            if name == "search_news":
-                return self._search_news(arguments)
+            if name == "get_event_news":
+                return self._run_graph_query(
+                    arguments,
+                    EventIdArguments,
+                    "get_event_news.cypher",
+                    "Supply a non-empty event_id.",
+                )
         except Exception as e:
             return {
                 "status": "error",

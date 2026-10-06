@@ -310,7 +310,7 @@ class QueryAssistant:
     def ask(self, question: str) -> dict[str, Any]:
         """
         Answer one question with up to ten tool calls.
-        This exposes NewsAPI and Cypher queries.
+        This exposes graph query tools.
         """
         messages: list[dict[str, Any]] = [
             {
@@ -319,9 +319,9 @@ class QueryAssistant:
                     "You answer questions about disaster records. Use graph search "
                     "tools to find events, then use returned event IDs for details "
                     "or related records. Use response tools for IFRC events and "
-                    "appeals. Use news search only for current reporting. Base your "
-                    "answer on tool results and distinguish graph records from news. "
-                    "Answer in the user's language."
+                    "appeals. Use get_event_news for articles already saved in the graph. "
+                    "Base your answer on tool results and distinguish disaster event facts "
+                    "from news article candidates. Answer in the user's language."
                 ),
             },
             {"role": "user", "content": question},
