@@ -1,5 +1,5 @@
 """
-Run a fact retrieval benchmark and save a model report and CSV summary.
+Run a fact retrieval benchmark and save a model report, CSV summary, and plot.
 """
 
 # Imports
@@ -13,6 +13,8 @@ from pathlib import Path
 import re
 from time import perf_counter
 
+from matplotlib.figure import Figure
+from matplotlib.ticker import PercentFormatter
 from pydantic import TypeAdapter
 from transformers import set_seed
 
@@ -150,6 +152,35 @@ def append_summary(
         writer.writerow(row)
 
 
+def save_summary_plot(summary_path: Path) -> Path:
+    """
+    Plot each run's average score against total runtime, labeled by model.
+    """
+    with summary_path.open(encoding='utf-8', newline='') as file:
+        rows = list(csv.DictReader(file))
+
+    figure = Figure(figsize=(9, 6), layout='constrained')
+    axes = figure.subplots()
+    durations = [float(row['total_seconds']) for row in rows]
+    scores = [float(row['average_score']) for row in rows]
+    axes.scatter(durations, scores)
+    for row, duration, score in zip(rows, durations, scores):
+        axes.annotate(
+            row['model'], (duration, score),
+            xytext=(6, 6), textcoords='offset points', fontsize=9,
+        )
+    axes.set_title('Fact retrieval benchmark')
+    axes.set_xlabel('Total runtime (seconds)')
+    axes.set_ylabel('Average score')
+    axes.yaxis.set_major_formatter(PercentFormatter(xmax=1))
+    axes.set_ylim(-0.05, 1.1)
+    axes.margins(x=0.3)
+    axes.grid(alpha=0.25)
+    plot_path = summary_path.with_suffix('.svg')
+    figure.savefig(plot_path)
+    return plot_path
+
+
 def main(argv: list[str] | None = None) -> None:
     """
     Save a model-specific report and append this run to the comparison CSV.
@@ -183,8 +214,10 @@ def main(argv: list[str] | None = None) -> None:
         logger.info(f'Question {number} qcore: {output.score:.2%}')
     summary_path = output_path.parent / 'summary.csv'
     append_summary(summary_path, args.model, outputs, started_at, len(benchmarks))
+    plot_path = save_summary_plot(summary_path)
     logger.info(f'Saved benchmark report: {output_path}')
     logger.info(f'Appended benchmark summary: {summary_path}')
+    logger.info(f'Saved benchmark plot: {plot_path}')
 
 
 if __name__ == '__main__':
