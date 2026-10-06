@@ -217,3 +217,34 @@ def test_query_assistant_rejects_empty_or_malformed_model_responses(
 
     with pytest.raises(ValueError):
         assistant.ask('What happened?')
+
+
+@pytest.mark.parametrize('requests_another_tool', [False, True])
+def test_query_assistant_stops_tools_at_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    requests_another_tool: bool,
+    ):
+    """
+    Allow one final answer after the budget, failing if it requests another tool.
+    """
+    assistant = _query_assistant(monkeypatch)
+    assistant.tools.max_tool_calls = 1
+    execute = Mock(return_value={'status': 'ok', 'rows': []})
+    monkeypatch.setattr(assistant.tools, 'execute', execute)
+    request = (
+        '<tool_call>{"name": "search_disaster_events", '
+        '"arguments": {"country_code": "CRI"}}</tool_call>'
+    )
+    assistant._generate = Mock(side_effect=[
+        request, request if requests_another_tool else 'Insufficient data.',
+    ])
+
+    if requests_another_tool:
+        with pytest.raises(ValueError, match='after the tool call limit'):
+            assistant.ask('Find floods in Costa Rica.')
+    else:
+        assert assistant.ask('Find floods in Costa Rica.')['answer'] == 'Insufficient data.'
+
+    assert execute.call_count == 1
+    assert assistant._generate.call_count == 2
+    assert assistant._generate.call_args.kwargs['use_tools'] is False

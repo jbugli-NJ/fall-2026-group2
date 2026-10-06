@@ -137,7 +137,6 @@ class LocalNewsAssistant:
     def _generate(
         self,
         messages: list[dict[str, Any]],
-        *,
         use_tools: bool = True,
         max_new_tokens: int = 512,
     ) -> str:
@@ -308,6 +307,7 @@ class QueryAssistant:
         self,
         messages: list[dict[str, Any]],
         max_new_tokens: int = 1024,
+        use_tools: bool = True,
         ) -> str:
         """
         Generate one response while enforcing the context limit.
@@ -315,7 +315,7 @@ class QueryAssistant:
         """
         inputs = self.tokenizer.apply_chat_template(
             messages,
-            tools=self.tools.definitions,
+            tools=self.tools.definitions if use_tools else None,
             tokenize=True,
             add_generation_prompt=True,
             enable_thinking=False,
@@ -366,9 +366,19 @@ class QueryAssistant:
         tool_results: list[dict[str, Any]] = []
 
         while True:
-            response = self._generate(messages)
+            remaining_calls = self.tools.max_tool_calls - len(tool_results)
+            use_tools = remaining_calls > 0
+            if not use_tools:
+                messages[0]['content'] += (
+                    ' The tool call budget is exhausted. '
+                    'Provide your final answer using the results already collected.'
+                )
+            response = self._generate(messages, use_tools=use_tools)
             print("Raw model response:", repr(response))
             calls = parse_tool_calls(response)
+
+            if calls and not use_tools:
+                raise ValueError("Model requested a tool after the tool call limit was reached.")
 
             if not calls:
                 if not response:
@@ -378,6 +388,8 @@ class QueryAssistant:
                     "tool_results": tool_results,
                 }
 
+            # Execute only the requests that fit in the remaining budget.
+            calls = calls[:remaining_calls]
             results = []
             for call in calls:
                 print("Tool call:", json.dumps(call, ensure_ascii=False, default=str))
