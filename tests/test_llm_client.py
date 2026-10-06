@@ -10,6 +10,7 @@ from unittest.mock import Mock, call
 
 import pytest
 import torch
+from transformers import AutoConfig
 from transformers.cli.serving.utils import get_response_template
 from transformers.utils.chat_parsing import parse_response
 
@@ -19,10 +20,15 @@ from monty_tool.utils.versions import FrozenModel
 
 # Test object helpers
 
-def _query_assistant(monkeypatch: pytest.MonkeyPatch) -> client.QueryAssistant:
+def _query_assistant(
+    monkeypatch: pytest.MonkeyPatch,
+    model_id: FrozenModel = FrozenModel.QWEN3_1_7B,
+) -> client.QueryAssistant:
     """
     Creates a QueryAssistant without loading a tokenizer or model.
     """
+    model_type = 'qwen3' if model_id == FrozenModel.QWEN3_1_7B else 'qwen3_5'
+    config = AutoConfig.for_model(model_type)
     monkeypatch.setattr(
         client.AutoTokenizer,
         'from_pretrained',
@@ -34,9 +40,9 @@ def _query_assistant(monkeypatch: pytest.MonkeyPatch) -> client.QueryAssistant:
     monkeypatch.setattr(
         client.AutoModelForCausalLM,
         'from_pretrained',
-        Mock(return_value=Mock(config=Mock(model_type='qwen3'))),
+        Mock(return_value=Mock(config=config.get_text_config())),
     )
-    return client.QueryAssistant()
+    return client.QueryAssistant(model_id=model_id)
 
 
 def _parsed(text: str, model_id: FrozenModel = FrozenModel.QWEN3_1_7B) -> dict[str, Any]:
@@ -53,6 +59,22 @@ def _parsed(text: str, model_id: FrozenModel = FrozenModel.QWEN3_1_7B) -> dict[s
 
 
 # Tests
+
+def test_query_assistant_resolves_qwen35_text_model(monkeypatch: pytest.MonkeyPatch):
+    """
+    Resolve the checkpoint template when the loaded model exposes its text sub-config.
+    """
+    assistant = _query_assistant(monkeypatch, FrozenModel.QWEN3_5_4B)
+    assert assistant.model.config.model_type == 'qwen3_5_text'
+    message = parse_response(
+        '<tool_call><function=search_disaster_events>'
+        '<parameter=country_code>CRI</parameter></function></tool_call>',
+        assistant.tokenizer.response_template,
+        prefix='',
+    )
+    assert message['tool_calls'][0]['function'] == {
+        'name': 'search_disaster_events', 'arguments': {'country_code': 'CRI'},
+    }
 
 @pytest.mark.parametrize(
     ('text', 'expected'),
