@@ -436,5 +436,22 @@
       }
     ],
     "verification_query": "MATCH (n:GOAppeal {id: 'go-appeal-1202'}) RETURN n.amount_funded AS answer"
+  },
+  {
+    "research_question": "Among the web articles retrieved for \"Earthquake in Bolivia\" beginning on 2026-09-10, what is the URL of the article most relevant to the earthquake? Only return the exact URL.",
+    "full_answer_substrings": [
+      "https://dailycaller.com/2026/09/11/earthquakes-24-hours-pacific-ring-of-fire-extreme-weather"
+    ],
+    "partial_answer_substrings": [
+      "dailycaller",
+      "daily caller"
+    ],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1564577-1732293"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle)-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564577-1732293'}) WHERE a.title = 'More Than Dozen Earthquakes In Span Of 24 Hours Rattle Pacific Ring Of Fire' RETURN a.url AS answer"
   }
 ]
