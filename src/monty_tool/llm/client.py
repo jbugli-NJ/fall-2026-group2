@@ -11,15 +11,46 @@ from typing import Any
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.cli.serving.utils import get_response_template
 
 from monty_tool.event_context import EventContext
+from monty_tool.llm.schemas import QueryAssistantResponse
 from monty_tool.llm.tools import NewsArguments, NewsTools, QueryTools
 from monty_tool.utils.versions import FrozenModel
 
 
+def _parse_xml_tool_call(block: str) -> dict[str, Any]:
+    """
+    Parse Qwen-3.5 function tags into a dictionary with the tool name and arguments.
+    """
+    function = re.fullmatch(r'<function=([\w-]+)>\s*(.*?)\s*</function>', block, re.DOTALL)
+    if function is None:
+        raise ValueError('Expected one complete function block.')
+
+    parameters = function.group(2)
+    arguments = {}
+    cursor = 0
+    for parameter in re.finditer(
+        r'<parameter=([\w-]+)>(.*?)</parameter>', parameters, re.DOTALL,
+    ):
+        if parameters[cursor:parameter.start()].strip():
+            raise ValueError('Unexpected text between parameters.')
+        name = parameter.group(1)
+        if name in arguments:
+            raise ValueError(f'Duplicate parameter: {name}.')
+        arguments[name] = parameter.group(2).strip()
+        cursor = parameter.end()
+    if parameters[cursor:].strip():
+        raise ValueError('Expected complete parameter blocks.')
+    return {'name': function.group(1), 'arguments': arguments}
+
+
 def parse_tool_calls(text: str) -> list[dict[str, Any]]:
     """
-    Parse one or more Qwen3 tool calls and reject malformed calls.
+    Parse function tags and attempt to reject malformed calls.
+    Currently designed to support the following model families:
+    - Qwen-3
+    - Qwen-3.5
     """
 
     if "<tool_call>" not in text and "</tool_call>" not in text:
@@ -39,7 +70,11 @@ def parse_tool_calls(text: str) -> list[dict[str, Any]]:
 
     calls = []
     for block in blocks:
-        call = json.loads(block)
+        call = (
+            _parse_xml_tool_call(block)
+            if block.startswith('<function=')
+            else json.loads(block)
+        )
 
         if (
             not isinstance(call, dict)
@@ -103,7 +138,6 @@ class LocalNewsAssistant:
     def _generate(
         self,
         messages: list[dict[str, Any]],
-        *,
         use_tools: bool = True,
         max_new_tokens: int = 512,
     ) -> str:
@@ -133,6 +167,7 @@ class LocalNewsAssistant:
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
+                eos_token_id=self.tokenizer.eos_token_id,
                 pad_token_id=self.tokenizer.eos_token_id,
             )
 
@@ -265,22 +300,25 @@ class QueryAssistant:
             model_id.value,
             revision=model_id.revision,
             dtype=dtype,
+            device_map=self.device,
         )
-        self.model.to(self.device)
+        self.tokenizer.response_template = get_response_template(self.tokenizer, self.model)
+        if self.tokenizer.response_template is None:
+            raise ValueError(f'Transformers has no response template for {model_id.value}.')
         self.model.eval()
 
     def _generate(
         self,
         messages: list[dict[str, Any]],
         max_new_tokens: int = 1024,
-        ) -> str:
+        use_tools: bool = True,
+        ) -> dict[str, Any]:
         """
         Generate one response while enforcing the context limit.
-        Currently a static limit with a Qwen model for testing.
         """
         inputs = self.tokenizer.apply_chat_template(
             messages,
-            tools=self.tools.definitions,
+            tools=self.tools.definitions if use_tools else None,
             tokenize=True,
             add_generation_prompt=True,
             enable_thinking=False,
@@ -302,16 +340,23 @@ class QueryAssistant:
                 pad_token_id=self.tokenizer.eos_token_id,
             )
 
-        return self.tokenizer.decode(
+        response = self.tokenizer.decode(
             output[0][prompt_length:],
-            skip_special_tokens=True,
-        ).strip()
+            skip_special_tokens=False,
+        )
+        print("Raw model response:", repr(response))
+        return self.tokenizer.parse_response(
+            response,
+            prefix=inputs['input_ids'][0],
+            tools=self.tools.definitions if use_tools else None,
+        )
 
-    def ask(self, question: str) -> dict[str, Any]:
+    def ask(self, question: str) -> QueryAssistantResponse:
         """
         Answer one question with up to ten tool calls.
         This exposes graph query tools.
         """
+        self.tools.tool_call_count = 0
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
@@ -329,18 +374,36 @@ class QueryAssistant:
         tool_results: list[dict[str, Any]] = []
 
         while True:
-            response = self._generate(messages)
-            print("Raw model response:", repr(response))
-            calls = parse_tool_calls(response)
+            remaining_calls = self.tools.max_tool_calls - len(tool_results)
+            use_tools = remaining_calls > 0
+            if not use_tools:
+                messages[0]['content'] += (
+                    ' The tool call budget is exhausted. '
+                    'Provide your final answer using the results already collected.'
+                )
+            response = self._generate(messages, use_tools=use_tools)
+            calls = [tool_call['function'] for tool_call in response.get('tool_calls', [])]
+            if any(
+                not isinstance(call.get('name'), str)
+                or not isinstance(call.get('arguments'), dict)
+                for call in calls
+            ):
+                raise ValueError("Tool call must contain a name and an arguments dictionary.")
+
+            if calls and not use_tools:
+                raise ValueError("Model requested a tool after the tool call limit was reached.")
 
             if not calls:
-                if not response:
+                answer = response.get('content', '').strip()
+                if not answer:
                     raise ValueError("Expected a final answer or a tool call.")
                 return {
-                    "answer": response,
+                    "answer": answer,
                     "tool_results": tool_results,
                 }
 
+            # Execute only the requests that fit in the remaining budget.
+            calls = calls[:remaining_calls]
             results = []
             for call in calls:
                 print("Tool call:", json.dumps(call, ensure_ascii=False, default=str))
@@ -360,12 +423,13 @@ class QueryAssistant:
                 *(
                     {
                         "role": "tool",
+                        "name": call["name"],
                         "content": json.dumps(
                             result,
                             ensure_ascii=False,
                             default=str,
                         ),
                     }
-                    for result in results
+                    for call, result in zip(calls, results)
                 ),
             ])

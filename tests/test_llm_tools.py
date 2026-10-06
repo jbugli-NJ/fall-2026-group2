@@ -66,6 +66,18 @@ def test_graph_search_arguments_validates_dates():
         )
 
 
+@pytest.mark.parametrize('arguments', [
+    {},
+    {'from_date': '2026-09-20', 'to_date': '2026-09-20'},
+    {'from_date': '2026-09-19', 'to_date': '2026-09-20'},
+])
+def test_graph_search_accepts_complete_or_absent_date_ranges(arguments: dict[str, Any]):
+    """
+    Allow undated searches, exact days, and inclusive date ranges.
+    """
+    tools.GraphSearchArguments.model_validate(arguments)
+
+
 @pytest.mark.parametrize(
     ('value', 'expected'),
     [
@@ -137,6 +149,7 @@ def test_query_tools_has_definitions():
             'find_related_disaster_events.cypher',
         ),
         ('search_response_events', {'country_code': 'JPN'}, 'search_response_events.cypher'),
+        ('search_appeals', {'text': 'Malawi - Food Insecurity'}, 'search_appeals.cypher'),
         ('get_response_context', {'event_id': 'event-1'}, 'get_response_context.cypher'),
         ('get_event_news', {'event_id': 'event-1'}, 'get_event_news.cypher'),
     ],
@@ -163,9 +176,17 @@ def test_query_tools_routes_graph_tools(
     ('name', 'arguments'),
     [
         ( 'search_disaster_events', {'country_code': 'JP'}),
+        ('search_disaster_events', {'from_date': '2026-09-20'}),
+        ('search_disaster_events', {'to_date': '2026-09-20'}),
         ('get_disaster_context', {}),
         ('find_related_disaster_events', {'event_id': 'event-1', 'relation_kind': 'nonexistent'}),
         ('search_response_events', {'from_date': '2026-09-20', 'to_date': '2026-09-19'}),
+        ('search_response_events', {'from_date': '2026-09-20'}),
+        ('search_response_events', {'to_date': '2026-09-20'}),
+        ('search_appeals', {'from_date': '2015-09-17'}),
+        ('search_appeals', {'to_date': '2015-09-17'}),
+        ('search_appeals', {'from_date': '2015-09-18', 'to_date': '2015-09-17'}),
+        ('search_appeals', {'event_id': 'event-1'}),
         ('get_response_context', {'event_id': ''}),
         ('get_event_news', {}),
     ],
@@ -182,3 +203,37 @@ def test_query_tools_reject_invalid_graph_tool_arguments(
         'status': 'error',
         'message': ANY,
     }
+
+
+def test_search_appeals_queries_launch_dates_and_returns_details(monkeypatch: pytest.MonkeyPatch):
+    """
+    Checks that appeal searches pass launch dates and return funding and beneficiary details.
+    """
+    row = {
+        'appeal_id': 'go-appeal-2261', 'title': 'Malawi - Food Insecurity',
+        'start_datetime': datetime(2015, 9, 17), 'amount_funded': 873154.34,
+        'beneficiaries': 1000, 'event_id': None,
+    }
+    record = Mock()
+    record.data.return_value = row
+    driver = Mock()
+    driver.execute_query.return_value = ([record], None, None)
+    driver_context = Mock()
+    driver_context.__enter__ = Mock(return_value=driver)
+    driver_context.__exit__ = Mock(return_value=False)
+    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: driver_context)
+
+    result = tools.QueryTools().execute('search_appeals', {
+        'text': 'Malawi - Food Insecurity', 'country_code': 'MWI',
+        'from_date': '2015-09-17', 'to_date': '2015-09-17',
+    })
+
+    assert result == {
+        'status': 'ok',
+        'rows': [{**row, 'start_datetime': '2015-09-17T00:00:00'}],
+    }
+    driver.execute_query.assert_called_once()
+    parameters = driver.execute_query.call_args.kwargs['parameters_']
+    assert parameters['from_date'] == parameters['to_date'] == date(2015, 9, 17)
+    assert parameters['text'] == 'Malawi - Food Insecurity'
+    assert parameters['country_code'] == 'MWI'

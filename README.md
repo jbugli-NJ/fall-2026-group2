@@ -24,10 +24,14 @@ Data bank access requires an IFRC GO account and authorization token for API acc
 
 ## Development
 
-### uv
+### System dependencies
 
 While standard Python/pip commands can be used, this project is built using [Astral's uv project/package manager](https://docs.astral.sh/uv/).
 See linked documentation for installation and basic use.
+
+Other tools include:
+- [The AWS CLI](https://aws.amazon.com/cli/) to authenticate S3 bucket access
+- `python3.14-dev` (may be required for Ubuntu as a PyTorch dependency)
 
 ### Neo4j
 

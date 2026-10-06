@@ -154,6 +154,7 @@ type CypherTemplateFile = Literal[
     'get_disaster_context.cypher',
     'find_related_disaster_events.cypher',
     'search_response_events.cypher',
+    'search_appeals.cypher',
     'get_response_context.cypher',
     'get_event_news.cypher',
 ]
@@ -180,6 +181,11 @@ class GraphSearchArguments(BaseModel):
 
     @model_validator(mode="after")
     def validate_date_range(self) -> GraphSearchArguments:
+        """
+        Require both dates or neither in the expected order.
+        """
+        if (self.from_date is None) != (self.to_date is None):
+            raise ValueError("Supply both from_date and to_date, or neither.")
         if self.from_date is not None and self.to_date is not None:
             if self.from_date > self.to_date:
                 raise ValueError("from_date must be on or before to_date.")
@@ -244,6 +250,34 @@ class ResponseEventSearchArguments(GraphSearchArguments):
     text: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class AppealSearchArguments(GraphSearchArguments):
+    """
+    Filter IFRC appeals by country, disaster type, title, and launch dates.
+    """
+    disaster_type: str | None = Field(default=None, min_length=1, max_length=100)
+    text: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class QueryNewsArguments(BaseModel):
+    """
+    Arguments accepted by the direct NewsAPI tool.
+    """
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    query: str = Field(min_length=1, max_length=500)
+    from_date: date
+    to_date: date
+    location: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> QueryNewsArguments:
+        """
+        Require the NewsAPI date range to run forward in time.
+        """
+        if self.from_date > self.to_date:
+            raise ValueError("from_date must be on or before to_date.")
+        return self
+
+
 def _json_value(value: Any) -> Any:
     """
     Convert Neo4j outputs into JSON, stripping embeddings.
@@ -273,6 +307,21 @@ def _json_value(value: Any) -> Any:
     return value
 
 
+def _validation_error_message(error: ValidationError) -> str:
+    """
+    Convert a Pydantic validation error into a message for the LLM.
+    """
+    messages = []
+    for detail in error.errors(include_url=False, include_context=False, include_input=False):
+        field = '.'.join(str(part) for part in detail['loc'])
+        message = (
+            'unsupported argument' if detail['type'] == 'extra_forbidden'
+            else detail['msg']
+        )
+        messages.append(f'- {field}: {message}' if field else f'- {message}')
+    return 'Invalid arguments:\n' + '\n'.join(messages)
+
+
 class QueryTools:
     """
     Graph and news tools available to QueryAssistant.
@@ -290,9 +339,8 @@ class QueryTools:
                 "function": {
                     "name": "search_disaster_events",
                     "description": (
-                        "Find Montandon disaster events by place, hazard, date, text, "
-                        "elevation, mean temperature, or precipitation total. Weather "
-                        "bounds are inclusive and may have partial coverage. "
+                        "Find up to 10 newest matching disaster events. Filters are optional; supply both dates or neither. "
+                        "Dates filter event starts; use get_disaster_context for impacts and stored weather."
                     ),
                     "parameters": {
                         "type": "object",
@@ -303,19 +351,31 @@ class QueryTools:
                             },
                             "hazard_code": {
                                 "type": "string",
-                                "description": "Montandon hazard code.",
+                                "description": (
+                                    "Exact Montandon hazard code (e.g. nat-hyd-flo-flo for Flood (General)). "
+                                    "If only the hazard name is known, omit this filter and use text."
+                                ),
                             },
-                            "from_date": {"type": "string", "format": "date"},
-                            "to_date": {"type": "string", "format": "date"},
+                            "from_date": {
+                                "type": "string", "format": "date",
+                                "description": "Earliest event start date, inclusive.",
+                            },
+                            "to_date": {
+                                "type": "string", "format": "date",
+                                "description": "Latest event start date, inclusive. Set both dates equal to match one day.",
+                            },
                             "text": {
                                 "type": "string",
-                                "description": "Words to find in event titles and descriptions.",
+                                "description": (
+                                    "Case-insensitive substring of the event title or description; "
+                                    "use for hazard names (e.g. Flood (General))."
+                                ),
                             },
                             "min_elevation": {
-                                "type": "number", "description": "Minimum NASA POWER elevation in meters.",
+                                "type": "number", "description": "Minimum terrain elevation in meters above sea level.",
                             },
                             "max_elevation": {
-                                "type": "number", "description": "Maximum NASA POWER elevation in meters.",
+                                "type": "number", "description": "Maximum terrain elevation in meters above sea level.",
                             },
                             "min_mean_temperature": {
                                 "type": "number", "description": "Minimum retrieval-period mean temperature in degrees C.",
@@ -332,6 +392,7 @@ class QueryTools:
                                 "description": "Maximum retrieval-period precipitation total in mm.",
                             },
                         },
+                        "dependentRequired": {"from_date": ["to_date"], "to_date": ["from_date"]},
                         "additionalProperties": False,
                     },
                 },
@@ -341,8 +402,8 @@ class QueryTools:
                 "function": {
                     "name": "get_disaster_context",
                     "description": (
-                        "Get one Montandon event, its impacts, and weather data (if available) "
-                        "using an event_id returned by search_disaster_events."
+                        "Fetch impacts and stored weather for an event_id from search_disaster_events, "
+                        "including counts, temperature extremes, precipitation, and wind speed when available."
                     ),
                     "parameters": {
                         "type": "object",
@@ -375,16 +436,66 @@ class QueryTools:
                 "type": "function",
                 "function": {
                     "name": "search_response_events",
-                    "description": "Find IFRC response events by place, disaster type, date, or text.",
+                    "description": (
+                        "Find up to 10 newest matching IFRC events. Filters are optional; supply both dates or neither. "
+                        "Dates filter event starts; use search_appeals to search by appeal launch date."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "country_code": {"type": "string"},
-                            "disaster_type": {"type": "string"},
-                            "from_date": {"type": "string", "format": "date"},
-                            "to_date": {"type": "string", "format": "date"},
-                            "text": {"type": "string"},
+                            "country_code": {
+                                "type": "string", "description": "3-letter country code (e.g. MWI for Malawi).",
+                            },
+                            "disaster_type": {
+                                "type": "string", "description": "Case-insensitive substring of the recorded disaster type.",
+                            },
+                            "from_date": {
+                                "type": "string", "format": "date",
+                                "description": "Earliest event start date, inclusive; not the appeal launch date.",
+                            },
+                            "to_date": {
+                                "type": "string", "format": "date",
+                                "description": "Latest event start date, inclusive. Set both dates equal to match one day.",
+                            },
+                            "text": {
+                                "type": "string", "description": "Case-insensitive substring of the event title or summary.",
+                            },
                         },
+                        "dependentRequired": {"from_date": ["to_date"], "to_date": ["from_date"]},
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_appeals",
+                    "description": (
+                        "Find up to 10 newest matching IFRC appeals, including beneficiaries and funding. "
+                        "Filters are optional; supply both dates or neither. Dates filter appeal launches."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "country_code": {
+                                "type": "string", "description": "3-letter country code (e.g. MWI for Malawi).",
+                            },
+                            "disaster_type": {
+                                "type": "string", "description": "Case-insensitive substring of the recorded disaster type.",
+                            },
+                            "text": {
+                                "type": "string", "description": "Case-insensitive substring of the appeal title.",
+                            },
+                            "from_date": {
+                                "type": "string", "format": "date",
+                                "description": "Earliest appeal launch date, inclusive.",
+                            },
+                            "to_date": {
+                                "type": "string", "format": "date",
+                                "description": "Latest appeal launch date, inclusive. Set both dates equal to match one day.",
+                            },
+                        },
+                        "dependentRequired": {"from_date": ["to_date"], "to_date": ["from_date"]},
                         "additionalProperties": False,
                     },
                 },
@@ -393,7 +504,10 @@ class QueryTools:
                 "type": "function",
                 "function": {
                     "name": "get_response_context",
-                    "description": "Get one IFRC response event and its linked appeals using an event_id returned by search_response_events.",
+                    "description": (
+                        "Fetch an IFRC event and linked appeals using an event_id from search_response_events. "
+                        "Includes affected population, appeal launch dates, beneficiaries, and funding."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {"event_id": {"type": "string"}},
@@ -428,15 +542,14 @@ class QueryTools:
         arguments: dict[str, Any],
         argument_model: type[BaseModel],
         query_file: CypherTemplateFile,
-        error_message: str,
         ) -> dict[str, Any]:
         """
         Validate and run a graph query.
         """
         try:
             args = argument_model.model_validate(arguments)
-        except ValidationError:
-            return {"status": "error", "message": error_message}
+        except ValidationError as error:
+            return {"status": "error", "message": _validation_error_message(error)}
 
         try:
             with get_graph_db_driver() as driver:
@@ -478,43 +591,42 @@ class QueryTools:
                     arguments,
                     DisasterEventSearchArguments,
                     "search_disaster_events.cypher",
-                    "Supply optional country_code, hazard_code, dates, text, or finite "
-                    "min/max bounds for elevation, mean_temperature, or precipitation_total. "
                 )
             if name == "get_disaster_context":
                 return self._run_graph_query(
                     arguments,
                     EventIdArguments,
                     "get_disaster_context.cypher",
-                    "Supply a non-empty event_id.",
                 )
             if name == "find_related_disaster_events":
                 return self._run_graph_query(
                     arguments,
                     RelatedEventArguments,
                     "find_related_disaster_events.cypher",
-                    "Supply event_id and one supported relation_kind.",
                 )
             if name == "search_response_events":
                 return self._run_graph_query(
                     arguments,
                     ResponseEventSearchArguments,
                     "search_response_events.cypher",
-                    "Supply optional country_code, disaster_type, dates, or text.",
+                )
+            if name == "search_appeals":
+                return self._run_graph_query(
+                    arguments,
+                    AppealSearchArguments,
+                    "search_appeals.cypher",
                 )
             if name == "get_response_context":
                 return self._run_graph_query(
                     arguments,
                     EventIdArguments,
                     "get_response_context.cypher",
-                    "Supply a non-empty event_id.",
                 )
             if name == "get_event_news":
                 return self._run_graph_query(
                     arguments,
                     EventIdArguments,
                     "get_event_news.cypher",
-                    "Supply a non-empty event_id.",
                 )
         except Exception as e:
             return {
