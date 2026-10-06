@@ -315,7 +315,6 @@ class QueryAssistant:
         ) -> dict[str, Any]:
         """
         Generate one response while enforcing the context limit.
-        Currently a static limit with a Qwen model for testing.
         """
         inputs = self.tokenizer.apply_chat_template(
             messages,
@@ -338,7 +337,6 @@ class QueryAssistant:
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
-                eos_token_id=self.tokenizer.eos_token_id,
                 pad_token_id=self.tokenizer.eos_token_id,
             )
 
@@ -425,12 +423,13 @@ class QueryAssistant:
                 *(
                     {
                         "role": "tool",
+                        "name": call["name"],
                         "content": json.dumps(
                             result,
                             ensure_ascii=False,
                             default=str,
                         ),
                     }
-                    for result in results
+                    for call, result in zip(calls, results)
                 ),
             ])

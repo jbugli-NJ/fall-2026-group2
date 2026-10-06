@@ -217,6 +217,10 @@ def test_query_assistant_executes_tool_calls_before_answering(
         call('search_disaster_events', {'country_code': 'JPN'}),
         call('get_disaster_context', {'event_id': 'event-1'}),
     ]
+    messages = assistant._generate.call_args.args[0]
+    assert [message['name'] for message in messages if message['role'] == 'tool'] == [
+        'search_disaster_events', 'get_disaster_context',
+    ]
 
 def test_query_assistant_executes_saved_news_tool(
     monkeypatch: pytest.MonkeyPatch,

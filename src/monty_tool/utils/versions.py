@@ -23,6 +23,7 @@ class FrozenModel(StrEnum):
     QWEN3_1_7B = 'Qwen/Qwen3-1.7B'
     QWEN3_5_4B = 'Qwen/Qwen3.5-4B'
     QWEN3_5_9B = 'Qwen/Qwen3.5-9B'
+    GEMMA4_E4B = 'google/gemma-4-E4B-it'
 
     @property
     def revision(self) -> str:
@@ -39,4 +40,6 @@ class FrozenModel(StrEnum):
             return '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a'
         if self is FrozenModel.QWEN3_5_9B:
             return 'c202236235762e1c871ad0ccb60c8ee5ba337b9a'
+        if self is FrozenModel.GEMMA4_E4B:
+            return 'ee0ef6023621cff504d758262d4e04895a5af4a2'
         raise ValueError('No revision available!')
