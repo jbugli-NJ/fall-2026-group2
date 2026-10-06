@@ -2,7 +2,7 @@
 
 Model revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
 
-Start time (UTC): 2026-10-06T02:31:47.723978+00:00
+Start time (UTC): 2026-10-06T03:44:36.374541+00:00
 
 ## Summary
 
@@ -12,14 +12,14 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 - Partial-credit questions: 0
 - Zero-credit questions: 30
 - Failed invocations: 0
-- Total time: 212.09s
+- Total time: 208.49s
 
 
 
 
 - **Question 1: What affected-population count did IFRC GO record for "Easter Sunday Attack in Sri Lanka" beginning on 2019-05-16? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (8.70s)  
+  - **Score:** 0.00% (6.46s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Easter Sunday Attack in Sri Lanka", "from_date": "2019-05-16"}
@@ -32,7 +32,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 2: How many people were reported affected by "Ground movement in Kyrgyzstan" beginning on 2006-12-26? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (13.19s)  
+  - **Score:** 0.00% (12.93s)  
   - **Tool calls:** 4
 
     - search_disaster_events: {"text": "Ground movement in Kyrgyzstan", "from_date": "2006-12-26"}
@@ -49,7 +49,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 3: How many deaths were recorded for "Explosion (Industrial) in China of August 2003" beginning on 2003-08-26? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (9.69s)  
+  - **Score:** 0.00% (9.60s)  
   - **Tool calls:** 3
 
     - search_disaster_events: {"country_code": "CHN", "text": "Explosion (Industrial) in China of August 2003", "from_date": "2003-08-26"}
@@ -77,7 +77,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 5: How many people were reported injured in "Flood (General) in Costa Rica" beginning on 1993-11-23? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (7.21s)  
+  - **Score:** 0.00% (7.31s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"country_code": "CRI", "text": "Flood (General)", "from_date": "1993-11-23"}
@@ -90,7 +90,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 6: How many people were reported affected by "Industrial accident (General) in China" beginning on 2004-04-08? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (6.44s)  
+  - **Score:** 0.00% (6.50s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"country_code": "CHN", "text": "Industrial accident (General)", "from_date": "2004-04-08"}
@@ -103,7 +103,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 7: For "Forest fires in Zambia" beginning on 2026-08-07, what was the highest daily mean wind speed, in m/s at latitude -11.5073, longitude 29.1663, during 2026-07-31 through 2026-08-22, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (6.31s)  
+  - **Score:** 0.00% (6.21s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Forest fires in Zambia", "from_date": "2026-07-31", "to_date": "2026-08-22"}
@@ -118,7 +118,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 8: For "Forest fires in Australia" beginning on 2026-09-08, what was the total observed precipitation, in mm at latitude -16.0503, longitude 130.4138, during 2026-09-01 through 2026-09-11, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (4.42s)  
+  - **Score:** 0.00% (4.34s)  
   - **Tool calls:** 1
 
     - search_disaster_events: {"text": "Forest fires in Australia", "from_date": "2026-09-01", "to_date": "2026-09-11", "latitude": "-16.0503", "longitude": "130.4138"}
@@ -129,7 +129,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 9: What affected-population count did IFRC GO record for "Philippines - Typhoon Rai (Odette)" beginning on 2021-12-14? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (7.69s)  
+  - **Score:** 0.00% (7.72s)  
   - **Tool calls:** 3
 
     - search_disaster_events: {"text": "Philippines - Typhoon Rai (Odette)", "from_date": "2021-12-14"}
@@ -144,7 +144,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 10: For "Flood in Brazil" beginning on 2026-02-03, what was the highest daily precipitation, in mm/day at latitude -8.4116, longitude -37.592, during 2026-01-27 through 2026-05-04, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (5.75s)  
+  - **Score:** 0.00% (5.58s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"country_code": "BRA", "text": "Flood in Brazil", "from_date": "2026-01-27", "to_date": "2026-05-04"}
@@ -159,7 +159,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 11: For "Forest fires in Australia" beginning on 2026-04-25, what was the total observed precipitation, in mm at latitude -18.2942, longitude 125.023, during 2026-04-18 through 2026-05-03, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (5.22s)  
+  - **Score:** 0.00% (5.13s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Forest fires in Australia", "from_date": "2026-04-18", "to_date": "2026-05-03"}
@@ -172,7 +172,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 12: For "Forest fires in Australia" beginning on 2026-08-19, what was the lowest temperature, in C at latitude -20.0169, longitude 135.0251, during 2026-08-12 through 2026-08-25, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (5.55s)  
+  - **Score:** 0.00% (5.46s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Forest fires in Australia", "from_date": "2026-08-12", "to_date": "2026-08-25", "min_elevation": -20.0169, "max_elevation": 135.0251}
@@ -187,7 +187,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 13: How many beneficiaries were recorded for the IFRC appeal "Ethiopia - Earthquake" launched on 2025-01-20? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (4.18s)  
+  - **Score:** 0.00% (4.15s)  
   - **Tool calls:** 1
 
     - search_appeals: {"country_code": "ETH", "disaster_type": "Earthquake", "text": "Ethiopia - Earthquake", "from_date": "2025-01-20", "to_date": "2025-01-20"}
@@ -198,7 +198,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 14: What affected-population count did IFRC GO record for "China: Floods" beginning on 2018-07-13? Your final answer must contain the exact number.**
 
-  - **Score:** 100.00% (6.50s)  
+  - **Score:** 100.00% (6.35s)  
   - **Tool calls:** 3
 
     - search_disaster_events: {"country_code": "CHN", "text": "Floods", "from_date": "2018-07-13"}
@@ -213,7 +213,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 15: For "Forest fires in Russian Federation" beginning on 2026-09-06, what was the highest daily mean wind speed, in m/s at latitude 51.2577, longitude 56.7652, during 2026-08-30 through 2026-09-09, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 100.00% (5.35s)  
+  - **Score:** 100.00% (5.29s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Forest fires in Russian Federation", "from_date": "2026-08-30", "to_date": "2026-09-09", "country_code": "RUS"}
@@ -228,7 +228,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 16: For "Forest fires in Australia" beginning on 2026-05-04, what was the lowest temperature, in C at latitude -16.8639, longitude 132.7698, during 2026-04-27 through 2026-05-09, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (5.68s)  
+  - **Score:** 0.00% (5.67s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Forest fires in Australia", "from_date": "2026-04-27", "to_date": "2026-05-09", "min_elevation": -16.8639, "max_elevation": 132.7698}
@@ -243,7 +243,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 17: For "Forest fires in Canada" beginning on 2026-07-21, what was the highest daily precipitation, in mm/day at latitude 51.1285, longitude -122.7792, during 2026-07-14 through 2026-08-06, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (4.26s)  
+  - **Score:** 0.00% (4.33s)  
   - **Tool calls:** 1
 
     - search_disaster_events: {"text": "Forest fires in Canada", "from_date": "2026-07-14", "to_date": "2026-08-06", "latitude": 51.1285, "longitude": -122.7792}
@@ -256,7 +256,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 18: For "Forest fires in Mexico" beginning on 2026-04-24, what was the lowest temperature, in C at latitude 21.3207, longitude -104.0673, during 2026-04-17 through 2026-05-09, inclusive? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (13.56s)  
+  - **Score:** 0.00% (13.45s)  
   - **Tool calls:** 3
 
     - search_disaster_events: {"text": "Forest fires in Mexico", "from_date": "2026-04-17", "to_date": "2026-05-09", "min_elevation": 21.3207, "max_elevation": -104.0673}
@@ -271,7 +271,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 19: How many beneficiaries were recorded for the IFRC appeal "Tanzania - Floods" launched on 2016-01-31? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (4.28s)  
+  - **Score:** 0.00% (4.18s)  
   - **Tool calls:** 1
 
     - search_appeals: {"country_code": "TZA", "disaster_type": "Floods", "text": "Tanzania - Floods", "from_date": "2016-01-31", "to_date": "2016-01-31"}
@@ -282,7 +282,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 20: How many beneficiaries were recorded for the IFRC appeal "Benin - Floods" launched on 2021-10-22? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (4.11s)  
+  - **Score:** 0.00% (4.07s)  
   - **Tool calls:** 1
 
     - search_appeals: {"country_code": "BEN", "disaster_type": "Floods", "text": "Benin - Floods", "from_date": "2021-10-22", "to_date": "2021-10-22"}
@@ -293,7 +293,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 21: For "Forest fires in Tanzania" beginning on 2026-08-23, what was the highest daily precipitation, in mm/day at latitude -7.6124, longitude 34.1782, during 2026-08-16 through 2026-08-29, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (4.22s)  
+  - **Score:** 0.00% (4.19s)  
   - **Tool calls:** 1
 
     - search_disaster_events: {"text": "Forest fires in Tanzania", "from_date": "2026-08-16", "to_date": "2026-08-29", "latitude": -7.6124, "longitude": 34.1782}
@@ -304,7 +304,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 22: How many deaths were recorded for "Water in Morocco of November 2019" beginning on 2019-11-23? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (7.61s)  
+  - **Score:** 0.00% (7.60s)  
   - **Tool calls:** 3
 
     - search_disaster_events: {"text": "Water in Morocco of November 2019", "from_date": "2019-11-23"}
@@ -319,7 +319,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 23: What affected-population count did IFRC GO record for "Regional Population Movement - Afghanistan | Preparedness and Response" beginning on 2021-08-06? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (5.61s)  
+  - **Score:** 0.00% (5.53s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Regional Population Movement - Afghanistan | Preparedness and Response", "from_date": "2021-08-06"}
@@ -332,7 +332,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 24: How many people were reported injured in "Ground movement in China" beginning on 2025-01-07? Your final answer must contain the exact number.**
 
-  - **Score:** 100.00% (8.58s)  
+  - **Score:** 100.00% (8.42s)  
   - **Tool calls:** 3
 
     - search_disaster_events: {"text": "Ground movement in China", "from_date": "2025-01-07"}
@@ -360,7 +360,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 26: How much funding was recorded as received for the IFRC appeal "Cuba - Tornado" launched on 2019-02-17? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (4.50s)  
+  - **Score:** 0.00% (4.47s)  
   - **Tool calls:** 1
 
     - search_appeals: {"country_code": "CUB", "disaster_type": "Tornado", "text": "Cuba - Tornado", "from_date": "2019-02-17", "to_date": "2019-02-17"}
@@ -371,7 +371,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 27: What damage cost was recorded for "Flash flood in Democratic Republic of the Congo" beginning on 2014-10-25? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (10.26s)  
+  - **Score:** 0.00% (10.01s)  
   - **Tool calls:** 3
 
     - search_disaster_events: {"text": "Flash flood in Democratic Republic of the Congo", "from_date": "2014-10-25"}
@@ -386,7 +386,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 28: For "Forest fires in Angola" beginning on 2026-08-30, what was the total observed precipitation, in mm at latitude -7.1633, longitude 15.9449, during 2026-08-23 through 2026-09-10, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (5.09s)  
+  - **Score:** 0.00% (5.13s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Forest fires in Angola", "from_date": "2026-08-23", "to_date": "2026-09-10"}
@@ -401,7 +401,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 29: For "Forest fires in Russian Federation" beginning on 2026-08-22, what was the highest daily mean wind speed, in m/s at latitude 65.4974, longitude 112.5278, during 2026-08-15 through 2026-08-29, inclusive? Your final answer must contain the exact number with decimals.**
 
-  - **Score:** 0.00% (5.58s)  
+  - **Score:** 0.00% (5.73s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Forest fires in Russian Federation", "from_date": "2026-08-15", "to_date": "2026-08-29", "country_code": "RUS"}
@@ -416,7 +416,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 30: How much funding was recorded as received for the IFRC appeal "Earthquake C" launched on 1991-04-23? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (3.94s)  
+  - **Score:** 0.00% (3.95s)  
   - **Tool calls:** 1
 
     - search_appeals: {"country_code": "MWI", "disaster_type": "Earthquake", "text": "Earthquake C", "from_date": "1991-04-23", "to_date": "1991-04-23"}
@@ -427,7 +427,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 31: Among the web articles retrieved for "Earthquake in Bolivia" beginning on 2026-09-10, what is the URL of the article most relevant to the earthquake? Only return the exact URL.**
 
-  - **Score:** 0.00% (2.18s)  
+  - **Score:** 0.00% (2.17s)  
   - **Tool calls:** 1
 
     - get_event_news: {"event_id": "Earthquake in Bolivia"}
@@ -453,7 +453,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 33: Find the IFRC GO event 'Malaysia: Sandakan Fire, 2026' beginning on 2026-04-19. How much funding was received by its linked appeal? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (5.08s)  
+  - **Score:** 0.00% (5.19s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"text": "Malaysia: Sandakan Fire, 2026", "from_date": "2026-04-19"}
@@ -466,7 +466,7 @@ Start time (UTC): 2026-10-06T02:31:47.723978+00:00
 
 - **Question 34: Find the IFRC GO event 'Mongolia: Snowstorm, 2026' beginning on 2026-02-21. How much funding was received by its linked appeal? Your final answer must contain the exact number.**
 
-  - **Score:** 0.00% (5.40s)  
+  - **Score:** 0.00% (5.42s)  
   - **Tool calls:** 2
 
     - search_disaster_events: {"country_code": "MNG", "text": "Snowstorm", "from_date": "2026-02-21"}
