@@ -351,7 +351,10 @@ class QueryTools:
                             },
                             "hazard_code": {
                                 "type": "string",
-                                "description": "Montandon hazard code.",
+                                "description": (
+                                    "Exact Montandon hazard code (e.g. nat-hyd-flo-flo for Flood (General)). "
+                                    "If only the hazard name is known, omit this filter and use text."
+                                ),
                             },
                             "from_date": {
                                 "type": "string", "format": "date",
@@ -363,7 +366,10 @@ class QueryTools:
                             },
                             "text": {
                                 "type": "string",
-                                "description": "Case-insensitive substring of the event title or description.",
+                                "description": (
+                                    "Case-insensitive substring of the event title or description; "
+                                    "use for hazard names (e.g. Flood (General))."
+                                ),
                             },
                             "min_elevation": {
                                 "type": "number", "description": "Minimum terrain elevation in meters above sea level.",
