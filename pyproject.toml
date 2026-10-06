@@ -30,6 +30,10 @@ update-network-node-data = "monty_tool.tools.update_network_node_data:main"
 update-nasa-power-data = "monty_tool.tools.update_nasa_power_data:main"
 
 [project.optional-dependencies]
+gpu = [
+    "causal-conv1d",
+    "flash-linear-attention[cuda]",
+]
 test = [
     "pyright>=1.1.411",
     "pytest>=9.1.1",
