@@ -11,6 +11,7 @@ from typing import Any
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.cli.serving.utils import get_response_template
 
 from monty_tool.event_context import EventContext
 from monty_tool.llm.schemas import QueryAssistantResponse
@@ -301,6 +302,9 @@ class QueryAssistant:
             dtype=dtype,
             device_map=self.device,
         )
+        self.tokenizer.response_template = get_response_template(self.tokenizer, self.model)
+        if self.tokenizer.response_template is None:
+            raise ValueError(f'Transformers has no response template for {model_id.value}.')
         self.model.eval()
 
     def _generate(
@@ -308,7 +312,7 @@ class QueryAssistant:
         messages: list[dict[str, Any]],
         max_new_tokens: int = 1024,
         use_tools: bool = True,
-        ) -> str:
+        ) -> dict[str, Any]:
         """
         Generate one response while enforcing the context limit.
         Currently a static limit with a Qwen model for testing.
@@ -338,10 +342,16 @@ class QueryAssistant:
                 pad_token_id=self.tokenizer.eos_token_id,
             )
 
-        return self.tokenizer.decode(
+        response = self.tokenizer.decode(
             output[0][prompt_length:],
-            skip_special_tokens=True,
-        ).strip()
+            skip_special_tokens=False,
+        )
+        print("Raw model response:", repr(response))
+        return self.tokenizer.parse_response(
+            response,
+            prefix=inputs['input_ids'][0],
+            tools=self.tools.definitions if use_tools else None,
+        )
 
     def ask(self, question: str) -> QueryAssistantResponse:
         """
@@ -374,17 +384,23 @@ class QueryAssistant:
                     'Provide your final answer using the results already collected.'
                 )
             response = self._generate(messages, use_tools=use_tools)
-            print("Raw model response:", repr(response))
-            calls = parse_tool_calls(response)
+            calls = [tool_call['function'] for tool_call in response.get('tool_calls', [])]
+            if any(
+                not isinstance(call.get('name'), str)
+                or not isinstance(call.get('arguments'), dict)
+                for call in calls
+            ):
+                raise ValueError("Tool call must contain a name and an arguments dictionary.")
 
             if calls and not use_tools:
                 raise ValueError("Model requested a tool after the tool call limit was reached.")
 
             if not calls:
-                if not response:
+                answer = response.get('content', '').strip()
+                if not answer:
                     raise ValueError("Expected a final answer or a tool call.")
                 return {
-                    "answer": response,
+                    "answer": answer,
                     "tool_results": tool_results,
                 }
 
