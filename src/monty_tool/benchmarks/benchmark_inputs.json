@@ -453,5 +453,59 @@
       }
     ],
     "verification_query": "MATCH (a:NewsArticle)-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564577-1732293'}) WHERE a.title = 'More Than Dozen Earthquakes In Span Of 24 Hours Rattle Pacific Ring Of Fire' RETURN a.url AS answer"
+  },
+  {
+    "research_question": "Find the IFRC GO event 'Nepal: Rasuwa Flash Flood, 2026' beginning on 2026-08-26. How much funding was received by its linked appeal? Only return the exact number.",
+    "full_answer_substrings": [
+      "3135073"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOEvent",
+        "id": "go-event-8073"
+      },
+      {
+        "label": "GOAppeal",
+        "id": "go-appeal-4462"
+      }
+    ],
+    "verification_query": "MATCH (a:GOAppeal)-[:FOR_EVENT]->(e:GOEvent {id: 'go-event-8073'}) RETURN a.amount_funded AS answer"
+  },
+  {
+    "research_question": "Find the IFRC GO event 'Malaysia: Sandakan Fire, 2026' beginning on 2026-04-19. How much funding was received by its linked appeal? Only return the exact number.",
+    "full_answer_substrings": [
+      "197767"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOEvent",
+        "id": "go-event-7891"
+      },
+      {
+        "label": "GOAppeal",
+        "id": "go-appeal-4432"
+      }
+    ],
+    "verification_query": "MATCH (a:GOAppeal)-[:FOR_EVENT]->(e:GOEvent {id: 'go-event-7891'}) RETURN a.amount_funded AS answer"
+  },
+  {
+    "research_question": "Find the IFRC GO event 'Mongolia: Snowstorm, 2026' beginning on 2026-02-21. How much funding was received by its linked appeal? Only return the exact number.",
+    "full_answer_substrings": [
+      "161038"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOEvent",
+        "id": "go-event-7818"
+      },
+      {
+        "label": "GOAppeal",
+        "id": "go-appeal-4388"
+      }
+    ],
+    "verification_query": "MATCH (a:GOAppeal)-[:FOR_EVENT]->(e:GOEvent {id: 'go-event-7818'}) RETURN a.amount_funded AS answer"
   }
 ]
