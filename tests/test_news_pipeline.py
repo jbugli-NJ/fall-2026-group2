@@ -29,7 +29,10 @@ from monty_tool.news.s3_storage import (
     download_news_snapshot,
     news_snapshot_key,
     upload_news_snapshot,
+    read_news_snapshot,
+    iter_news_snapshots,
 )
+from monty_tool.network.node_data import news_result_to_node_data
 
 def make_record(
     item_id: str,
@@ -353,6 +356,39 @@ def make_search_result(
         ],
     )
 
+def test_news_result_to_node_data_preserves_article_and_source(collection_job):
+    result = make_search_result(collection_job, 1)
+    s3_uri = f"s3://test-bucket/{news_snapshot_key(collection_job)}"
+
+    rows = news_result_to_node_data(
+        collection_job, result, snapshot_s3_uri=s3_uri
+    )
+
+    assert rows == [
+        {
+            "url": "https://example.com/articles/0",
+            "title": "Earthquake report 0",
+            "description": "Test description 0",
+            "source_id": None,
+            "source_name": "Test News",
+            "published_at": datetime(2026, 9, 10, 12, tzinfo=timezone.utc),
+            "event_id": collection_job.event.item_id,
+            "snapshot_s3_uri": s3_uri,
+        }
+    ]
+
+
+def test_news_result_to_node_data_rejects_different_event(collection_job):
+    result = make_search_result(collection_job, 1).model_copy(
+        update={"item_id": "different-event"}
+    )
+
+    with pytest.raises(ValueError, match="does not match"):
+        news_result_to_node_data(
+            collection_job,
+            result,
+            snapshot_s3_uri="s3://test-bucket/news.json",
+        )
 
 @pytest.mark.parametrize("article_count", [0, 100])
 def test_collection_preserves_complete_result(
@@ -506,6 +542,60 @@ def test_s3_upload_uses_stable_search_key(tmp_path, collection_job):
     assert key == news_snapshot_key(collection_job)
     bucket.upload_file.assert_called_once_with(snapshot, key)
 
+def test_read_news_snapshot_accepts_matching_key(
+    tmp_path, collection_job, history_now
+):
+    snapshot = write_history_snapshot(
+        tmp_path / "news-result.json",
+        collection_job,
+        status="ok",
+        finished_at=history_now,
+    )
+    key = news_snapshot_key(collection_job)
+
+    job, result = read_news_snapshot(snapshot, key=key)
+
+    assert job == collection_job
+    assert result.item_id == collection_job.event.item_id
+    assert len(result.articles) == 1
+
+
+def test_read_news_snapshot_rejects_wrong_key(
+    tmp_path, collection_job, history_now
+):
+    snapshot = write_history_snapshot(
+        tmp_path / "news-result.json",
+        collection_job,
+        status="ok",
+        finished_at=history_now,
+    )
+
+    with pytest.raises(ValueError, match="Invalid S3 news snapshot"):
+        read_news_snapshot(snapshot, key="wrong/by-job/result.json")
+
+def test_iter_news_snapshots_downloads_saved_result(
+    tmp_path, collection_job, history_now
+):
+    snapshot = write_history_snapshot(
+        tmp_path / "news-result.json",
+        collection_job,
+        status="ok",
+        finished_at=history_now,
+    )
+    key = news_snapshot_key(collection_job)
+    bucket = Mock()
+    bucket.objects.filter.return_value = [Mock(key=key)]
+    bucket.download_file.side_effect = (
+        lambda _key, filename: Path(filename).write_bytes(snapshot.read_bytes())
+    )
+
+    found = list(iter_news_snapshots(cast(S3Bucket, bucket)))
+
+    assert len(found) == 1
+    assert found[0][0] == key
+    assert found[0][1] == collection_job
+    assert len(found[0][2].articles) == 1
+    assert bucket.download_file.call_args.args[0] == key
 
 def test_s3_news_snapshot_missing(tmp_path, collection_job):
     bucket = Mock()

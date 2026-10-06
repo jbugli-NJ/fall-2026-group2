@@ -69,7 +69,14 @@ def initialize_db():
             """,
             database_='neo4j',
         )
-
+        driver.execute_query(
+            """
+            CREATE CONSTRAINT news_article_url_unique IF NOT EXISTS
+            FOR (node:NewsArticle)
+            REQUIRE node.url IS UNIQUE
+            """,
+            database_='neo4j',
+        )
 
 def initialize_vector_indexes():
     """

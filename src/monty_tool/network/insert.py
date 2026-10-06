@@ -9,7 +9,7 @@ from itertools import batched
 from pathlib import Path
 from typing import LiteralString, cast
 
-from neo4j import Query
+from neo4j import Driver, ManagedTransaction, Query
 from pydantic import ValidationError
 from sentence_transformers import SentenceTransformer
 
@@ -33,6 +33,7 @@ from monty_tool.network.schemas import (
     GOAppealNodeData,
     GOEventNodeData,
     MontandonItemNodeData,
+    NewsArticleInsertData,
 )
 
 
@@ -259,6 +260,58 @@ def insert_go_records_into_graph_db(
         insert_go_appeal_nodes(driver, appeal_data)
         insert_go_appeal_links(driver, appeal_data)
 
+def insert_news_articles(
+    driver: Driver, node_data: list[NewsArticleInsertData]
+) -> int:
+    """Link news candidates to existing events without creating new events."""
+    if not node_data:
+        return 0
+
+    def insert(tx: ManagedTransaction) -> int:
+        missing = tx.run(
+            """
+            UNWIND $items AS item
+            OPTIONAL MATCH (event:Event {id: item.event_id})
+            WITH item, event
+            WHERE event IS NULL
+            RETURN DISTINCT item.event_id AS event_id
+            LIMIT 10
+            """,
+            items=node_data,
+        )
+        missing_ids = [record["event_id"] for record in missing]
+        if missing_ids:
+            raise ValueError(
+                f"News results have no matching Event node: {missing_ids!r}"
+            )
+
+        result = tx.run(
+            """
+            UNWIND $items AS item
+            MATCH (event:Event {id: item.event_id})
+            MERGE (article:NewsArticle {url: item.url})
+            SET article.title = item.title,
+                article.description = item.description,
+                article.source_id = item.source_id,
+                article.source_name = item.source_name,
+                article.published_at = item.published_at
+            MERGE (article)-[link:RETRIEVED_FOR]->(event)
+            SET link.snapshot_s3_uris =
+                CASE
+                    WHEN link.snapshot_s3_uris IS NULL
+                    THEN [item.snapshot_s3_uri]
+                    WHEN item.snapshot_s3_uri IN link.snapshot_s3_uris
+                    THEN link.snapshot_s3_uris
+                    ELSE link.snapshot_s3_uris + item.snapshot_s3_uri
+                END
+            RETURN count(item) AS processed
+            """,
+            items=node_data,
+        )
+        return result.single(strict=True)["processed"]
+
+    with driver.session(database="neo4j") as session:
+        return session.execute_write(insert)
 
 # Temporary local insertion
 # TODO: Point at bucket once set up
