@@ -87,6 +87,20 @@ AWS_BUCKET_PREFIX="team/weather-test" uv run setup-network
 Use the same bucket and prefix when generating and loading node data. For example,
 set `export AWS_BUCKET_PREFIX="team/weather-test"` before running both commands.
 
+### Updating raw Montandon data
+
+`update-raw-data` fetches complete collections into `data/raw/` and uploads them
+to `<AWS_BUCKET_PREFIX>/raw/` in `AWS_BUCKET`. It uses `MONTANDON_API_TOKEN`.
+Each run replaces the selected collection files with a fresh download.
+
+```bash
+uv run update-raw-data --collection emdat-events --no-geometry
+```
+
+Omitting `--collection` refreshes all Montandon collections. The flag accepts
+multiple collection IDs. `--no-geometry` produces `.nogeom.jsonl.gz` files;
+`--no-upload` keeps the downloaded files locally.
+
 ### Collecting news from S3 disaster records
 
 The news collector reads `<AWS_BUCKET_PREFIX>/raw/<collection>.jsonl.gz` from `AWS_BUCKET`.
