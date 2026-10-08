@@ -42,6 +42,19 @@ from render import id_kinds, provenance, render_rows  # noqa: E402
 FIXTURES_PATH = Path(__file__).resolve().parent.parent / 'chainlit' / 'fixtures.json'
 BOLT_HOST, BOLT_PORT = 'localhost', 7687
 
+# Markdown tables do not scroll in Streamlit, so a wide result table
+# spills past its expander's border. Making the table its own scroll
+# box keeps it inside, as st.code blocks already are.
+TABLE_CSS = """
+<style>
+[data-testid="stMarkdownContainer"] table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+}
+</style>
+"""
+
 
 # Mode selection
 
@@ -152,6 +165,7 @@ def answer_real(question: str) -> tuple[str, list]:
 # Page
 
 st.set_page_config(page_title='Montandon query assistant', layout='centered')
+st.markdown(TABLE_CSS, unsafe_allow_html=True)
 st.title('Montandon query assistant')
 
 real = use_real_assistant()
