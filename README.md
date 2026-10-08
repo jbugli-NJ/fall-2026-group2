@@ -100,6 +100,7 @@ uv run -m monty_tool.news.cli --collection gdacs-events \
 Replace it with `--execute --request-limit #` to make up to `#` NewsAPI requests and upload the saved results to S3.
 Each request retrieves up to 100 articles by default. Execution also checks S3 for existing searches to reuse.
 All disaster events in the date range are selected by default. Use `--max-records` to limit the selection.
+`--random` shuffles eligible disasters before selection and collection. The default order is newest first.
 `--no-geometry` selects the `.nogeom.jsonl.gz` input. Use `--s3-source-key` to override the full input key.
 
 ### Updating NASA POWER data in S3

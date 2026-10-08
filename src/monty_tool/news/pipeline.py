@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable, Mapping
 from datetime import date
+from random import shuffle
 from typing import Any
 
 from monty_tool.api_schemas import MontandonItem
@@ -17,9 +18,10 @@ def select_disaster_records(
     start_date: date,
     end_date: date,
     max_records: int | None = None,
+    randomize: bool = False,
 ) -> list[EventContext]:
     """
-    Select one representative per source event, applying an optional record limit.
+    Select event representatives in date or random order with an optional limit.
     """
     if start_date > end_date:
         raise ValueError("start_date must not be later than end_date.")
@@ -76,6 +78,8 @@ def select_disaster_records(
         ),
         reverse=True,
     )
+    if randomize:
+        shuffle(selected)
     return selected[:max_records]
 
 class NewsCollectionJob(BaseModel):

@@ -67,6 +67,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--start-date", type=date.fromisoformat, required=True)
     parser.add_argument("--end-date", type=date.fromisoformat, required=True)
     parser.add_argument(
+        "--random",
+        action="store_true",
+        help="Shuffle eligible disaster events before applying the record limit.",
+    )
+    parser.add_argument(
         "--max-records",
         type=positive_int,
         help="Limit selected disaster events; defaults to all events in the date range.",
@@ -128,6 +133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             start_date=args.start_date,
             end_date=args.end_date,
             max_records=args.max_records,
+            randomize=args.random,
         )
         jobs = prepare_news_jobs(
             events,

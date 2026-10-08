@@ -90,6 +90,19 @@ def test_groups_episodes_before_applying_limit(reverse_input):
     assert [event.item_id for event in result] == ["a-new", "b"]
 
 
+def test_random_selection_calls_shuffle(monkeypatch):
+    shuffle = Mock()
+    monkeypatch.setattr("monty_tool.news.pipeline.shuffle", shuffle)
+
+    events = select_disaster_records(
+        [make_record("event", source_id="a")],
+        start_date=date(2026, 9, 1), end_date=date(2026, 9, 10),
+        randomize=True,
+    )
+
+    shuffle.assert_called_once_with(events)
+
+
 def test_filters_dates_inclusively_and_sorts_newest_first():
     records = [
         make_record("first-day", source_id="a", day=1),
