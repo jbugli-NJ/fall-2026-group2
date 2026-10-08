@@ -45,13 +45,21 @@ def test_load_cypher_query_completes():
         assert len(test) > 1
 
 
-@pytest.mark.parametrize('country_code', ['', 'US', 'China'])
+@pytest.mark.parametrize('country_code', ['', 'US'])
 def test_graph_search_arguments_validates_country_code(country_code: str):
     """
     Ensures that graph search arguments must provide a three-letter country code.
     """
     with pytest.raises(ValueError, match='3'):
         tools.GraphSearchArguments(country_code=country_code)
+
+
+def test_graph_search_validates_country_lookup():
+    """
+    Request an ISO country code when the lookup fails.
+    """
+    with pytest.raises(ValueError, match='Supply a three-letter ISO country code'):
+        tools.GraphSearchArguments(country_code='Unknown country')
 
 
 def test_graph_search_arguments_validates_dates():

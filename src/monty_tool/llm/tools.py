@@ -4,6 +4,7 @@ Expose NewsAPI and Neo4j queries as LLM tools.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, time
 from importlib.resources import files
 from typing import Any, Literal, LiteralString, cast
@@ -13,8 +14,10 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    field_validator,
     model_validator,
 )
+import pycountry
 from requests import RequestException
 from neo4j import RoutingControl
 from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
@@ -23,6 +26,8 @@ from monty_tool.event_context import EventContext
 from monty_tool.news.query import build_news_query
 from monty_tool.news.retrieval import search_ranked_news
 from monty_tool.network.resources import get_graph_db_driver
+
+logger = logging.getLogger(__name__)
 
 
 class NewsArguments(BaseModel):
@@ -178,6 +183,24 @@ class GraphSearchArguments(BaseModel):
     country_code: str | None = Field(default=None, min_length=3, max_length=3)
     from_date: date | None = None
     to_date: date | None = None
+
+    @field_validator("country_code", mode="before")
+    @classmethod
+    def normalize_country_code(cls, value: Any) -> Any:
+        """
+        Resolve country names to ISO alpha-3 codes.
+        """
+        if isinstance(value, str):
+            value = value.strip()
+            if len(value) > 3:
+                logger.warning("Resolving country_code %r to an ISO alpha-3 code.", value)
+                try:
+                    return pycountry.countries.lookup(value).alpha_3
+                except LookupError as e:
+                    raise ValueError(
+                        "Supply a three-letter ISO country code, such as CHN or USA."
+                    ) from e
+        return value
 
     @model_validator(mode="after")
     def validate_date_range(self) -> GraphSearchArguments:
