@@ -1004,11 +1004,13 @@ def cli_environment(monkeypatch, tmp_path, fixed_news_today):
 
     monkeypatch.setattr(cli, "load_collection", load)
     monkeypatch.setattr(cli, "run_news_collection", run)
+    monkeypatch.setattr(cli, "get_bucket", Mock())
+    monkeypatch.setattr(cli, "download_collection_cache", Mock())
+    monkeypatch.setattr(cli, "upload_news_snapshot", Mock())
     monkeypatch.setattr(news_api, "search_news", search)
 
     arguments = [
         "--collection", "gdacs-events",
-        "--cache-dir", str(tmp_path / "raw"),
         "--start-date", "2026-09-01",
         "--end-date", "2026-09-29",
         "--max-records", "1",
@@ -1037,6 +1039,7 @@ def test_cli_dry_run_does_not_collect_or_write(
     run.assert_not_called()
     search.assert_not_called()
     assert list(tmp_path.iterdir()) == []
+    cli.upload_news_snapshot.assert_not_called()
 
 
 def test_cli_execute_requires_explicit_budget(cli_environment):
@@ -1097,7 +1100,7 @@ def test_cli_passes_execution_settings_and_reports_status(
         "request_limit": 2,
         "page_size": 50,
         "refresh_after": timedelta(hours=12),
-        "s3_bucket": None,
+        "s3_bucket": cli.get_bucket.return_value,
     }
 
     output = json.loads(capsys.readouterr().out)
@@ -1117,18 +1120,16 @@ def test_cli_rejects_oversized_article_request(cli_environment):
     search.assert_not_called()
 
 
-def test_cli_supports_no_geometry_cache(
+def test_cli_rejects_local_input(
     cli_environment, tmp_path, capsys
 ):
     arguments, load, run, search = cli_environment
 
-    assert cli.main([*arguments, "--dry-run", "--no-geometry"]) == 0
+    with pytest.raises(SystemExit) as error:
+        cli.main([*arguments, "--dry-run", "--cache-dir", str(tmp_path / "raw")])
 
-    load.assert_called_once_with(
-        "gdacs-events",
-        cache_dir=tmp_path / "raw",
-        geometry=False,
-    )
+    assert error.value.code == 2
+    load.assert_not_called()
     run.assert_not_called()
     search.assert_not_called()
     capsys.readouterr()
@@ -1163,6 +1164,38 @@ def test_cli_dry_run_uses_s3_source(cli_environment, monkeypatch, capsys):
     run.assert_not_called()
     search.assert_not_called()
 
+@pytest.mark.parametrize("no_geometry", [False, True])
+def test_cli_defaults_to_s3_source(
+    cli_environment, monkeypatch, capsys, no_geometry
+):
+    arguments, load, run, search = cli_environment
+    monkeypatch.setenv("AWS_BUCKET_PREFIX", " /team/news/ ")
+    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
+    bucket = Mock()
+    get_bucket = Mock(return_value=bucket)
+    download = Mock()
+    monkeypatch.setattr(cli, "get_bucket", get_bucket)
+    monkeypatch.setattr(cli, "download_collection_cache", download)
+
+    flags = ["--no-geometry"] if no_geometry else []
+    assert cli.main([*arguments, "--dry-run", *flags]) == 0
+
+    suffix = ".nogeom.jsonl.gz" if no_geometry else ".jsonl.gz"
+    get_bucket.assert_called_once_with("test-bucket")
+    download.assert_called_once()
+    assert download.call_args.args == (bucket,)
+    assert download.call_args.kwargs["source_key"] == (
+        f"team/news/raw/gdacs-events{suffix}"
+    )
+    cache_dir = download.call_args.kwargs["cache_dir"]
+    load.assert_called_once_with(
+        "gdacs-events", cache_dir=cache_dir, geometry=not no_geometry,
+    )
+    assert not cache_dir.exists()
+    assert json.loads(capsys.readouterr().out)["news_api_requests_made"] == 0
+    run.assert_not_called()
+    search.assert_not_called()
+
 def test_cli_execute_uploads_news_snapshots(
     cli_environment, monkeypatch, tmp_path, capsys
 ):
@@ -1183,7 +1216,7 @@ def test_cli_execute_uploads_news_snapshots(
     monkeypatch.setattr(cli, "upload_news_snapshot", upload)
 
     assert cli.main([
-        *arguments, "--execute", "--request-limit", "2", "--s3-upload",
+        *arguments, "--execute", "--request-limit", "2",
     ]) == 0
 
     get_bucket.assert_called_once_with("test-bucket")
@@ -1213,6 +1246,7 @@ def test_cli_reuses_s3_result_with_fresh_output_dir(
 
     monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
     monkeypatch.setattr(cli, "get_bucket", lambda _name: bucket)
+    monkeypatch.setattr(cli, "download_collection_cache", Mock())
     monkeypatch.setattr(
         cli,
         "load_collection",
@@ -1230,7 +1264,7 @@ def test_cli_reuses_s3_result_with_fresh_output_dir(
     monkeypatch.setattr(news_api, "search_news", search)
 
     arguments = [
-        "--execute", "--s3-upload",
+        "--execute",
         "--collection", "gdacs-events",
         "--start-date", "2026-09-01",
         "--end-date", "2026-09-29",

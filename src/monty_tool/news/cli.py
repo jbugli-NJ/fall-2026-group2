@@ -1,4 +1,6 @@
-"""Command-line entry point for local news collection."""
+"""
+Command-line entry point for news collection from S3 disaster records.
+"""
 
 import argparse
 import json
@@ -12,7 +14,6 @@ from monty_tool.news.pipeline import (
     select_disaster_records,
 )
 from monty_tool.news.runner import run_news_collection
-from contextlib import nullcontext
 from tempfile import TemporaryDirectory
 
 from monty_tool.boto3_utils.s3_utils import get_bucket
@@ -20,7 +21,7 @@ from monty_tool.news.s3_storage import (
     download_collection_cache,
     upload_news_snapshot,
 )
-from monty_tool.tools.resources import get_env_bucket_name
+from monty_tool.tools.resources import get_env_bucket_name, get_env_bucket_prefix
 
 def positive_int(value: str) -> int:
     number = int(value)
@@ -45,31 +46,23 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--dry-run",
         action="store_true",
-        help="Show planned searches without making requests or writing files.",
+        help="Show planned searches without calling NewsAPI or saving results.",
     )
     mode.add_argument(
         "--execute",
         action="store_true",
-        help="Run collection and save results.",
+        help="Run collection, save local snapshots, and upload results to S3.",
     )
 
     parser.add_argument("--collection", required=True)
     parser.add_argument(
-        "--cache-dir", type=Path, default=Path("data/raw")
-    )
-    parser.add_argument(
         "--s3-source-key",
-        help="S3 object key of the disaster collection; omit to use --cache-dir.",
-    )
-    parser.add_argument(
-        "--s3-upload",
-        action="store_true",
-        help="Upload news snapshots to S3 after --execute.",
+        help="Override the default S3 key: AWS_BUCKET_PREFIX/raw/<collection>.jsonl.gz.",
     )
     parser.add_argument(
         "--no-geometry",
         action="store_true",
-        help="Read the collection's .nogeom.jsonl.gz cache.",
+        help="Download the collection's .nogeom.jsonl.gz S3 object.",
     )
     parser.add_argument("--start-date", type=date.fromisoformat, required=True)
     parser.add_argument("--end-date", type=date.fromisoformat, required=True)
@@ -104,27 +97,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.execute and args.request_limit is None:
         parser.error("--execute requires --request-limit.")
 
-    if args.s3_upload and not args.execute:
-        parser.error("--s3-upload requires --execute.")
+    source_key = args.s3_source_key
+    if source_key is None:
+        suffix = ".nogeom.jsonl.gz" if args.no_geometry else ".jsonl.gz"
+        source_key = f"{get_env_bucket_prefix()}raw/{args.collection}{suffix}"
 
-    source_context = (
-        TemporaryDirectory()
-        if args.s3_source_key
-        else nullcontext(args.cache_dir)
-    )
-
-    with source_context as source_directory:
+    bucket = get_bucket(get_env_bucket_name())
+    with TemporaryDirectory() as source_directory:
         cache_dir = Path(source_directory)
 
-        if args.s3_source_key:
-            bucket = get_bucket(get_env_bucket_name())
-            download_collection_cache(
-                bucket,
-                source_key=args.s3_source_key,
-                collection=args.collection,
-                cache_dir=cache_dir,
-                geometry=not args.no_geometry,
-            )
+        download_collection_cache(
+            bucket,
+            source_key=source_key,
+            collection=args.collection,
+            cache_dir=cache_dir,
+            geometry=not args.no_geometry,
+        )
 
         records = load_collection(
             args.collection,
@@ -162,20 +150,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
         return 0
 
-    result_bucket = (
-        get_bucket(get_env_bucket_name()) if args.s3_upload else None
-    )
     summary = run_news_collection(
         jobs,
         output_dir=args.output_dir,
         request_limit=args.request_limit,
         page_size=args.page_size,
         refresh_after=timedelta(hours=args.refresh_hours),
-        s3_bucket=result_bucket,
+        s3_bucket=bucket,
     )
-    if result_bucket is not None:
-        for snapshot in [*summary.collected, *summary.reused]:
-            upload_news_snapshot(result_bucket, snapshot)
+    for snapshot in [*summary.collected, *summary.reused]:
+        upload_news_snapshot(bucket, snapshot)
     print(summary.model_dump_json(indent=2))
 
     return 1 if summary.stop_reason == "error" else 0
