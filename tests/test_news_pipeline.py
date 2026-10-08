@@ -201,10 +201,30 @@ def test_prepare_jobs_preserves_event_and_builds_query(fixed_news_today):
     assert len(jobs) == 1
     assert jobs[0].event.model_dump() == original
     assert jobs[0].query.item_id == "event-a"
-    assert jobs[0].query.query == "Earthquake in Japan"
+    assert jobs[0].query.query == "Earthquake AND Japan"
+    assert jobs[0].query.search_in == "title,description"
     assert jobs[0].query.from_date == date(2026, 9, 9)
     assert jobs[0].query.to_date == date(2026, 9, 13)
     assert event.model_dump() == original
+
+
+@pytest.mark.parametrize(
+    ("hazards", "countries", "expected"),
+    [
+        (["GH0101"], ["NPL"], "Earthquake AND Nepal"),
+        (["EQ"], ["USA"], 'Earthquake AND "United States"'),
+        (["EN0205"], ["COD", "ZMB", "COD"], "Wildfires AND (Congo OR Zambia)"),
+    ],
+)
+def test_constructed_search(collection_job, hazards, countries, expected):
+    event = collection_job.event
+    event.hazard_codes = hazards
+    event.country_codes = countries
+
+    query = news_query_module.build_news_query(event)
+
+    assert query.query == expected
+    assert query.search_in == "title,description"
 
 
 def test_query_override_is_scoped_to_collection_and_id(fixed_news_today):
@@ -230,7 +250,7 @@ def test_query_override_is_scoped_to_collection_and_id(fixed_news_today):
     }
     assert queries == {
         "gdacs-events": "Japan AND earthquake",
-        "emdat-events": "Earthquake in Japan",
+        "emdat-events": "Earthquake AND Japan",
     }
 
 
@@ -676,7 +696,7 @@ def test_s3_news_snapshot_does_not_hide_permission_error(
 
 @pytest.mark.parametrize(
     "changed_field",
-    ["query", "from_date", "to_date", "collection", "page_size"],
+    ["query", "from_date", "to_date", "collection", "page_size", "search_in"],
 )
 def test_history_key_distinguishes_search_settings(
     collection_job, changed_field
@@ -693,6 +713,8 @@ def test_history_key_distinguishes_search_settings(
         changed.query.to_date += timedelta(days=1)
     elif changed_field == "collection":
         changed.event.collection = "emdat-events"
+    elif changed_field == "search_in":
+        changed.query.search_in = "title,description"
     else:
         page_size = 20
 

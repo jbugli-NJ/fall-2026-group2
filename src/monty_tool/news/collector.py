@@ -12,6 +12,7 @@ from requests.exceptions import RequestException
 
 from monty_tool import news_api
 from monty_tool.news.pipeline import NewsCollectionJob
+from monty_tool.news.schemas import news_search_parameters
 
 
 def _save_snapshot(
@@ -70,12 +71,7 @@ def collect_news_job(
         "schema_version": 1,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "job": job.model_dump(mode="json"),
-        "search_parameters": {
-            "page_size": page_size,
-            "language": "en",
-            "sort_by": "relevancy",
-            "page": 1,
-        },
+        "search_parameters": news_search_parameters(job.query, page_size=page_size),
         "request_attempted": True,
         "status": "error",
         "result": None,

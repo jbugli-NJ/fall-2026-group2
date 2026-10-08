@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from monty_tool.news.pipeline import NewsCollectionJob
+from monty_tool.news.schemas import news_search_parameters
 
 
 def news_job_key(
@@ -19,13 +20,8 @@ def news_job_key(
 
     identity = {
         "collection": job.event.collection,
-        "query": job.query.model_dump(mode="json"),
-        "search_parameters": {
-            "page_size": page_size,
-            "language": "en",
-            "sort_by": "relevancy",
-            "page": 1,
-        },
+        "query": job.query.model_dump(mode="json", exclude_none=True),
+        "search_parameters": news_search_parameters(job.query, page_size=page_size),
     }
     encoded = json.dumps(
         identity,
@@ -80,12 +76,7 @@ def load_recent_snapshots(
             parameters = report["search_parameters"]
             page_size = parameters["page_size"]
 
-            expected_parameters = {
-                "page_size": page_size,
-                "language": "en",
-                "sort_by": "relevancy",
-                "page": 1,
-            }
+            expected_parameters = news_search_parameters(job.query, page_size=page_size)
             if parameters != expected_parameters:
                 continue
 
