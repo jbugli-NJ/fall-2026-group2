@@ -1074,7 +1074,7 @@ def test_cli_dry_run_does_not_collect_or_write(
     run.assert_not_called()
     search.assert_not_called()
     assert list(tmp_path.iterdir()) == []
-    cli.upload_news_snapshot.assert_not_called()
+    cast(Mock, cli.upload_news_snapshot).assert_not_called()
 
 
 def test_cli_execute_requires_explicit_budget(cli_environment):
@@ -1135,7 +1135,7 @@ def test_cli_passes_execution_settings_and_reports_status(
         "request_limit": 2,
         "page_size": 50,
         "refresh_after": timedelta(hours=12),
-        "s3_bucket": cli.get_bucket.return_value,
+        "s3_bucket": cast(Mock, cli.get_bucket).return_value,
     }
 
     output = json.loads(capsys.readouterr().out)
