@@ -66,7 +66,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--start-date", type=date.fromisoformat, required=True)
     parser.add_argument("--end-date", type=date.fromisoformat, required=True)
-    parser.add_argument("--max-records", type=positive_int, default=5)
+    parser.add_argument(
+        "--max-records",
+        type=positive_int,
+        help="Limit selected disaster events; defaults to all events in the date range.",
+    )
     parser.add_argument("--days-before", type=non_negative_int, default=1)
     parser.add_argument("--days-after", type=non_negative_int, default=3)
     parser.add_argument("--page-size", type=positive_int, default=100)

@@ -16,13 +16,15 @@ def select_disaster_records(
     *,
     start_date: date,
     end_date: date,
-    max_records: int = 5,
+    max_records: int | None = None,
 ) -> list[EventContext]:
-    """Select one representative per source event within a start-date range."""
+    """
+    Select one representative per source event, applying an optional record limit.
+    """
     if start_date > end_date:
         raise ValueError("start_date must not be later than end_date.")
 
-    if type(max_records) is not int or max_records < 1:
+    if max_records is not None and (type(max_records) is not int or max_records < 1):
         raise ValueError("max_records must be a positive integer.")
 
     representatives: dict[
