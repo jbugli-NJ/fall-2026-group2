@@ -1,0 +1,3 @@
+model,revision,started_at_utc,questions_completed,total_questions,average_score,full_credit,partial_credit,zero_credit,failures,total_seconds
+Qwen/Qwen3-1.7B,70d244cc86ccca08cf5af4e1e306ecf908b1ad5e,2026-10-09T05:23:00.610920+00:00,10,10,0.0,0,0,10,0,38.97153643400452
+Qwen/Qwen3-1.7B (core only),70d244cc86ccca08cf5af4e1e306ecf908b1ad5e,2026-10-09T05:23:51.324866+00:00,10,10,0.0,0,0,10,0,19.68049335100295
