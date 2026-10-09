@@ -368,7 +368,9 @@ class QueryAssistant:
                     "or related records. Use response tools for IFRC events and "
                     "appeals. "
                     + (
-                        "Use get_event_news for articles already saved in the graph. "
+                        "get_disaster_context returns disaster info, including weather data. "
+                        "Use get_event_news only when the question requires information "
+                        "from news articles. "
                         "Distinguish disaster event facts from news article candidates. "
                         if self.tools.enable_external else ""
                     )
