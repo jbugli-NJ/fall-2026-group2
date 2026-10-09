@@ -106,7 +106,7 @@ class LocalNewsAssistant:
     def __init__(
         self,
         items: list[EventContext],
-        model_id: FrozenModel = FrozenModel.QWEN3_1_7B,
+        model_id: FrozenModel = FrozenModel.QWEN3_5_4B,
     ):
         self.tools = NewsTools(items)
 
@@ -284,7 +284,7 @@ class QueryAssistant:
     _CONTEXT_LIMIT = 32_768
     def __init__(
         self,
-        model_id: FrozenModel = FrozenModel.QWEN3_1_7B,
+        model_id: FrozenModel = FrozenModel.QWEN3_5_4B,
         *,
         enable_external: bool = True,
         ):

@@ -80,7 +80,7 @@ def load_assistant():
     Load the model once per server process, not once per rerun.
 
     Streamlit re-executes this script on every interaction, so an
-    uncached QueryAssistant would reload 3.4GB of weights per message.
+    uncached QueryAssistant would reload ~9GB of weights per message.
     """
     from monty_tool.llm.client import QueryAssistant
     return QueryAssistant()
@@ -170,7 +170,7 @@ st.title('Montandon query assistant')
 
 real = use_real_assistant()
 if real:
-    st.success('Connected to the local graph. Answers come from Neo4j and Qwen3-1.7B.')
+    st.success('Connected to the local graph. Answers come from Neo4j and Qwen3.5-4B.')
 elif os.environ.get('MONTY_UI_REAL') == '1':
     st.error(
         f'Real mode requested but nothing is listening on '
