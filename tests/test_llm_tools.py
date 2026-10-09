@@ -4,6 +4,7 @@ Tests for LLM tools.
 
 # Imports
 
+from contextlib import nullcontext
 from datetime import date, datetime, time
 from typing import Any, cast, get_args
 from unittest.mock import Mock, ANY
@@ -15,6 +16,35 @@ from monty_tool.llm import tools
 
 
 # Tests
+
+def test_core_only_tools_block_external_access(monkeypatch: pytest.MonkeyPatch):
+    """
+    Hide news and weather options and block their execution before database access.
+    """
+    query_tools = tools.QueryTools(enable_external=False)
+    functions = {item['function']['name']: item['function'] for item in query_tools.definitions}
+    assert 'get_event_news' not in functions
+    assert 'min_mean_temperature' not in functions['search_disaster_events']['parameters']['properties']
+    run_query = Mock()
+    monkeypatch.setattr(query_tools, '_run_graph_query', run_query)
+    assert query_tools.execute('get_event_news', {'event_id': 'event-1'})['status'] == 'error'
+    assert query_tools.execute('search_disaster_events', {'min_mean_temperature': 10})['status'] == 'error'
+    run_query.assert_not_called()
+
+
+def test_core_only_results_omit_weather(monkeypatch: pytest.MonkeyPatch):
+    """
+    Return event and impact facts without either weather block.
+    """
+    row = {'event_id': 'event-1', 'weather': {'mean_temperature': 10},
+           'impacts': [{'impact_value': 5, 'weather': {'mean_temperature': 12}}]}
+    driver = Mock()
+    driver.execute_query.return_value = ([Mock(data=Mock(return_value=row))], None, None)
+    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: nullcontext(driver))
+    result = tools.QueryTools(enable_external=False).execute('get_disaster_context', {'event_id': 'event-1'})
+    assert result == {'status': 'ok', 'rows': [{'event_id': 'event-1', 'impacts': [{'impact_value': 5}]}]}
+    assert tools.QueryTools().execute('get_disaster_context', {'event_id': 'event-1'})['rows'] == [row]
+
 
 @pytest.mark.parametrize('metric', ['elevation', 'mean_temperature', 'precipitation_total'])
 def test_disaster_search_rejects_inverted_weather_ranges(metric):

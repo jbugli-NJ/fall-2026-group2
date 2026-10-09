@@ -69,6 +69,16 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
         assert (output_dir / 'summary.svg').is_file()
     assert not (tmp_path / 'benchmarks' / 'summary.csv').exists()
 
+    run_benchmark.main(['--no-enable-external'])
+    output_dir = tmp_path / 'benchmarks' / '20261006_demo'
+    report = next(output_dir.glob('*_core_only.md'))
+    assert '(core only)' in report.read_text(encoding='utf-8').splitlines()[0]
+    assert len(list(output_dir.glob('*.md'))) == 2
+    with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
+        rows = list(csv.DictReader(file))
+    assert len(rows) == 2
+    assert rows[1]['model'] == rows[0]['model'] + ' (core only)'
+
 
 def test_scoring():
     """

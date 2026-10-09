@@ -285,8 +285,10 @@ class QueryAssistant:
     def __init__(
         self,
         model_id: FrozenModel = FrozenModel.QWEN3_1_7B,
+        *,
+        enable_external: bool = True,
         ):
-        self.tools = QueryTools()
+        self.tools = QueryTools(enable_external=enable_external)
         self.device = "cuda" if torch.cuda.is_available() else (
             "mps" if torch.backends.mps.is_available() else "cpu"
         )
@@ -364,9 +366,13 @@ class QueryAssistant:
                     "You answer questions about disaster records. Use graph search "
                     "tools to find events, then use returned event IDs for details "
                     "or related records. Use response tools for IFRC events and "
-                    "appeals. Use get_event_news for articles already saved in the graph. "
-                    "Base your answer on tool results and distinguish disaster event facts "
-                    "from news article candidates. Answer in the user's language."
+                    "appeals. "
+                    + (
+                        "Use get_event_news for articles already saved in the graph. "
+                        "Distinguish disaster event facts from news article candidates. "
+                        if self.tools.enable_external else ""
+                    )
+                    + "Base your answer on tool results. Answer in the user's language."
                 ),
             },
             {"role": "user", "content": question},
