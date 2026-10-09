@@ -104,12 +104,16 @@ def _insert_weather_data(path: Path) -> None:
 
 def _montandon_node_data_keys(bucket: S3Bucket) -> list[str]:
     """
-    Return every Montandon node data object key in the bucket.
+    Return Montandon gzip keys, preferring nogeom when both variants exist.
     """
-    return sorted(
+    keys = {
         obj.key
         for obj in bucket.objects.filter(Prefix=MONTANDON_NODE_DATA_BUCKET_PREFIX)
         if obj.key.endswith('.jsonl.gz')
+    }
+    return sorted(
+        key for key in keys
+        if key.removesuffix('.jsonl.gz') + '.nogeom.jsonl.gz' not in keys
     )
 
 

@@ -87,6 +87,36 @@ AWS_BUCKET_PREFIX="team/weather-test" uv run setup-network
 Use the same bucket and prefix when generating and loading node data. For example,
 set `export AWS_BUCKET_PREFIX="team/weather-test"` before running both commands.
 
+### Updating raw Montandon data
+
+`update-raw-data` fetches complete collections into `data/raw/` and uploads them
+to `<AWS_BUCKET_PREFIX>/raw/` in `AWS_BUCKET`. It uses `MONTANDON_API_TOKEN`.
+Each run replaces the selected collection files with a fresh download.
+
+```bash
+uv run update-raw-data --collection emdat-events --no-geometry
+```
+
+Omitting `--collection` refreshes all Montandon collections. The flag accepts
+multiple collection IDs. `--no-geometry` produces `.nogeom.jsonl.gz` files;
+`--no-upload` keeps the downloaded files locally.
+
+### Collecting news from S3 disaster records
+
+The news collector reads `<AWS_BUCKET_PREFIX>/raw/<collection>.jsonl.gz` from `AWS_BUCKET`.
+
+```bash
+uv run -m monty_tool.news.cli --collection gdacs-events \
+  --start-date 2025-01-01 --end-date 2025-06-01 --dry-run
+```
+
+`--dry-run` downloads the input and previews searches without calling NewsAPI or saving results.
+Replace it with `--execute --request-limit #` to make up to `#` NewsAPI requests and upload the saved results to S3.
+Each request retrieves up to 100 articles by default. Execution also checks S3 for existing searches to reuse.
+All disaster events in the date range are selected by default. Use `--max-records` to limit the selection.
+`--random` shuffles eligible disasters before selection and collection. The default order is newest first.
+`--no-geometry` selects the `.nogeom.jsonl.gz` input. Use `--s3-source-key` to override the full input key.
+
 ### Updating NASA POWER data in S3
 
 The NASA POWER tool uses the same bucket and prefix settings. It reads Montandon

@@ -4,6 +4,7 @@ Expose NewsAPI and Neo4j queries as LLM tools.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, time
 from importlib.resources import files
 from typing import Any, Literal, LiteralString, cast
@@ -13,8 +14,10 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    field_validator,
     model_validator,
 )
+import pycountry
 from requests import RequestException
 from neo4j import RoutingControl
 from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
@@ -23,6 +26,8 @@ from monty_tool.event_context import EventContext
 from monty_tool.news.query import build_news_query
 from monty_tool.news.retrieval import search_ranked_news
 from monty_tool.network.resources import get_graph_db_driver
+
+logger = logging.getLogger(__name__)
 
 
 class NewsArguments(BaseModel):
@@ -148,6 +153,22 @@ class NewsTools:
 
 _OMIT_VALUE = object()
 _CYPHER_QUERY_PACKAGE = 'monty_tool.llm.cypher_queries'
+_WEATHER_SEARCH_ARGUMENTS = {
+    'min_elevation', 'max_elevation',
+    'min_mean_temperature', 'max_mean_temperature',
+    'min_precipitation_total', 'max_precipitation_total',
+}
+
+
+def _without_weather(value: Any) -> Any:
+    """
+    Remove weather fields from graph rows, including nested impact records.
+    """
+    if isinstance(value, dict):
+        return {key: _without_weather(item) for key, item in value.items() if key != 'weather'}
+    if isinstance(value, list):
+        return [_without_weather(item) for item in value]
+    return value
 
 type CypherTemplateFile = Literal[
     'search_disaster_events.cypher',
@@ -178,6 +199,24 @@ class GraphSearchArguments(BaseModel):
     country_code: str | None = Field(default=None, min_length=3, max_length=3)
     from_date: date | None = None
     to_date: date | None = None
+
+    @field_validator("country_code", mode="before")
+    @classmethod
+    def normalize_country_code(cls, value: Any) -> Any:
+        """
+        Resolve country names to ISO alpha-3 codes.
+        """
+        if isinstance(value, str):
+            value = value.strip()
+            if len(value) > 3:
+                logger.warning("Resolving country_code %r to an ISO alpha-3 code.", value)
+                try:
+                    return pycountry.countries.lookup(value).alpha_3
+                except LookupError as e:
+                    raise ValueError(
+                        "Supply a three-letter ISO country code, such as CHN or USA."
+                    ) from e
+        return value
 
     @model_validator(mode="after")
     def validate_date_range(self) -> GraphSearchArguments:
@@ -327,11 +366,12 @@ class QueryTools:
     Graph and news tools available to QueryAssistant.
     """
 
-    def __init__(self, max_tool_calls: int = 10):
+    def __init__(self, max_tool_calls: int = 10, *, enable_external: bool = True):
         if max_tool_calls < 1:
             raise ValueError("max_tool_calls must be at least 1.")
 
         self.max_tool_calls = max_tool_calls
+        self.enable_external = enable_external
         self.tool_call_count = 0
         self.definitions = [
             {
@@ -537,6 +577,26 @@ class QueryTools:
             },
         ]
 
+        if not enable_external:
+            self.definitions = [
+                definition for definition in self.definitions
+                if definition['function']['name'] != 'get_event_news'
+            ]
+            for definition in self.definitions:
+                function = definition['function']
+                if function['name'] == 'search_disaster_events':
+                    for name in _WEATHER_SEARCH_ARGUMENTS:
+                        function['parameters']['properties'].pop(name)
+                    function['description'] = (
+                        'Find up to 10 newest matching disaster events. Filters are optional; '
+                        'supply both dates or neither. Dates filter event starts; '
+                        'use get_disaster_context for impacts.'
+                    )
+                elif function['name'] == 'get_disaster_context':
+                    function['description'] = (
+                        'Fetch event details and impacts for an event_id from search_disaster_events.'
+                    )
+
     def _run_graph_query(
         self,
         arguments: dict[str, Any],
@@ -562,9 +622,12 @@ class QueryTools:
         except Exception as exc:
             return {"status": "error", "message": f"Graph query failed: {exc}"}
 
+        rows = [_json_value(record.data()) for record in records]
+        if not self.enable_external:
+            rows = _without_weather(rows)
         return {
             "status": "ok",
-            "rows": [_json_value(record.data()) for record in records],
+            "rows": rows,
         }
 
     def execute(
@@ -585,6 +648,11 @@ class QueryTools:
             }
 
         self.tool_call_count += 1
+        if not self.enable_external:
+            if name == 'get_event_news':
+                return {'status': 'error', 'message': 'This tool is unavailable in core-only mode.'}
+            if name == 'search_disaster_events' and _WEATHER_SEARCH_ARGUMENTS.intersection(arguments):
+                return {'status': 'error', 'message': 'Weather filters are unavailable in core-only mode.'}
         try:
             if name == "search_disaster_events":
                 return self._run_graph_query(

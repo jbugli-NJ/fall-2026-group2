@@ -90,6 +90,19 @@ def test_groups_episodes_before_applying_limit(reverse_input):
     assert [event.item_id for event in result] == ["a-new", "b"]
 
 
+def test_random_selection_calls_shuffle(monkeypatch):
+    shuffle = Mock()
+    monkeypatch.setattr("monty_tool.news.pipeline.shuffle", shuffle)
+
+    events = select_disaster_records(
+        [make_record("event", source_id="a")],
+        start_date=date(2026, 9, 1), end_date=date(2026, 9, 10),
+        randomize=True,
+    )
+
+    shuffle.assert_called_once_with(events)
+
+
 def test_filters_dates_inclusively_and_sorts_newest_first():
     records = [
         make_record("first-day", source_id="a", day=1),
@@ -201,10 +214,30 @@ def test_prepare_jobs_preserves_event_and_builds_query(fixed_news_today):
     assert len(jobs) == 1
     assert jobs[0].event.model_dump() == original
     assert jobs[0].query.item_id == "event-a"
-    assert jobs[0].query.query == "Earthquake in Japan"
+    assert jobs[0].query.query == "Earthquake AND Japan"
+    assert jobs[0].query.search_in == "title,description"
     assert jobs[0].query.from_date == date(2026, 9, 9)
     assert jobs[0].query.to_date == date(2026, 9, 13)
     assert event.model_dump() == original
+
+
+@pytest.mark.parametrize(
+    ("hazards", "countries", "expected"),
+    [
+        (["GH0101"], ["NPL"], "Earthquake AND Nepal"),
+        (["EQ"], ["USA"], 'Earthquake AND "United States"'),
+        (["EN0205"], ["COD", "ZMB", "COD"], "Wildfires AND (Congo OR Zambia)"),
+    ],
+)
+def test_constructed_search(collection_job, hazards, countries, expected):
+    event = collection_job.event
+    event.hazard_codes = hazards
+    event.country_codes = countries
+
+    query = news_query_module.build_news_query(event)
+
+    assert query.query == expected
+    assert query.search_in == "title,description"
 
 
 def test_query_override_is_scoped_to_collection_and_id(fixed_news_today):
@@ -230,7 +263,7 @@ def test_query_override_is_scoped_to_collection_and_id(fixed_news_today):
     }
     assert queries == {
         "gdacs-events": "Japan AND earthquake",
-        "emdat-events": "Earthquake in Japan",
+        "emdat-events": "Earthquake AND Japan",
     }
 
 
@@ -676,7 +709,7 @@ def test_s3_news_snapshot_does_not_hide_permission_error(
 
 @pytest.mark.parametrize(
     "changed_field",
-    ["query", "from_date", "to_date", "collection", "page_size"],
+    ["query", "from_date", "to_date", "collection", "page_size", "search_in"],
 )
 def test_history_key_distinguishes_search_settings(
     collection_job, changed_field
@@ -693,6 +726,8 @@ def test_history_key_distinguishes_search_settings(
         changed.query.to_date += timedelta(days=1)
     elif changed_field == "collection":
         changed.event.collection = "emdat-events"
+    elif changed_field == "search_in":
+        changed.query.search_in = "title,description"
     else:
         page_size = 20
 
@@ -1004,11 +1039,13 @@ def cli_environment(monkeypatch, tmp_path, fixed_news_today):
 
     monkeypatch.setattr(cli, "load_collection", load)
     monkeypatch.setattr(cli, "run_news_collection", run)
+    monkeypatch.setattr(cli, "get_bucket", Mock())
+    monkeypatch.setattr(cli, "download_collection_cache", Mock())
+    monkeypatch.setattr(cli, "upload_news_snapshot", Mock())
     monkeypatch.setattr(news_api, "search_news", search)
 
     arguments = [
         "--collection", "gdacs-events",
-        "--cache-dir", str(tmp_path / "raw"),
         "--start-date", "2026-09-01",
         "--end-date", "2026-09-29",
         "--max-records", "1",
@@ -1037,6 +1074,7 @@ def test_cli_dry_run_does_not_collect_or_write(
     run.assert_not_called()
     search.assert_not_called()
     assert list(tmp_path.iterdir()) == []
+    cast(Mock, cli.upload_news_snapshot).assert_not_called()
 
 
 def test_cli_execute_requires_explicit_budget(cli_environment):
@@ -1097,7 +1135,7 @@ def test_cli_passes_execution_settings_and_reports_status(
         "request_limit": 2,
         "page_size": 50,
         "refresh_after": timedelta(hours=12),
-        "s3_bucket": None,
+        "s3_bucket": cast(Mock, cli.get_bucket).return_value,
     }
 
     output = json.loads(capsys.readouterr().out)
@@ -1117,18 +1155,16 @@ def test_cli_rejects_oversized_article_request(cli_environment):
     search.assert_not_called()
 
 
-def test_cli_supports_no_geometry_cache(
+def test_cli_rejects_local_input(
     cli_environment, tmp_path, capsys
 ):
     arguments, load, run, search = cli_environment
 
-    assert cli.main([*arguments, "--dry-run", "--no-geometry"]) == 0
+    with pytest.raises(SystemExit) as error:
+        cli.main([*arguments, "--dry-run", "--cache-dir", str(tmp_path / "raw")])
 
-    load.assert_called_once_with(
-        "gdacs-events",
-        cache_dir=tmp_path / "raw",
-        geometry=False,
-    )
+    assert error.value.code == 2
+    load.assert_not_called()
     run.assert_not_called()
     search.assert_not_called()
     capsys.readouterr()
@@ -1163,6 +1199,38 @@ def test_cli_dry_run_uses_s3_source(cli_environment, monkeypatch, capsys):
     run.assert_not_called()
     search.assert_not_called()
 
+@pytest.mark.parametrize("no_geometry", [False, True])
+def test_cli_defaults_to_s3_source(
+    cli_environment, monkeypatch, capsys, no_geometry
+):
+    arguments, load, run, search = cli_environment
+    monkeypatch.setenv("AWS_BUCKET_PREFIX", " /team/news/ ")
+    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
+    bucket = Mock()
+    get_bucket = Mock(return_value=bucket)
+    download = Mock()
+    monkeypatch.setattr(cli, "get_bucket", get_bucket)
+    monkeypatch.setattr(cli, "download_collection_cache", download)
+
+    flags = ["--no-geometry"] if no_geometry else []
+    assert cli.main([*arguments, "--dry-run", *flags]) == 0
+
+    suffix = ".nogeom.jsonl.gz" if no_geometry else ".jsonl.gz"
+    get_bucket.assert_called_once_with("test-bucket")
+    download.assert_called_once()
+    assert download.call_args.args == (bucket,)
+    assert download.call_args.kwargs["source_key"] == (
+        f"team/news/raw/gdacs-events{suffix}"
+    )
+    cache_dir = download.call_args.kwargs["cache_dir"]
+    load.assert_called_once_with(
+        "gdacs-events", cache_dir=cache_dir, geometry=not no_geometry,
+    )
+    assert not cache_dir.exists()
+    assert json.loads(capsys.readouterr().out)["news_api_requests_made"] == 0
+    run.assert_not_called()
+    search.assert_not_called()
+
 def test_cli_execute_uploads_news_snapshots(
     cli_environment, monkeypatch, tmp_path, capsys
 ):
@@ -1183,7 +1251,7 @@ def test_cli_execute_uploads_news_snapshots(
     monkeypatch.setattr(cli, "upload_news_snapshot", upload)
 
     assert cli.main([
-        *arguments, "--execute", "--request-limit", "2", "--s3-upload",
+        *arguments, "--execute", "--request-limit", "2",
     ]) == 0
 
     get_bucket.assert_called_once_with("test-bucket")
@@ -1213,6 +1281,7 @@ def test_cli_reuses_s3_result_with_fresh_output_dir(
 
     monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
     monkeypatch.setattr(cli, "get_bucket", lambda _name: bucket)
+    monkeypatch.setattr(cli, "download_collection_cache", Mock())
     monkeypatch.setattr(
         cli,
         "load_collection",
@@ -1230,7 +1299,7 @@ def test_cli_reuses_s3_result_with_fresh_output_dir(
     monkeypatch.setattr(news_api, "search_news", search)
 
     arguments = [
-        "--execute", "--s3-upload",
+        "--execute",
         "--collection", "gdacs-events",
         "--start-date", "2026-09-01",
         "--end-date", "2026-09-29",

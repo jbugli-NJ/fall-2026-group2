@@ -9,7 +9,7 @@ from monty_tool.data_cache import raw_cache_path
 from monty_tool.tools.resources import BUCKET_DATA_PREFIX, RAW_BUCKET_PREFIX
 from monty_tool.news.history import news_job_key
 from monty_tool.news.pipeline import NewsCollectionJob
-from monty_tool.news.schemas import NewsSearchResult
+from monty_tool.news.schemas import NewsSearchResult, news_search_parameters
 from collections.abc import Iterator
 from tempfile import TemporaryDirectory
 
@@ -49,12 +49,7 @@ def read_news_snapshot(
 
         if (
             report["schema_version"] != 1
-            or parameters != {
-                "page_size": page_size,
-                "language": "en",
-                "sort_by": "relevancy",
-                "page": 1,
-            }
+            or parameters != news_search_parameters(job.query, page_size=page_size)
             or report["status"] != ("ok" if result.articles else "empty")
             or job.event.item_id != job.query.item_id
             or result.item_id != job.query.item_id
@@ -107,12 +102,7 @@ def download_news_snapshot(
         saved_job = NewsCollectionJob.model_validate(report["job"])
         result = NewsSearchResult.model_validate(report["result"])
 
-        expected_parameters = {
-            "page_size": page_size,
-            "language": "en",
-            "sort_by": "relevancy",
-            "page": 1,
-        }
+        expected_parameters = news_search_parameters(job.query, page_size=page_size)
         valid = (
             report["schema_version"] == 1
             and report["search_parameters"] == expected_parameters
@@ -163,12 +153,7 @@ def upload_news_snapshot(bucket: S3Bucket, snapshot: Path) -> str:
         if (
             report["schema_version"] != 1
             or report["status"] != ("ok" if result.articles else "empty")
-            or parameters != {
-                "page_size": page_size,
-                "language": "en",
-                "sort_by": "relevancy",
-                "page": 1,
-            }
+            or parameters != news_search_parameters(job.query, page_size=page_size)
             or result.item_id != job.query.item_id
             or result.query != job.query.query
             or result.from_date != job.query.from_date

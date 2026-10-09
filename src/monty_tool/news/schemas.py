@@ -20,6 +20,22 @@ class NewsQuery(BaseModel):
     query: str
     from_date: date
     to_date: date
+    search_in: Literal["title,description"] | None = None
+
+
+def news_search_parameters(query: NewsQuery, *, page_size: int) -> dict[str, str | int]:
+    """
+    Describe the collection request settings stored with a snapshot.
+    """
+    parameters: dict[str, str | int] = {
+        "page_size": page_size,
+        "language": "en",
+        "sort_by": "relevancy",
+        "page": 1,
+    }
+    if query.search_in is not None:
+        parameters["search_in"] = query.search_in
+    return parameters
 
 
 class NewsSource(BaseModel):

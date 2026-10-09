@@ -59,6 +59,8 @@ def search_news(
         "pageSize": page_size,
         "page": 1,
     }
+    if news_query.search_in is not None:
+        params["searchIn"] = news_query.search_in
 
     response = requests.get(
         NEWS_API_URL,

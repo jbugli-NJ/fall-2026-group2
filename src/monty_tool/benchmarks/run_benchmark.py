@@ -25,8 +25,14 @@ from monty_tool.utils.versions import FrozenModel, SEED
 
 
 # Logging
+
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
+
+
+# Benchmark inputs
+
+_INPUT_MODULE = files('monty_tool.benchmarks.inputs')
 
 
 # Helpers
@@ -40,6 +46,15 @@ def build_parser() -> argparse.ArgumentParser:
         '--model', type=FrozenModel, choices=list(FrozenModel),
         default=FrozenModel.QWEN3_1_7B,
         help='Model ID to evaluate (in the supported set)',
+    )
+    parser.add_argument(
+        '--input-json', type=str,
+        default='20261006_demo.json',
+        help='JSON file with benchmark inputs',
+    )
+    parser.add_argument(
+        '--enable-external', action=argparse.BooleanOptionalAction, default=True,
+        help='Expose stored news and weather data (enabled by default)',
     )
     parser.add_argument(
         '--limit', type=int,
@@ -99,13 +114,15 @@ def render_report(
     outputs: list[BenchmarkOutput],
     started_at: datetime,
     total_questions: int,
+    *,
+    enable_external: bool = True,
     ) -> str:
     """
     Build a markdown report with summary stats and all question outputs.
     """
     average = sum(output.score for output in outputs) / len(outputs) if outputs else 0.0
     sections = [
-        f'# Benchmark: {model.value}',
+        f'# Benchmark: {model.value}' + ('' if enable_external else ' (core only)'),
         f'Model revision: {model.revision}\n\nStart time (UTC): {started_at.isoformat()}',
         '## Summary',
         f'- Questions completed: {len(outputs)} / {total_questions}\n'
@@ -127,12 +144,14 @@ def append_summary(
     outputs: list[BenchmarkOutput],
     started_at: datetime,
     total_questions: int,
+    *,
+    enable_external: bool = True,
     ):
     """
     Append one run's aggregate statistics to a CSV covering all runs.
     """
     row = {
-        'model': model.value,
+        'model': model.value + ('' if enable_external else ' (core only)'),
         'revision': model.revision,
         'started_at_utc': started_at.isoformat(),
         'questions_completed': len(outputs),
@@ -186,18 +205,24 @@ def main(argv: list[str] | None = None) -> None:
     Save a model-specific report and append this run to the comparison CSV.
     """
     args = build_parser().parse_args(argv)
-    benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(
-        files('monty_tool.benchmarks').joinpath('benchmark_inputs.json').read_text(
-            encoding='utf-8',
-        ),
+    input_file = _INPUT_MODULE.joinpath(args.input_json)
+    if not input_file.is_file():
+        raise ValueError(f"Selected input not detected: {input_file.name}")
+    logger.info(f"Detected input file: {input_file.name}")
+    benchmarks = (
+        TypeAdapter(list[BenchmarkInput])
+        .validate_json(input_file.read_text(encoding='utf-8'))
     )
     if args.limit is not None:
         benchmarks = benchmarks[:args.limit]
 
     set_seed(SEED)
-    assistant = QueryAssistant(model_id=args.model)
+    assistant = QueryAssistant(model_id=args.model, enable_external=args.enable_external)
     model_slug = re.sub(r'[^a-z0-9]+', '_', args.model.value.lower()).strip('_')
-    output_path = Path('benchmarks').joinpath(f'{model_slug}.md')
+    if not args.enable_external:
+        model_slug += '_core_only'
+    input_name = Path(input_file.name).stem
+    output_path = Path('benchmarks', input_name, f'{model_slug}.md')
     output_path.parent.mkdir(parents=True, exist_ok=True)
     started_at = datetime.now(timezone.utc)
     outputs = []
@@ -210,10 +235,14 @@ def main(argv: list[str] | None = None) -> None:
             outputs=outputs,
             started_at=started_at,
             total_questions=len(benchmarks),
+            enable_external=args.enable_external,
         ), encoding='utf-8')
         logger.info(f'Question {number} qcore: {output.score:.2%}')
     summary_path = output_path.parent / 'summary.csv'
-    append_summary(summary_path, args.model, outputs, started_at, len(benchmarks))
+    append_summary(
+        summary_path, args.model, outputs, started_at, len(benchmarks),
+        enable_external=args.enable_external,
+    )
     plot_path = save_summary_plot(summary_path)
     logger.info(f'Saved benchmark report: {output_path}')
     logger.info(f'Appended benchmark summary: {summary_path}')
