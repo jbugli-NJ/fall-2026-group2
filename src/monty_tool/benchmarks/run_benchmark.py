@@ -25,8 +25,14 @@ from monty_tool.utils.versions import FrozenModel, SEED
 
 
 # Logging
+
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
+
+
+# Benchmark inputs
+
+_INPUT_MODULE = files('monty_tool.benchmarks.inputs')
 
 
 # Helpers
@@ -40,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
         '--model', type=FrozenModel, choices=list(FrozenModel),
         default=FrozenModel.QWEN3_1_7B,
         help='Model ID to evaluate (in the supported set)',
+    )
+    parser.add_argument(
+        '--input-json', type=str,
+        default='20261006_demo.json',
+        help='JSON file with benchmark inputs',
     )
     parser.add_argument(
         '--limit', type=int,
@@ -186,10 +197,13 @@ def main(argv: list[str] | None = None) -> None:
     Save a model-specific report and append this run to the comparison CSV.
     """
     args = build_parser().parse_args(argv)
-    benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(
-        files('monty_tool.benchmarks').joinpath('benchmark_inputs.json').read_text(
-            encoding='utf-8',
-        ),
+    input_file = _INPUT_MODULE.joinpath(args.input_json)
+    if not input_file.is_file():
+        raise ValueError(f"Selected input not detected: {input_file.name}")
+    logger.info(f"Detected input file: {input_file.name}")
+    benchmarks = (
+        TypeAdapter(list[BenchmarkInput])
+        .validate_json(input_file.read_text(encoding='utf-8'))
     )
     if args.limit is not None:
         benchmarks = benchmarks[:args.limit]
@@ -197,7 +211,8 @@ def main(argv: list[str] | None = None) -> None:
     set_seed(SEED)
     assistant = QueryAssistant(model_id=args.model)
     model_slug = re.sub(r'[^a-z0-9]+', '_', args.model.value.lower()).strip('_')
-    output_path = Path('benchmarks').joinpath(f'{model_slug}.md')
+    input_name = Path(input_file.name).stem
+    output_path = Path('benchmarks', input_name, f'{model_slug}.md')
     output_path.parent.mkdir(parents=True, exist_ok=True)
     started_at = datetime.now(timezone.utc)
     outputs = []

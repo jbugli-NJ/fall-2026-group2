@@ -20,8 +20,8 @@ from monty_tool.utils.versions import FrozenModel
 # Benchmark inputs
 
 _INPUT_TEXT = (
-    files('monty_tool.benchmarks')
-    .joinpath('benchmark_inputs.json')
+    files('monty_tool.benchmarks.inputs')
+    .joinpath('20261006_demo.json')
     .read_text(encoding='utf-8')
 )
 INPUTS = TypeAdapter(list[BenchmarkInput]).validate_json(_INPUT_TEXT)
@@ -35,6 +35,39 @@ def test_benchmark_input_length():
     Confirms that the benchmark question listing is above a set minimum.
     """
     assert len(INPUTS) > 25
+
+
+def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """
+    Confirm that benchmark outputs are saved in dedicated folders.
+    """
+    input_dir = tmp_path / 'inputs'
+    input_dir.mkdir()
+    input_text = TypeAdapter(list[BenchmarkInput]).dump_json([FIRST_INPUT]).decode()
+    for name in ('20261006_demo', 'custom'):
+        (input_dir / f'{name}.json').write_text(input_text, encoding='utf-8')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(run_benchmark, '_INPUT_MODULE', input_dir)
+    monkeypatch.setattr(run_benchmark, 'set_seed', lambda seed: None)
+    monkeypatch.setattr(run_benchmark, 'QueryAssistant', lambda **kwargs: None)
+    monkeypatch.setattr(run_benchmark, 'run_question', lambda assistant, benchmark: BenchmarkOutput(
+        benchmark_input=benchmark, score=1, duration_seconds=1,
+    ))
+
+    run_benchmark.main([])
+    run_benchmark.main(['--input-json', 'custom.json'])
+
+    for name in ('20261006_demo', 'custom'):
+        output_dir = tmp_path / 'benchmarks' / name
+        reports = list(output_dir.glob('*.md'))
+        assert len(reports) == 1
+        assert FIRST_INPUT.research_question in reports[0].read_text(encoding='utf-8')
+        with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
+            rows = list(csv.DictReader(file))
+        assert len(rows) == 1
+        assert rows[0]['questions_completed'] == '1'
+        assert (output_dir / 'summary.svg').is_file()
+    assert not (tmp_path / 'benchmarks' / 'summary.csv').exists()
 
 
 def test_scoring():
