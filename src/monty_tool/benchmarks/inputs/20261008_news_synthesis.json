@@ -1,0 +1,142 @@
+[
+  {
+    "research_question": "How much higher was BusinessLine's reported magnitude than GDACS's for the Nepal earthquake on 2026-09-08? If unsure, give your best guess. Return only the difference to one decimal place.",
+    "full_answer_substrings": [
+      "0.4"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1564287-1731979"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://www.thehindubusinessline.com/news/world/earthquake-in-nepal-53-magnitude-tremor-hits-mustang/article71444371.ece'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564287-1731979'}) WITH e, a, toFloat(split(split(a.title, ': ')[1], ' ')[0]) AS reported_magnitude, toFloat(split(e.description, ' ')[2]) AS recorded_magnitude RETURN toString(round(reported_magnitude - recorded_magnitude, 1)) AS answer, e.id AS event_id, a.url AS article_url, recorded_magnitude, reported_magnitude, a.title AS article_title, a.description AS article_description"
+  },
+  {
+    "research_question": "How many hours after the GDACS start of Nepal's 2026-09-08 earthquake was the BusinessLine report published? Use UTC; round to the nearest whole hour. If unsure, give your best guess. Return only the integer.",
+    "full_answer_substrings": [
+      "2"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1564287-1731979"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://www.thehindubusinessline.com/news/world/earthquake-in-nepal-53-magnitude-tremor-hits-mustang/article71444371.ece'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564287-1731979'}) WITH e, a, duration.inSeconds(e.start_datetime, a.published_at).seconds AS elapsed RETURN toString(toInteger(round(elapsed / 3600.0))) AS answer, e.id AS event_id, a.url AS article_url, e.start_datetime AS event_start, a.published_at AS article_publication, elapsed AS elapsed_seconds"
+  },
+  {
+    "research_question": "For Nepal's 2026-09-08 earthquake, subtract the GDACS magnitude from the magnitude in the Times of India report citing the National Center for Seismology. If unsure, give your best guess. Return only the difference to one decimal place.",
+    "full_answer_substrings": [
+      "0.1"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1564287-1731979"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://economictimes.indiatimes.com/news/international/world-news/nepal-jolted-by-5-0-magnitude-earthquake-days-after-devastating-flash-floods/articleshow/133934206.cms'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564287-1731979'}) WITH e, a, toFloat(split(split(a.title, '-magnitude')[0], ' ')[-1]) AS reported_magnitude, toFloat(split(e.description, ' ')[2]) AS recorded_magnitude RETURN toString(round(reported_magnitude - recorded_magnitude, 1)) AS answer, e.id AS event_id, a.url AS article_url, recorded_magnitude, reported_magnitude, a.title AS article_title, a.description AS article_description"
+  },
+  {
+    "research_question": "How many hours after the GDACS start of Nepal's 2026-09-08 earthquake was the Times of India report citing the National Center for Seismology published? Use UTC; round to the nearest whole hour. If unsure, give your best guess. Return only the integer.",
+    "full_answer_substrings": [
+      "1"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1564287-1731979"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://economictimes.indiatimes.com/news/international/world-news/nepal-jolted-by-5-0-magnitude-earthquake-days-after-devastating-flash-floods/articleshow/133934206.cms'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564287-1731979'}) WITH e, a, duration.inSeconds(e.start_datetime, a.published_at).seconds AS elapsed RETURN toString(toInteger(round(elapsed / 3600.0))) AS answer, e.id AS event_id, a.url AS article_url, e.start_datetime AS event_start, a.published_at AS article_publication, elapsed AS elapsed_seconds"
+  },
+  {
+    "research_question": "How many hours after the GDACS start of Nepal's 2026-09-08 earthquake was People's Review's report on repeated Lomanthang tremors published? Use UTC; round to the nearest whole hour. If unsure, give your best guess. Return only the integer.",
+    "full_answer_substrings": [
+      "19"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1564287-1731979"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://peoplesreview.com.np/2026/09/09/seven-earthquakes-shake-lomanthang-villagers-fearful/'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564287-1731979'}) WITH e, a, duration.inSeconds(e.start_datetime, a.published_at).seconds AS elapsed RETURN toString(toInteger(round(elapsed / 3600.0))) AS answer, e.id AS event_id, a.url AS article_url, e.start_datetime AS event_time, a.published_at AS article_publication, elapsed AS elapsed_seconds"
+  },
+  {
+    "research_question": "From the tremor count in People's Review's 2026-09-09 Lomanthang report, subtract the number of GDACS earthquake records starting in Nepal on 2026-09-08 or 2026-09-09 (UTC). If unsure, give your best guess. Return only the integer difference.",
+    "full_answer_substrings": [
+      "6"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1564287-1731979"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://peoplesreview.com.np/2026/09/09/seven-earthquakes-shake-lomanthang-villagers-fearful/'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564287-1731979'}) WITH e, a, head([i IN range(0, 10) WHERE ['zero','one','two','three','four','five','six','seven','eight','nine','ten'][i] = toLower(split(a.title, ' ')[0]) | i]) AS reported_count OPTIONAL MATCH (q:Event)-[:IN_COUNTRY]->(:Country {code:'NPL'}) WHERE q.title = 'Earthquake in Nepal' AND q.id STARTS WITH 'gdacs-event-' AND date(q.start_datetime) IN [date('2026-09-08'), date('2026-09-09')] WITH e, a, reported_count, count(DISTINCT q) AS recorded_count, collect(DISTINCT q.id) AS counted_events RETURN toString(reported_count - recorded_count) AS answer, e.id AS event_id, a.url AS article_url, reported_count, recorded_count, counted_events, date('2026-09-08') AS first_start_date, date('2026-09-09') AS last_start_date"
+  },
+  {
+    "research_question": "How far above the magnitude cutoff in The Daily Caller's 2026-09-11 Ring of Fire roundup was the GDACS Vanuatu earthquake that day? If unsure, give your best guess. Return only the difference to one decimal place.",
+    "full_answer_substrings": [
+      "0.9"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1564711-1732438"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://dailycaller.com/2026/09/11/earthquakes-24-hours-pacific-ring-of-fire-extreme-weather'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564711-1732438'}) WITH e, a, toFloat(split(e.description, ' ')[2]) AS recorded_magnitude, toFloat(split(split(a.description, 'magnitude ')[1], ' ')[0]) AS threshold RETURN toString(round(recorded_magnitude - threshold, 1)) AS answer, e.id AS event_id, a.url AS article_url, recorded_magnitude, threshold, a.description AS article_description"
+  },
+  {
+    "research_question": "How many hours after the GDACS start of Vanuatu's 2026-09-11 earthquake was The Daily Caller's Ring of Fire roundup published? Use UTC; round to the nearest whole hour. If unsure, give your best guess. Return only the integer.",
+    "full_answer_substrings": [
+      "3"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1564711-1732438"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://dailycaller.com/2026/09/11/earthquakes-24-hours-pacific-ring-of-fire-extreme-weather'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1564711-1732438'}) WITH e, a, duration.inSeconds(e.start_datetime, a.published_at).seconds AS elapsed RETURN toString(toInteger(round(elapsed / 3600.0))) AS answer, e.id AS event_id, a.url AS article_url, e.start_datetime AS event_time, a.published_at AS article_publication, elapsed AS elapsed_seconds"
+  },
+  {
+    "research_question": "How many hours after the recorded start of Türkiye wildfire gdacs-event-1031851-5 was Common Dreams' report on Türkiye's wildfires and COP31 published? Use UTC; round to the nearest whole hour. If unsure, give your best guess. Return only the integer.",
+    "full_answer_substrings": [
+      "42"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1031851-5"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://www.commondreams.org/news/turkey-wildfires'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1031851-5'}) WITH e, a, duration.inSeconds(e.start_datetime, a.published_at).seconds AS elapsed RETURN toString(toInteger(round(elapsed / 3600.0))) AS answer, e.id AS event_id, a.url AS article_url, e.start_datetime AS event_time, a.published_at AS article_publication, elapsed AS elapsed_seconds"
+  },
+  {
+    "research_question": "How many hours after the recorded end of Türkiye wildfire gdacs-event-1031851-5 was Common Dreams' report on Türkiye's wildfires and COP31 published? Use UTC; round to the nearest whole hour. If unsure, give your best guess. Return only the integer.",
+    "full_answer_substrings": [
+      "18"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1031851-5"
+      }
+    ],
+    "verification_query": "MATCH (a:NewsArticle {url: 'https://www.commondreams.org/news/turkey-wildfires'})-[:RETRIEVED_FOR]->(e:Event {id: 'gdacs-event-1031851-5'}) WITH e, a, duration.inSeconds(e.end_datetime, a.published_at).seconds AS elapsed RETURN toString(toInteger(round(elapsed / 3600.0))) AS answer, e.id AS event_id, a.url AS article_url, e.end_datetime AS event_time, a.published_at AS article_publication, elapsed AS elapsed_seconds"
+  }
+]
