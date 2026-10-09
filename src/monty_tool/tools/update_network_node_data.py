@@ -55,12 +55,16 @@ BATCH_SIZE = 128
 
 def _raw_gzip_keys(bucket: S3Bucket) -> list[str]:
     """
-    Return all gzipped JSONL object keys under the raw data prefix.
+    Return raw gzip keys, preferring nogeom when both variants exist.
     """
-    return sorted(
+    keys = {
         obj.key
         for obj in bucket.objects.filter(Prefix=RAW_BUCKET_PREFIX)
         if obj.key.endswith('.jsonl.gz')
+    }
+    return sorted(
+        key for key in keys
+        if key.removesuffix('.jsonl.gz') + '.nogeom.jsonl.gz' not in keys
     )
 
 
