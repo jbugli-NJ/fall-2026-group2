@@ -1,8 +1,8 @@
 """
-Schemas for news search parameters and NewsAPI responses.
+Schemas for news search parameters and provider responses.
 
-Flow:
-MontandonItem -> NewsQuery -> news_api.py -> NewsAPI -> NewsAPIResponse -> NewsSearchResult
+Media Cloud stories are search candidates, not verified event matches.
+NewsAPI schemas remain until their existing callers are migrated.
 """
 
 from datetime import date, datetime
@@ -84,3 +84,20 @@ class NewsSearchResult(BaseModel):
     to_date: date
     total_results: int
     articles: list[NewsArticle]
+
+
+class MediaCloudStory(BaseModel):
+    """One unverified story candidate from Media Cloud."""
+
+    id: int | str | None = None
+    title: str | None = None
+    url: str | None = None
+    publish_date: str | None = None
+    media_name: str | None = None
+
+
+class MediaCloudPage(BaseModel):
+    """One story-list response, including the next-page token."""
+
+    stories: list[MediaCloudStory]
+    pagination_token: str | None = None
