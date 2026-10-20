@@ -15,6 +15,7 @@ from monty_tool.news.s3_storage import download_news_snapshot
 from monty_tool.news.body import fetch_publisher_html, extract_publisher_body
 from monty_tool.news.collector import (
     MediaCloudCandidateBatch,
+    collect_media_cloud_candidates,
     collect_news_job,
 )
 from monty_tool.news.pipeline import (
@@ -23,6 +24,11 @@ from monty_tool.news.pipeline import (
 )
 from monty_tool.news.schemas import MediaCloudStory
 
+from monty_tool.news.verification import (
+    EventJudge,
+    EventMatchDecision,
+    decide_media_cloud_candidate,
+)
 
 class NewsCollectionRun(BaseModel):
     """Summarize new snapshots, reused snapshots, and any early stop."""
@@ -173,3 +179,65 @@ def gather_media_cloud_evidence(
         )
 
     return results
+
+class MediaCloudCandidateAssessment(BaseModel):
+    """Keep one candidate together with its event-relevance decision."""
+
+    evidence: MediaCloudCandidateEvidence
+    decision: EventMatchDecision
+
+
+class MediaCloudJobRun(BaseModel):
+    """Result of collecting and assessing one Media Cloud search job."""
+
+    job: MediaCloudCollectionJob
+    pages_fetched: int
+    next_page_token: str | None
+    duplicates_removed: int
+    assessments: list[MediaCloudCandidateAssessment]
+
+
+def run_media_cloud_job(
+    job: MediaCloudCollectionJob,
+    *,
+    judge: EventJudge,
+    max_body_attempts: int,
+    page_size: int = 100,
+    max_pages: int = 2,
+    page_interval_seconds: float = 31.0,
+) -> MediaCloudJobRun:
+    """Collect candidates, read available bodies, and assess every candidate."""
+    if type(max_body_attempts) is not int or max_body_attempts < 0:
+        raise ValueError("max_body_attempts must be a non-negative integer.")
+
+    batch = collect_media_cloud_candidates(
+        job,
+        page_size=page_size,
+        max_pages=max_pages,
+        page_interval_seconds=page_interval_seconds,
+    )
+    evidence_items = gather_media_cloud_evidence(
+        job,
+        batch,
+        max_body_attempts=max_body_attempts,
+    )
+
+    assessments = [
+        MediaCloudCandidateAssessment(
+            evidence=evidence,
+            decision=decide_media_cloud_candidate(
+                job.event,
+                evidence,
+                judge=judge,
+            ),
+        )
+        for evidence in evidence_items
+    ]
+
+    return MediaCloudJobRun(
+        job=job,
+        pages_fetched=batch.pages_fetched,
+        next_page_token=batch.next_page_token,
+        duplicates_removed=batch.duplicates_removed,
+        assessments=assessments,
+    )

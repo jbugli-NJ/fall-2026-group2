@@ -1623,3 +1623,73 @@ def test_qwen_event_judge_keeps_candidate_when_output_is_invalid():
 
     assert decision.status == "uncertain"
     assert decision.url == candidate.story.url
+
+def test_run_media_cloud_job_keeps_all_candidates_and_decisions(monkeypatch):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+    first_story = MediaCloudStory(
+        id=1,
+        title="Earthquake in Japan",
+        url="https://example.com/one",
+    )
+    second_story = MediaCloudStory(
+        id=2,
+        title="Another article",
+        url="https://example.com/two",
+    )
+    batch = collector.MediaCloudCandidateBatch(
+        stories=[first_story, second_story],
+        pages_fetched=1,
+        next_page_token="next-page",
+        duplicates_removed=0,
+    )
+    evidence = [
+        runner.MediaCloudCandidateEvidence(
+            event_id=event.item_id,
+            event_collection=event.collection,
+            story=first_story,
+            body_status="body_available",
+            body_text="An earthquake struck Japan.",
+        ),
+        runner.MediaCloudCandidateEvidence(
+            event_id=event.item_id,
+            event_collection=event.collection,
+            story=second_story,
+            body_status="html_unavailable",
+        ),
+    ]
+
+    collect = Mock(return_value=batch)
+    gather = Mock(return_value=evidence)
+    judge = Mock(
+        return_value=(
+            "same_event",
+            "The article describes the event.",
+            "earthquake struck Japan",
+        )
+    )
+    monkeypatch.setattr(runner, "collect_media_cloud_candidates", collect)
+    monkeypatch.setattr(runner, "gather_media_cloud_evidence", gather)
+
+    result = runner.run_media_cloud_job(
+        job,
+        judge=judge,
+        max_body_attempts=1,
+        max_pages=1,
+        page_interval_seconds=0,
+    )
+
+    assert result.pages_fetched == 1
+    assert result.next_page_token == "next-page"
+    assert [item.decision.status for item in result.assessments] == [
+        "same_event",
+        "uncertain",
+    ]
+    assert [item.evidence.story.id for item in result.assessments] == [1, 2]
+    collect.assert_called_once_with(
+        job, page_size=100, max_pages=1, page_interval_seconds=0
+    )
+    gather.assert_called_once_with(job, batch, max_body_attempts=1)
+    judge.assert_called_once_with(
+        event, first_story, "An earthquake struck Japan."
+    )
