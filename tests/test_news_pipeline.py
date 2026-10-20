@@ -25,6 +25,7 @@ from monty_tool.news.pipeline import NewsCollectionJob
 from monty_tool.news.schemas import NewsArticle, NewsQuery, NewsSearchResult
 from monty_tool.news.history import load_recent_snapshots, news_job_key
 from monty_tool.news import runner
+from monty_tool.news import verification
 from monty_tool.news import cli
 from pathlib import Path
 from typing import cast
@@ -1502,3 +1503,123 @@ def test_media_cloud_evidence_keeps_candidate_when_body_extraction_fails(
     assert len(evidence) == 1
     assert evidence[0].body_status == "body_unavailable"
     assert evidence[0].story.url == "https://example.com/one"
+
+
+def test_media_cloud_verification_requires_body_and_real_excerpt():
+    event = build_event_context(make_record("event-a", source_id="a"))
+    candidate = runner.MediaCloudCandidateEvidence(
+        event_id=event.item_id,
+        event_collection=event.collection,
+        story=MediaCloudStory(
+            id=1,
+            title="Earthquake in Japan",
+            url="https://example.com/one",
+        ),
+        body_status="body_available",
+        body_text="An earthquake struck Japan on September 10.",
+    )
+    judge = Mock(
+        return_value=(
+            "same_event",
+            "The article describes this event.",
+            "earthquake struck Japan on September 10",
+        )
+    )
+
+    decision = verification.decide_media_cloud_candidate(
+        event, candidate, judge=judge
+    )
+    assert decision.status == "same_event"
+    assert decision.event_id == event.item_id
+    assert decision.url == candidate.story.url
+    judge.assert_called_once_with(event, candidate.story, candidate.body_text)
+
+    unavailable = candidate.model_copy(
+        update={"body_status": "html_unavailable", "body_text": None}
+    )
+    judge.reset_mock()
+    decision = verification.decide_media_cloud_candidate(
+        event, unavailable, judge=judge
+    )
+    assert decision.status == "uncertain"
+    assert decision.url == candidate.story.url
+    judge.assert_not_called()
+
+    judge.return_value = (
+        "same_event",
+        "The article describes this event.",
+        "a sentence that is not in the article",
+    )
+    decision = verification.decide_media_cloud_candidate(
+        event, candidate, judge=judge
+    )
+    assert decision.status == "uncertain"
+    assert decision.evidence_excerpt is None
+
+    wrong_event = candidate.model_copy(update={"event_id": "another-event"})
+    with pytest.raises(ValueError, match="identities do not match"):
+        verification.decide_media_cloud_candidate(
+            event, wrong_event, judge=judge
+        )
+
+@pytest.mark.parametrize(
+    "status",
+    ["same_event", "related_context", "different_event", "uncertain"],
+)
+def test_qwen_event_judge_returns_all_four_statuses(status):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    candidate = runner.MediaCloudCandidateEvidence(
+        event_id=event.item_id,
+        event_collection=event.collection,
+        story=MediaCloudStory(
+            id=1,
+            title="Earthquake in Japan",
+            url="https://example.com/one",
+        ),
+        body_status="body_available",
+        body_text="An earthquake struck Japan on September 10.",
+    )
+    excerpt = (
+        None if status == "uncertain"
+        else "earthquake struck Japan on September 10"
+    )
+    assistant = Mock()
+    assistant._generate.return_value = {
+        "content": json.dumps({
+            "status": status,
+            "reason": "Test decision based on the article.",
+            "evidence_excerpt": excerpt,
+        })
+    }
+
+    judge = verification.make_qwen_event_judge(assistant)
+    decision = verification.decide_media_cloud_candidate(
+        event, candidate, judge=judge
+    )
+
+    assert decision.status == status
+    assert decision.url == candidate.story.url
+    assistant._generate.assert_called_once()
+    assert assistant._generate.call_args.kwargs["use_tools"] is False
+
+
+def test_qwen_event_judge_keeps_candidate_when_output_is_invalid():
+    event = build_event_context(make_record("event-a", source_id="a"))
+    candidate = runner.MediaCloudCandidateEvidence(
+        event_id=event.item_id,
+        event_collection=event.collection,
+        story=MediaCloudStory(id=1, url="https://example.com/one"),
+        body_status="body_available",
+        body_text="An earthquake struck Japan.",
+    )
+    assistant = Mock()
+    assistant._generate.return_value = {"content": "not JSON"}
+
+    decision = verification.decide_media_cloud_candidate(
+        event,
+        candidate,
+        judge=verification.make_qwen_event_judge(assistant),
+    )
+
+    assert decision.status == "uncertain"
+    assert decision.url == candidate.story.url
