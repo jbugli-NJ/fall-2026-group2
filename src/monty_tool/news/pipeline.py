@@ -144,7 +144,7 @@ def prepare_media_cloud_jobs(
     collection_ids: Sequence[int],
     days_before: int = 1,
     days_after: int = 3,
-    title_only: bool = True,
+    title_only: bool = False,
     query_overrides: Mapping[tuple[str, str], str] | None = None,
 ) -> list[MediaCloudCollectionJob]:
     """Prepare Media Cloud jobs without making API or S3 requests."""

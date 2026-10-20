@@ -1,6 +1,4 @@
-"""
-Build NewsAPI queries from Montandon records or shared event context.
-"""
+"""Build provider news queries from Montandon records or shared event context."""
 
 import json
 import logging
@@ -16,7 +14,6 @@ from monty_tool.news.schemas import NewsQuery
 
 
 logger = logging.getLogger(__name__)
-
 
 @lru_cache(maxsize=1)
 def _hazard_labels() -> dict[str, str]:
@@ -130,7 +127,7 @@ def build_media_cloud_query(
     days_before: int = 1,
     days_after: int = 3,
     *,
-    title_only: bool = True,
+    title_only: bool = False,
     language: str | None = "en",
     search_query: str | None = None,
 ) -> NewsQuery:
