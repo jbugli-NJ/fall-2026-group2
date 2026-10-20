@@ -8,7 +8,12 @@ import pytest
 
 from monty_tool.event_context import build_event_context
 from monty_tool.news import query as news_query_module
-from monty_tool.news.pipeline import (prepare_media_cloud_jobs, prepare_news_jobs, select_disaster_records,)
+from monty_tool.news.pipeline import (
+    prepare_media_cloud_jobs,
+    prepare_news_jobs,
+    select_disaster_records,
+)
+from monty_tool.news.schemas import MediaCloudPage, MediaCloudStory
 
 import json
 from unittest.mock import Mock
@@ -1364,3 +1369,58 @@ def test_prepare_media_cloud_jobs_records_search_scope(fixed_news_today):
 def test_prepare_media_cloud_jobs_rejects_missing_collections():
     with pytest.raises(ValueError, match="collection_ids"):
         prepare_media_cloud_jobs([], collection_ids=[])
+
+def test_media_cloud_collector_pages_and_deduplicates(monkeypatch):
+    event = build_event_context(make_record("event", source_id="event"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+
+    search = Mock(
+        side_effect=[
+            MediaCloudPage(
+                stories=[
+                    MediaCloudStory(id=1, url="https://example.com/one"),
+                    MediaCloudStory(id=2, url="https://example.com/two"),
+                ],
+                pagination_token="next",
+            ),
+            MediaCloudPage(
+                stories=[
+                    MediaCloudStory(id=2, url="https://example.com/two"),
+                    MediaCloudStory(id=3, url="https://example.com/three"),
+                ],
+                pagination_token="more",
+            ),
+        ]
+    )
+    monkeypatch.setattr(collector.news_api, "search_media_cloud_page", search)
+
+    result = collector.collect_media_cloud_candidates(
+        job, max_pages=2, page_interval_seconds=0
+    )
+
+    assert [story.id for story in result.stories] == [1, 2, 3]
+    assert result.pages_fetched == 2
+    assert result.duplicates_removed == 1
+    assert result.next_page_token == "more"
+    assert search.call_args_list[1].kwargs["pagination_token"] == "next"
+
+
+def test_media_cloud_collector_stops_when_no_next_page(monkeypatch):
+    event = build_event_context(make_record("event", source_id="event"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+
+    search = Mock(
+        return_value=MediaCloudPage(
+            stories=[MediaCloudStory(id=1, url="https://example.com/one")],
+            pagination_token=None,
+        )
+    )
+    monkeypatch.setattr(collector.news_api, "search_media_cloud_page", search)
+
+    result = collector.collect_media_cloud_candidates(
+        job, max_pages=5, page_interval_seconds=0
+    )
+
+    assert result.pages_fetched == 1
+    assert result.next_page_token is None
+    search.assert_called_once()
