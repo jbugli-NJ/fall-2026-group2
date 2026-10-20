@@ -1,6 +1,6 @@
 """Prepare disaster records for scheduled news collection."""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from random import shuffle
 from typing import Any
@@ -9,7 +9,7 @@ from monty_tool.api_schemas import MontandonItem
 from monty_tool.event_context import EventContext, build_event_context
 from pydantic import BaseModel
 
-from monty_tool.news.query import build_news_query
+from monty_tool.news.query import build_media_cloud_query, build_news_query
 from monty_tool.news.schemas import NewsQuery
 
 def select_disaster_records(
@@ -127,5 +127,60 @@ def prepare_news_jobs(
             )
 
         jobs.append(NewsCollectionJob(event=event, query=query))
+
+    return jobs
+
+class MediaCloudCollectionJob(BaseModel):
+    """An Event and its planned Media Cloud search."""
+
+    event: EventContext
+    query: NewsQuery
+    collection_ids: tuple[int, ...]
+
+
+def prepare_media_cloud_jobs(
+    events: Iterable[EventContext],
+    *,
+    collection_ids: Sequence[int],
+    days_before: int = 1,
+    days_after: int = 3,
+    title_only: bool = True,
+    query_overrides: Mapping[tuple[str, str], str] | None = None,
+) -> list[MediaCloudCollectionJob]:
+    """Prepare Media Cloud jobs without making API or S3 requests."""
+    if not collection_ids or any(
+        type(collection_id) is not int or collection_id <= 0
+        for collection_id in collection_ids
+    ):
+        raise ValueError("collection_ids must contain positive integers.")
+
+    for name, value in (
+        ("days_before", days_before),
+        ("days_after", days_after),
+    ):
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{name} must be a non-negative integer.")
+    if type(title_only) is not bool:
+        raise ValueError("title_only must be a boolean.")
+
+    normalized_ids = tuple(sorted(set(collection_ids)))
+    overrides = query_overrides if query_overrides is not None else {}
+    jobs: list[MediaCloudCollectionJob] = []
+
+    for event in events:
+        query = build_media_cloud_query(
+            event,
+            days_before=days_before,
+            days_after=days_after,
+            title_only=title_only,
+            search_query=overrides.get((event.collection, event.item_id)),
+        )
+        jobs.append(
+            MediaCloudCollectionJob(
+                event=event,
+                query=query,
+                collection_ids=normalized_ids,
+            )
+        )
 
     return jobs

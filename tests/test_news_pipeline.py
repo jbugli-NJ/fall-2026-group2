@@ -8,7 +8,7 @@ import pytest
 
 from monty_tool.event_context import build_event_context
 from monty_tool.news import query as news_query_module
-from monty_tool.news.pipeline import (prepare_news_jobs, select_disaster_records,)
+from monty_tool.news.pipeline import (prepare_media_cloud_jobs, prepare_news_jobs, select_disaster_records,)
 
 import json
 from unittest.mock import Mock
@@ -1342,3 +1342,25 @@ def test_media_cloud_query_rejects_blank_override(fixed_news_today):
 
     with pytest.raises(ValueError, match="Search query"):
         news_query_module.build_media_cloud_query(event, search_query="   ")
+
+def test_prepare_media_cloud_jobs_records_search_scope(fixed_news_today):
+    event = build_event_context(make_record("event-a", source_id="a"))
+
+    jobs = prepare_media_cloud_jobs(
+        [event],
+        collection_ids=[456, 123, 456],
+    )
+
+    assert len(jobs) == 1
+    assert jobs[0].event.model_dump() == event.model_dump()
+    assert jobs[0].collection_ids == (123, 456)
+    assert jobs[0].query.query == (
+        "article_title:Earthquake AND article_title:Japan AND language:en"
+    )
+    assert jobs[0].query.from_date == date(2026, 9, 9)
+    assert jobs[0].query.to_date == date(2026, 9, 13)
+
+
+def test_prepare_media_cloud_jobs_rejects_missing_collections():
+    with pytest.raises(ValueError, match="collection_ids"):
+        prepare_media_cloud_jobs([], collection_ids=[])
