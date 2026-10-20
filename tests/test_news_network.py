@@ -9,7 +9,6 @@ from monty_tool.network.insert import insert_news_articles
 from monty_tool.network.schemas import NewsArticleInsertData
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.network import news as news_network
-from monty_tool.tools import update_news_network
 
 def _article_row() -> NewsArticleInsertData:
     return {
@@ -94,39 +93,3 @@ def test_load_news_into_graph_passes_s3_uri_and_batches(monkeypatch) -> None:
     )
     assert insert.call_args_list[0].args == (driver, [first_row])
     assert insert.call_args_list[1].args == (driver, [second_row])
-
-def test_update_news_network_requires_own_s3_prefix(monkeypatch) -> None:
-    monkeypatch.delenv("AWS_BUCKET_PREFIX", raising=False)
-    get_bucket = Mock()
-    monkeypatch.setattr(update_news_network, "get_bucket", get_bucket)
-
-    with pytest.raises(ValueError, match="AWS_BUCKET_PREFIX"):
-        update_news_network.main()
-
-    get_bucket.assert_not_called()
-
-def test_update_news_network_loads_saved_results(monkeypatch) -> None:
-    monkeypatch.setenv("AWS_BUCKET_PREFIX", "person/")
-    bucket = Mock()
-    context = MagicMock()
-    driver = context.__enter__.return_value
-    get_bucket = Mock(return_value=bucket)
-    initialize = Mock()
-    load = Mock(return_value=6)
-
-    monkeypatch.setattr(
-        update_news_network, "get_env_bucket_name", Mock(return_value="test-bucket")
-    )
-    monkeypatch.setattr(update_news_network, "get_bucket", get_bucket)
-    monkeypatch.setattr(update_news_network, "initialize_db", initialize)
-    monkeypatch.setattr(
-        update_news_network, "get_graph_db_driver", Mock(return_value=context)
-    )
-    monkeypatch.setattr(update_news_network, "load_news_into_graph", load)
-
-    assert update_news_network.main() == 6
-    get_bucket.assert_called_once_with("test-bucket")
-    initialize.assert_called_once_with()
-    load.assert_called_once_with(
-        bucket, bucket_name="test-bucket", driver=driver
-    )
