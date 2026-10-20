@@ -1324,3 +1324,21 @@ def test_cli_reuses_s3_result_with_fresh_output_dir(
     assert len(second["reused"]) == 1
     assert search.call_count == 1
     assert len(objects) == 1
+
+def test_media_cloud_query_dates_and_terms(fixed_news_today):
+    event = build_event_context(make_record("event-a", source_id="a"))
+
+    query = news_query_module.build_media_cloud_query(event)
+
+    assert query.query == (
+        "article_title:Earthquake AND article_title:Japan AND language:en"
+    )
+    assert query.from_date == date(2026, 9, 9)
+    assert query.to_date == date(2026, 9, 13)
+
+
+def test_media_cloud_query_rejects_blank_override(fixed_news_today):
+    event = build_event_context(make_record("event-a", source_id="a"))
+
+    with pytest.raises(ValueError, match="Search query"):
+        news_query_module.build_media_cloud_query(event, search_query="   ")

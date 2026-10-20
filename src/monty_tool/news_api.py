@@ -111,12 +111,12 @@ def search_media_cloud_page(
 ) -> MediaCloudPage:
     """Fetch one page of unverified Media Cloud story candidates.
 
-    end_date is exclusive. Pagination is handled by the caller.
+    end_date is inclusive. Pagination is handled by the caller.
     """
     if not query.strip():
         raise ValueError("query must not be empty.")
-    if start_date >= end_date:
-        raise ValueError("start_date must be before end_date.")
+    if start_date > end_date:
+        raise ValueError("start_date must be on or before end_date.")
     if not collection_ids or any(
         type(collection_id) is not int or collection_id <= 0
         for collection_id in collection_ids

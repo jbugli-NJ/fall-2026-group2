@@ -144,3 +144,19 @@ def test_network_failure_does_not_return_empty_page(
             end_date=date(2026, 9, 2),
             collection_ids=[123],
         )
+
+def test_single_day_media_cloud_search_is_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get = mock_media_cloud_get(
+        monkeypatch, {"stories": [], "pagination_token": None}
+    )
+
+    news_api.search_media_cloud_page(
+        query="earthquake",
+        start_date=date(2026, 9, 10),
+        end_date=date(2026, 9, 10),
+        collection_ids=[123],
+    )
+
+    assert get.call_args.kwargs["params"]["end"] == "2026-09-10"
