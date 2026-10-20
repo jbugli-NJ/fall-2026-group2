@@ -1427,3 +1427,78 @@ def test_media_cloud_collector_stops_when_no_next_page(monkeypatch):
     assert result.pages_fetched == 1
     assert result.next_page_token is None
     search.assert_called_once()
+
+def test_media_cloud_evidence_keeps_all_candidates(monkeypatch):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+    batch = collector.MediaCloudCandidateBatch(
+        stories=[
+            MediaCloudStory(id=1, url=None),
+            MediaCloudStory(id=2, url="https://example.com/two"),
+            MediaCloudStory(id=3, url="https://example.com/three"),
+            MediaCloudStory(id=4, url="https://example.com/four"),
+        ],
+        pages_fetched=1,
+        next_page_token=None,
+        duplicates_removed=0,
+    )
+
+    fetch = Mock(
+        side_effect=[
+            ("<html>article</html>", "https://example.com/two"),
+            None,
+        ]
+    )
+    extract = Mock(return_value="Publisher article text")
+    monkeypatch.setattr(runner, "fetch_publisher_html", fetch)
+    monkeypatch.setattr(runner, "extract_publisher_body", extract)
+
+    evidence = runner.gather_media_cloud_evidence(
+        job, batch, max_body_attempts=2
+    )
+
+    assert len(evidence) == 4
+    assert [item.body_status for item in evidence] == [
+        "missing_url",
+        "body_available",
+        "html_unavailable",
+        "not_attempted",
+    ]
+    assert [item.story.id for item in evidence] == [1, 2, 3, 4]
+    assert all(item.event_id == "event-a" for item in evidence)
+    assert evidence[1].body_text == "Publisher article text"
+    assert "body_text" not in evidence[1].model_dump()
+    assert fetch.call_count == 2
+    extract.assert_called_once_with(
+        "<html>article</html>", url="https://example.com/two"
+    )
+
+
+def test_media_cloud_evidence_keeps_candidate_when_body_extraction_fails(
+    monkeypatch,
+):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+    batch = collector.MediaCloudCandidateBatch(
+        stories=[MediaCloudStory(id=1, url="https://example.com/one")],
+        pages_fetched=1,
+        next_page_token=None,
+        duplicates_removed=0,
+    )
+
+    monkeypatch.setattr(
+        runner,
+        "fetch_publisher_html",
+        Mock(return_value=("<html></html>", "https://example.com/one")),
+    )
+    monkeypatch.setattr(
+        runner, "extract_publisher_body", Mock(return_value=None)
+    )
+
+    evidence = runner.gather_media_cloud_evidence(
+        job, batch, max_body_attempts=1
+    )
+
+    assert len(evidence) == 1
+    assert evidence[0].body_status == "body_unavailable"
+    assert evidence[0].story.url == "https://example.com/one"
