@@ -1,4 +1,10 @@
 """Transfer disaster input and news snapshots through S3."""
+from datetime import datetime, timezone
+from hashlib import sha256
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from monty_tool.news.runner import MediaCloudJobRun
 
 import json
 from pathlib import Path
@@ -164,5 +170,70 @@ def upload_news_snapshot(bucket: S3Bucket, snapshot: Path) -> str:
         raise ValueError(f"Invalid news snapshot: {snapshot}") from exc
 
     key = news_snapshot_key(job, page_size=page_size)
+    upload_object(bucket, snapshot, key)
+    return key
+
+
+def save_media_cloud_snapshot(
+    run: "MediaCloudJobRun",
+    *,
+    output_dir: Path,
+) -> Path:
+    """Save candidates, available bodies, and relevance decisions."""
+    from monty_tool.news.collector import _save_snapshot
+
+    result = run.model_dump(mode="json")
+
+    # Evidence normally excludes body_text from JSON.
+    # Include it explicitly in the persistent snapshot.
+    for saved, assessment in zip(
+        result["assessments"],
+        run.assessments,
+        strict=True,
+    ):
+        saved["evidence"]["body_text"] = assessment.evidence.body_text
+
+    report = {
+        "schema_version": 1,
+        "provider": "media_cloud",
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+        "run": result,
+    }
+    return _save_snapshot(output_dir, report)
+
+
+def read_media_cloud_snapshot(path: Path) -> "MediaCloudJobRun":
+    """Read a saved Media Cloud run and validate its structure."""
+    from monty_tool.news.runner import MediaCloudJobRun
+
+    report = json.loads(path.read_text(encoding="utf-8"))
+
+    if (
+        not isinstance(report, dict)
+        or report.get("schema_version") != 1
+        or report.get("provider") != "media_cloud"
+        or "run" not in report
+    ):
+        raise ValueError("Invalid Media Cloud snapshot.")
+
+    return MediaCloudJobRun.model_validate(report["run"])
+
+
+def upload_media_cloud_snapshot(
+    bucket: S3Bucket,
+    snapshot: Path,
+    *,
+    prefix: str,
+) -> str:
+    """Upload a validated snapshot under an explicit S3 prefix."""
+    folder = prefix.strip().strip("/")
+    if not folder:
+        raise ValueError("An explicit S3 folder prefix is required.")
+
+    read_media_cloud_snapshot(snapshot)
+
+    digest = sha256(snapshot.read_bytes()).hexdigest()
+    key = f"{folder}/media_cloud_articles/snapshots/{digest}.json"
+
     upload_object(bucket, snapshot, key)
     return key

@@ -32,6 +32,9 @@ from typing import cast
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.news.s3_storage import (
+    save_media_cloud_snapshot,
+    read_media_cloud_snapshot,
+    upload_media_cloud_snapshot,
     download_news_snapshot,
     news_snapshot_key,
     upload_news_snapshot,
@@ -1693,3 +1696,103 @@ def test_run_media_cloud_job_keeps_all_candidates_and_decisions(monkeypatch):
     judge.assert_called_once_with(
         event, first_story, "An earthquake struck Japan."
     )
+
+def test_media_cloud_snapshot_preserves_evidence(
+    tmp_path: Path,
+) -> None:
+    event = build_event_context(
+        make_record("event-a", source_id="a")
+    )
+    job = prepare_media_cloud_jobs(
+        [event],
+        collection_ids=[123],
+    )[0]
+
+    body = "The earthquake affected communities in Japan."
+    assessments: list[runner.MediaCloudCandidateAssessment] = []
+
+    for story_id, text in (
+        ("with-body", body),
+        ("without-body", None),
+    ):
+        story = MediaCloudStory(
+            id=story_id,
+            title="Earthquake report",
+            url=f"https://example.com/{story_id}",
+        )
+        evidence = runner.MediaCloudCandidateEvidence(
+            event_id=event.item_id,
+            event_collection=event.collection,
+            story=story,
+            body_status=(
+                "body_available"
+                if text is not None
+                else "html_unavailable"
+            ),
+            body_text=text,
+        )
+        decision = verification.EventMatchDecision(
+            event_id=event.item_id,
+            event_collection=event.collection,
+            story_id=story.id,
+            url=story.url,
+            status="uncertain",
+            reason="Storage test; no model judgment performed.",
+        )
+        assessments.append(
+            runner.MediaCloudCandidateAssessment(
+                evidence=evidence,
+                decision=decision,
+            )
+        )
+
+    run = runner.MediaCloudJobRun(
+        job=job,
+        pages_fetched=1,
+        next_page_token="next-page",
+        duplicates_removed=2,
+        assessments=assessments,
+    )
+
+    snapshot = save_media_cloud_snapshot(
+        run,
+        output_dir=tmp_path,
+    )
+    restored = read_media_cloud_snapshot(snapshot)
+
+    assert snapshot.is_file()
+    assert restored.job == job
+    assert restored.pages_fetched == 1
+    assert restored.next_page_token == "next-page"
+    assert restored.duplicates_removed == 2
+    assert len(restored.assessments) == 2
+
+    assert restored.assessments[0].evidence.body_text == body
+    assert restored.assessments[1].evidence.body_text is None
+    assert (
+        restored.assessments[1].evidence.story.url
+        == "https://example.com/without-body"
+    )
+    assert (
+        restored.assessments[0].decision
+        == assessments[0].decision
+    )
+
+    bucket = Mock()
+    key = upload_media_cloud_snapshot(
+        cast(S3Bucket, bucket),
+        snapshot,
+        prefix="test-owner",
+    )
+
+    assert key.startswith(
+        "test-owner/media_cloud_articles/snapshots/"
+    )
+    bucket.upload_file.assert_called_once_with(snapshot, key)
+
+    with pytest.raises(ValueError, match="explicit S3"):
+        upload_media_cloud_snapshot(
+            cast(S3Bucket, bucket),
+            snapshot,
+            prefix="",
+        )
