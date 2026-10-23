@@ -168,10 +168,11 @@ def test_extent_km_handles_empty_and_points():
 
 def test_grade_detail_marks_wide_footprints_regional():
     """
-    Confirms footprints wider than REGIONAL_KM become regional, except
-    tracks, which are long by nature.
+    Confirms outlines wider than REGIONAL_KM become regional, and that
+    graded footprints and tracks keep their grade at any size.
     """
     assert grade_detail('outline', REGIONAL_KM + 1) == 'regional'
     assert grade_detail('outline', REGIONAL_KM) == 'outline'
+    assert grade_detail('outline', None) == 'outline'
+    assert grade_detail('modelled', REGIONAL_KM * 10) == 'modelled'
     assert grade_detail('track', REGIONAL_KM * 10) == 'track'
-    assert grade_detail('mapped', None) == 'mapped'
