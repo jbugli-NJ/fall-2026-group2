@@ -7,16 +7,8 @@
 """
 Spike: a Streamlit front end for QueryAssistant, for issue #44.
 
-Chainlit was the first attempt (see spikes/chainlit/) but cannot serve
-its own frontend assets on Python 3.14: starlette's FileResponse raises
-anyio NoEventLoopError inside Chainlit's request path, on every 2.9-2.12
-release tested, so the page loads blank. Streamlit runs on Tornado
-rather than starlette/anyio and is unaffected.
-
-The point of either is the same: show where an answer came from. Every
-graph query is rendered with its arguments and returned rows, and the
-record IDs behind the answer are listed underneath, so a reader can see
-when prose outruns its evidence.
+Graph queries are rendered with their arguments and returned rows.
+The record IDs behind the answer are listed underneath.
 
     uv run --with streamlit streamlit run spikes/streamlit/app.py
     MONTY_UI_REAL=1 uv run --with streamlit streamlit run spikes/streamlit/app.py
@@ -39,7 +31,7 @@ from render import id_kinds, provenance, render_rows  # noqa: E402
 
 # Constants
 
-FIXTURES_PATH = Path(__file__).resolve().parent.parent / 'chainlit' / 'fixtures.json'
+FIXTURES_PATH = Path(__file__).resolve().parent / 'fixtures.json'
 BOLT_HOST, BOLT_PORT = 'localhost', 7687
 
 # Markdown tables do not scroll in Streamlit, so a wide result table
