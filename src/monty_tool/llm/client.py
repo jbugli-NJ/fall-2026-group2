@@ -209,7 +209,7 @@ class BedrockQueryAssistant:
         region: str | None = None,
         enable_external: bool = True,
         ):
-        self.tools = QueryTools(enable_external=enable_external)
+        self.tools = QueryTools(max_tool_calls=25, enable_external=enable_external)
         self.model_id = model_id
         region = (
             region
@@ -252,7 +252,7 @@ class BedrockQueryAssistant:
 
     def ask(self, question: str) -> QueryAssistantResponse:
         """
-        Answer one question with up to ten tool calls.
+        Answer one question with up to 25 tool calls.
         """
         self.tools.tool_call_count = 0
         system: list[SystemContentBlock] = [{'text': (
