@@ -11,8 +11,8 @@ Graph queries are rendered with their arguments and returned rows.
 The record IDs behind the answer are listed underneath.
 
     uv run --with streamlit streamlit run spikes/streamlit/app.py
-    MONTY_UI_REAL=1 uv run --with streamlit streamlit run spikes/streamlit/app.py
-    MONTY_UI_REAL=1 MONTY_UI_LOCAL=1 uv run --with streamlit streamlit run spikes/streamlit/app.py
+    MONTY_UI_LOCAL=1 uv run --with streamlit streamlit run spikes/streamlit/app.py
+    MONTY_UI_REPLAY=1 uv run --with streamlit streamlit run spikes/streamlit/app.py
 """
 
 # Imports
@@ -65,9 +65,9 @@ def graph_is_up() -> bool:
 
 def use_real_assistant() -> bool:
     """
-    Real mode is opt-in, and still refuses when the graph is absent.
+    Check whether real mode is enabled and the graph is reachable.
     """
-    return os.environ.get('MONTY_UI_REAL') == '1' and graph_is_up()
+    return os.environ.get('MONTY_UI_REPLAY', '0') != '1' and graph_is_up()
 
 
 @st.cache_resource(show_spinner=False)
@@ -169,7 +169,7 @@ real = use_real_assistant()
 if real:
     model_name = 'Bedrock' if assistant_kind == 'bedrock' else 'Qwen3.5-4B'
     st.success(f'Connected to the local graph. Answers come from Neo4j and {model_name}.')
-elif os.environ.get('MONTY_UI_REAL') == '1':
+elif os.environ.get('MONTY_UI_REPLAY', '0') != '1':
     st.error(
         f'Real mode requested but nothing is listening on '
         f'bolt://{BOLT_HOST}:{BOLT_PORT}. Replaying the recorded exchange instead.'
@@ -177,7 +177,7 @@ elif os.environ.get('MONTY_UI_REAL') == '1':
 else:
     st.info(
         'Stub mode — replaying a recorded exchange built from real GDACS '
-        'records. Set MONTY_UI_REAL=1 with the graph running to drive the '
+        'records. Set MONTY_UI_REPLAY=0 with the graph running to drive the '
         'real assistant.'
     )
 
