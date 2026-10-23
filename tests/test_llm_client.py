@@ -1,9 +1,10 @@
 """
-Tests for the QueryAssistant client.
+Tests for the query assistant clients.
 """
 
 # Imports
 
+import json
 from typing import Any
 from types import SimpleNamespace
 from unittest.mock import Mock, call
@@ -57,6 +58,24 @@ def _parsed(text: str, model_id: FrozenModel = FrozenModel.QWEN3_1_7B) -> dict[s
     )
     assert template is not None
     return parse_response(text, template, prefix='')
+
+
+def _bedrock_assistant(
+    monkeypatch: pytest.MonkeyPatch,
+    ) -> tuple[client.BedrockQueryAssistant, Mock]:
+    """
+    Create an assistant with a mocked Bedrock client.
+    """
+    runtime = Mock()
+    monkeypatch.setattr(client.boto3, 'client', Mock(return_value=runtime))
+    return client.BedrockQueryAssistant(), runtime.converse
+
+
+def _bedrock_response(content: list[dict[str, Any]], stop_reason: str = 'end_turn') -> dict[str, Any]:
+    """
+    Build a model response.
+    """
+    return {'output': {'message': {'role': 'assistant', 'content': content}}, 'stopReason': stop_reason}
 
 
 # Tests
@@ -267,3 +286,67 @@ def test_query_generation_uses_transformers_parser(monkeypatch: pytest.MonkeyPat
     assert assistant.tokenizer.decode.call_args.kwargs['skip_special_tokens'] is False
     assert assistant.tokenizer.parse_response.call_args.kwargs['prefix'].tolist() == [1]
     assert assistant.tokenizer.parse_response.call_args.kwargs['tools'] is None
+
+
+def test_bedrock_assistant_returns_answer(monkeypatch: pytest.MonkeyPatch):
+    """
+    Return an answer without executing tools.
+    """
+    assistant, converse = _bedrock_assistant(monkeypatch)
+    converse.return_value = _bedrock_response([{'text': 'An answer.'}])
+    execute = Mock()
+    monkeypatch.setattr(assistant.tools, 'execute', execute)
+
+    assert assistant.ask('Question') == {'answer': 'An answer.', 'tool_results': []}
+    execute.assert_not_called()
+
+
+def test_bedrock_assistant_executes_tool_call(monkeypatch: pytest.MonkeyPatch):
+    """
+    Execute a tool call and send its result back with the same ID.
+    """
+    assistant, converse = _bedrock_assistant(monkeypatch)
+    converse.side_effect = [
+        _bedrock_response([{'toolUse': {
+            'toolUseId': 'search-1', 'name': 'search_disaster_events',
+            'input': {'country_code': 'FRA'},
+        }}], 'tool_use'),
+        _bedrock_response([{'text': 'Found an event.'}]),
+    ]
+    rows = {'status': 'ok', 'rows': [{'event_id': 'event-1'}]}
+    execute = Mock(return_value=rows)
+    monkeypatch.setattr(assistant.tools, 'execute', execute)
+
+    result = assistant.ask('Find disasters in France.')
+
+    assert result['answer'] == 'Found an event.'
+    assert result['tool_results'][0]['result'] == rows
+    execute.assert_called_once_with('search_disaster_events', {'country_code': 'FRA'})
+    returned = converse.call_args.kwargs['messages'][-1]['content'][0]['toolResult']
+    assert returned['toolUseId'] == 'search-1'
+    assert json.loads(returned['content'][0]['text']) == rows
+
+
+def test_bedrock_assistant_limits_calls(monkeypatch: pytest.MonkeyPatch):
+    """
+    Skip calls beyond the budget and return an error for each skipped call.
+    """
+    assistant, converse = _bedrock_assistant(monkeypatch)
+    assistant.tools.max_tool_calls = 1
+    converse.side_effect = [
+        _bedrock_response([
+            {'toolUse': {'toolUseId': name, 'name': 'get_disaster_context', 'input': {}}}
+            for name in ['first', 'second']
+        ], 'tool_use'),
+        _bedrock_response([{'text': 'Answer'}]),
+    ]
+    execute = Mock(return_value={'status': 'ok', 'rows': []})
+    monkeypatch.setattr(assistant.tools, 'execute', execute)
+
+    result = assistant.ask('Question')
+
+    execute.assert_called_once()
+    assert len(result['tool_results']) == 1
+    returned = converse.call_args.kwargs['messages'][-1]['content']
+    assert [block['toolResult']['toolUseId'] for block in returned] == ['first', 'second']
+    assert returned[1]['toolResult']['status'] == 'error'
