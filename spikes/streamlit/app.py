@@ -1,18 +1,12 @@
-# The front-end library is run via `uv run --with streamlit` rather than
-# added to pyproject.toml, so CI never installs it and pyright cannot
-# resolve its attributes. Suppressed here rather than in the project
-# config, to keep the spike self-contained.
-# pyright: reportAttributeAccessIssue=false, reportMissingImports=false
-
 """
 Spike: a Streamlit front end for QueryAssistant, for issue #44.
 
 Graph queries are rendered with their arguments and returned rows.
 The record IDs behind the answer are listed underneath.
 
-    uv run --with streamlit streamlit run spikes/streamlit/app.py
-    MONTY_UI_LOCAL=1 uv run --with streamlit streamlit run spikes/streamlit/app.py
-    MONTY_UI_REPLAY=1 uv run --with streamlit streamlit run spikes/streamlit/app.py
+    uv run streamlit run spikes/streamlit/app.py
+    MONTY_UI_LOCAL=1 uv run streamlit run spikes/streamlit/app.py
+    MONTY_UI_REPLAY=1 uv run streamlit run spikes/streamlit/app.py
 """
 
 # Imports
