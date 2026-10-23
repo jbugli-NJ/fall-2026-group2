@@ -43,6 +43,8 @@ class Footprint(BaseModel):
     label: str
     detail: Detail
     datetime: datetime
+    start_datetime: datetime | None = None
+    end_datetime: datetime | None = None
     hazard_codes: list[str] = Field(default_factory=list)
     country_codes: list[str] = Field(default_factory=list)
     data_url: str
