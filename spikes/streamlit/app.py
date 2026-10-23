@@ -12,6 +12,7 @@ The record IDs behind the answer are listed underneath.
 
     uv run --with streamlit streamlit run spikes/streamlit/app.py
     MONTY_UI_REAL=1 uv run --with streamlit streamlit run spikes/streamlit/app.py
+    MONTY_UI_REAL=1 MONTY_UI_LOCAL=1 uv run --with streamlit streamlit run spikes/streamlit/app.py
 """
 
 # Imports
@@ -24,6 +25,9 @@ import time
 from pathlib import Path
 
 import streamlit as st
+
+from monty_tool.llm.protocols import QueryAssistantProtocol
+from monty_tool.utils.versions import FrozenModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from render import id_kinds, provenance, render_rows  # noqa: E402
@@ -67,15 +71,14 @@ def use_real_assistant() -> bool:
 
 
 @st.cache_resource(show_spinner=False)
-def load_assistant():
+def load_assistant(assistant_kind: str) -> QueryAssistantProtocol:
     """
-    Load the model once per server process, not once per rerun.
-
-    Streamlit re-executes this script on every interaction, so an
-    uncached QueryAssistant would reload ~9GB of weights per message.
+    Load and cache the selected assistant.
     """
-    from monty_tool.llm.client import QueryAssistant
-    return QueryAssistant()
+    from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
+    if assistant_kind == 'bedrock':
+        return BedrockQueryAssistant()
+    return QueryAssistant(model_id=FrozenModel.QWEN3_5_4B)
 
 
 # Rendering
@@ -130,7 +133,7 @@ def answer_stub(question: str) -> tuple[str, list]:
     return fixtures['answer'], tool_results
 
 
-def answer_real(question: str) -> tuple[str, list]:
+def answer_real(question: str, assistant_kind: str) -> tuple[str, list]:
     """
     Drive the real assistant, rendering each tool call as it is made.
 
@@ -138,7 +141,7 @@ def answer_real(question: str) -> tuple[str, list]:
     llm/client.py. Streamlit runs synchronously, so a wrapper can draw
     straight into the page with no event-loop plumbing.
     """
-    assistant = load_assistant()
+    assistant = load_assistant(assistant_kind)
     inner = assistant.tools.execute
 
     def execute(name: str, arguments: dict) -> dict:
@@ -156,13 +159,16 @@ def answer_real(question: str) -> tuple[str, list]:
 
 # Page
 
+assistant_kind = 'local' if os.environ.get('MONTY_UI_LOCAL', '0') == '1' else 'bedrock'
+
 st.set_page_config(page_title='Montandon query assistant', layout='centered')
 st.markdown(TABLE_CSS, unsafe_allow_html=True)
 st.title('Montandon query assistant')
 
 real = use_real_assistant()
 if real:
-    st.success('Connected to the local graph. Answers come from Neo4j and Qwen3.5-4B.')
+    model_name = 'Bedrock' if assistant_kind == 'bedrock' else 'Qwen3.5-4B'
+    st.success(f'Connected to the local graph. Answers come from Neo4j and {model_name}.')
 elif os.environ.get('MONTY_UI_REAL') == '1':
     st.error(
         f'Real mode requested but nothing is listening on '
@@ -198,7 +204,7 @@ if question:
     with st.chat_message('assistant'):
         with st.spinner('Querying the graph...'):
             answer, tool_results = (
-                answer_real(question) if real else answer_stub(question)
+                answer_real(question, assistant_kind) if real else answer_stub(question)
             )
         st.markdown(answer)
         show_provenance(tool_results)
