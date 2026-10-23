@@ -22,7 +22,7 @@ Runs in two modes:
 
     real            Drives the actual QueryAssistant. Requires Neo4j on
                     bolt://localhost:7687 with the graph populated, and
-                    downloads Qwen3-1.7B on first run.
+                    downloads Qwen3.5-4B on first run.
 
     uv run --with chainlit chainlit run spikes/chainlit/app.py -w
     MONTY_UI_REAL=1 uv run --with chainlit chainlit run spikes/chainlit/app.py
@@ -205,7 +205,7 @@ async def run_real(question: str) -> None:
     """
     assistant = cl.user_session.get('assistant')
     if assistant is None:
-        async with cl.Step(name='loading Qwen3-1.7B', type='run') as step:
+        async with cl.Step(name='loading Qwen3.5-4B', type='run') as step:
             from monty_tool.llm.client import QueryAssistant
             assistant = await asyncio.to_thread(QueryAssistant)
             step.output = 'Model loaded.'
@@ -248,7 +248,7 @@ async def start() -> None:
     cl.user_session.set('real', real)
 
     if real:
-        banner = 'Connected to the local graph. Answers come from Neo4j and Qwen3-1.7B.'
+        banner = 'Connected to the local graph. Answers come from Neo4j and Qwen3.5-4B.'
     elif os.environ.get('MONTY_UI_REAL') == '1':
         banner = (
             '**Real mode requested but no graph found** on '

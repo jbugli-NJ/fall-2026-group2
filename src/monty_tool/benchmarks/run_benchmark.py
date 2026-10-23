@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         '--model', type=FrozenModel, choices=list(FrozenModel),
-        default=FrozenModel.QWEN3_1_7B,
+        default=FrozenModel.QWEN3_5_4B,
         help='Model ID to evaluate (in the supported set)',
     )
     parser.add_argument(
