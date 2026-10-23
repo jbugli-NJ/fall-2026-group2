@@ -20,6 +20,8 @@ from typing import Any
 import requests
 from dotenv import load_dotenv
 
+from monty_tool.geo.usgs import get_shakemap_footprints
+
 
 # Constants
 
@@ -53,8 +55,9 @@ CEMS_LAYERS = [
      'EMSR935_AOI02_GRA_PRODUCT_observedEventA_v1.json'),
 ]
 
-# USGS events whose ShakeMap MMI contours are pulled straight from USGS.
-USGS_EVENTS = ['us6000u43g']
+# USGS events whose ShakeMap MMI contours are pulled straight from USGS;
+# us6000rfwz (M7.4 Philippines) is one Montandon is missing.
+USGS_EVENTS = ['us6000u43g', 'us6000rfwz']
 
 # (name, layer, note, Montandon hazard item ID) for GDACS hazard items.
 GDACS_HAZARDS = [
@@ -161,6 +164,12 @@ def fetch_usgs() -> dict[str, dict[str, Any]]:
         note = event['properties']['title']
         samples[f'usgs_shakemap_{event_id}'] = _tag(
             contours, 'USGS', 'ShakeMap MMI contours', note,
+        )
+        # The same ShakeMap as intensity bands, via the geo package.
+        [footprint] = get_shakemap_footprints(event_id)
+        assert footprint.geojson is not None
+        samples[f'usgs_bands_{event_id}'] = _tag(
+            footprint.geojson['features'], 'USGS', 'ShakeMap MMI bands', note,
         )
         epicentre = {
             'type': 'Feature',
