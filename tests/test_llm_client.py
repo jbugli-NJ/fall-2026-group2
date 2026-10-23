@@ -11,7 +11,7 @@ from unittest.mock import Mock, call
 
 import pytest
 import torch
-from transformers import AutoConfig
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from transformers.cli.serving.utils import get_response_template
 from transformers.utils.chat_parsing import parse_response
 
@@ -32,7 +32,7 @@ def _query_assistant(
     model_type = 'qwen3' if model_id == FrozenModel.QWEN3_1_7B else 'qwen3_5'
     config = AutoConfig.for_model(model_type)
     monkeypatch.setattr(
-        client.AutoTokenizer,
+        AutoTokenizer,
         'from_pretrained',
         Mock(return_value=Mock(
             spec=['response_template', 'apply_chat_template', 'decode', 'parse_response', 'eos_token_id'],
@@ -40,7 +40,7 @@ def _query_assistant(
         )),
     )
     monkeypatch.setattr(
-        client.AutoModelForCausalLM,
+        AutoModelForCausalLM,
         'from_pretrained',
         Mock(return_value=Mock(config=config.get_text_config())),
     )

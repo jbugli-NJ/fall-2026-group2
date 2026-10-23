@@ -9,9 +9,6 @@ import os
 from typing import Any, cast
 
 import boto3
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers.cli.serving.utils import get_response_template
 
 from monty_tool.boto3_utils.llm_protocols import (
     BedrockRuntimeClient,
@@ -39,6 +36,10 @@ class QueryAssistant:
         *,
         enable_external: bool = True,
         ):
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers.cli.serving.utils import get_response_template
+
         self.tools = QueryTools(enable_external=enable_external)
         self.device = "cuda" if torch.cuda.is_available() else (
             "mps" if torch.backends.mps.is_available() else "cpu"
@@ -69,6 +70,8 @@ class QueryAssistant:
         """
         Generate one response while enforcing the context limit.
         """
+        import torch
+
         inputs = self.tokenizer.apply_chat_template(
             messages,
             tools=self.tools.definitions if use_tools else None,
