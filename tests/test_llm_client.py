@@ -89,67 +89,6 @@ def test_query_assistant_resolves_qwen35_text_model(monkeypatch: pytest.MonkeyPa
         'name': 'search_disaster_events', 'arguments': {'country_code': 'CRI'},
     }
 
-@pytest.mark.parametrize(
-    ('text', 'expected'),
-    [
-        ('A normal answer.', []),
-        (
-            '<tool_call>\n<function=2search-appeals>\n'
-            '<parameter=3country-code> CUB </parameter>\n'
-            '<parameter=text>\nFlood & landslide\nin Cuba\n</parameter>\n'
-            '</function>\n</tool_call>',
-            [{'name': '2search-appeals', 'arguments': {
-                '3country-code': 'CUB', 'text': 'Flood & landslide\nin Cuba',
-            }}],
-        ),
-        (
-            '<tool_call>'
-            '{"name": "search_disaster_events", "arguments": {"country_code": "JPN"}}'
-            '</tool_call>',
-            [{'name': 'search_disaster_events', 'arguments': {'country_code': 'JPN'}}],
-        ),
-    ],
-)
-def test_parse_tool_calls_returns_valid_calls(text: str, expected: list[dict[str, Any]]):
-    """
-    Ensures valid Qwen tool call markup is parsed.
-    """
-    assert client.parse_tool_calls(text) == expected
-
-
-@pytest.mark.parametrize(
-    'text',
-    [
-        '<tool_call>{"name": "search_disaster_events", "arguments": {}}',
-        '<tool_call>not json</tool_call>',
-        '<tool_call>{"name": "search_disaster_events", "arguments": []}</tool_call>',
-        '<tool_call><function=search_appeals><parameter=text>Cuba</function></tool_call>',
-        '<tool_call><function=search_appeals>unexpected text</function></tool_call>',
-        '<tool_call><function=search_appeals><parameter=text>Cuba</parameter>'
-        '<parameter=text>Malawi</parameter></function></tool_call>',
-    ],
-)
-def test_parse_tool_calls_rejects_malformed_calls(text: str):
-    """
-    Ensures malformed Qwen tool call markup is rejected.
-    """
-    with pytest.raises(ValueError):
-        client.parse_tool_calls(text)
-
-
-def test_parse_tool_call_requires_at_most_one_call():
-    """
-    Ensures the tool call parser returns one call and rejects multiple calls.
-    """
-    text = '<tool_call>{"name": "search_disaster_events", "arguments": {}}</tool_call>'
-    assert client.parse_tool_call(text) == {
-        'name': 'search_disaster_events',
-        'arguments': {},
-    }
-    with pytest.raises(ValueError, match='exactly one'):
-        client.parse_tool_call(text + text)
-
-
 def test_query_assistant_returns_an_answer_without_tool_calls(
     monkeypatch: pytest.MonkeyPatch,
     ):

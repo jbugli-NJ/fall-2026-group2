@@ -1,5 +1,5 @@
 """
-Expose NewsAPI and Neo4j queries as LLM tools.
+Expose Neo4j queries as LLM tools.
 """
 
 from __future__ import annotations
@@ -18,137 +18,12 @@ from pydantic import (
     model_validator,
 )
 import pycountry
-from requests import RequestException
 from neo4j import RoutingControl
 from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 
-from monty_tool.event_context import EventContext
-from monty_tool.news.query import build_news_query
-from monty_tool.news.retrieval import search_ranked_news
 from monty_tool.network.resources import get_graph_db_driver
 
 logger = logging.getLogger(__name__)
-
-
-class NewsArguments(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        strict=True,
-        str_strip_whitespace=True,
-    )
-
-    item_id: str = Field(min_length=1)
-    query: str = Field(min_length=1, max_length=500)
-
-
-class NewsTools:
-    def __init__(self, items: list[EventContext]):
-        if not 1 <= len(items) <= 10:
-            raise ValueError("Provide between 1 and 10 sample records.")
-
-        self.items = {item.item_id: item for item in items}
-
-        # This describes the tool to the model.
-        self.definitions = [{
-            "type": "function",
-            "function": {
-                "name": "search_event_news",
-                "description": (
-                    "Search news for one of the supplied Montandon records."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "item_id": {
-                            "type": "string",
-                            "enum": list(self.items),
-                        },
-                        "query": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 500,
-                            "description": (
-                                "English news search keywords based on the supplied "
-                                "event: hazard, location, and useful identifying details. "
-                                "Use AND/OR when helpful. Do not invent facts."
-                            ),
-                        },
-                    },
-                    "required": ["item_id", "query"],
-                    "additionalProperties": False,
-                },
-            },
-        }]
-
-
-    def execute(
-        self,
-        name: str,
-        arguments: dict[str, Any],
-        ) -> dict[str, Any]:
-        """
-        Validate a NewsAPI tool call and retrieve articles.
-        """
-        if name != "search_event_news":
-            return {
-                "status": "error",
-                "message": "Unknown tool name.",
-            }
-
-        try:
-            args = NewsArguments.model_validate(arguments)
-        except ValidationError:
-            return {
-                "status": "error",
-                "message": (
-                    "Supply item_id and a non-empty query of at most "
-                    "500 characters; no other arguments."
-                ),
-            }
-
-        item = self.items.get(args.item_id)
-
-        if item is None:
-            return {
-                "status": "error",
-                "message": "Unknown Montandon item_id.",
-            }
-
-        # Reuse the existing Montandon -> NewsQuery function.
-        query = build_news_query(
-            item,
-            search_query=args.query,
-        )
-
-        if query.from_date > query.to_date:
-            return {
-                "status": "error",
-                "message": "Invalid news date range.",
-            }
-
-        try:
-            # Rank candidates before selecting articles for the assistant.
-            result = search_ranked_news(query, event_context=item)
-
-        except RequestException as exc:
-            return {
-                "status": "error",
-                "message": (
-                    f"NewsAPI connection failed: {type(exc).__name__}"
-                ),
-            }
-
-        except (RuntimeError, ValueError) as exc:
-            return {
-                "status": "error",
-                "message": str(exc),
-            }
-
-        # Convert dates and nested Pydantic objects to JSON-compatible values.
-        return {
-            "status": "ok" if result.articles else "empty",
-            **result.model_dump(mode="json"),
-        }
 
 
 _OMIT_VALUE = object()
