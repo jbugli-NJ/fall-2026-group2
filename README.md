@@ -33,6 +33,11 @@ Other tools include:
 - [The AWS CLI](https://aws.amazon.com/cli/) to authenticate S3 bucket access
 - `python3.14-dev` (may be required for Ubuntu as a PyTorch dependency)
 
+### Bedrock authentication
+
+AWS SSO credentials can be used to access Bedrock automatically.
+Sonnet 4.5 (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`) is the whitelisted model ID.
+
 ### Neo4j
 
 This repository contains a [Docker compose](docker-compose.yml) file to set up a local Neo4j instance for testing.
