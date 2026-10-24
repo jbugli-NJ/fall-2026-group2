@@ -12,6 +12,7 @@ from importlib.resources import files
 import logging
 from pathlib import Path
 import re
+import subprocess
 from time import perf_counter
 
 from matplotlib.figure import Figure
@@ -37,6 +38,22 @@ _INPUT_MODULE = files('monty_tool.benchmarks.inputs')
 
 
 # Helpers
+
+def get_git_commit() -> str:
+    """
+    Identify the source checkout's commit, or report unavailable Git metadata.
+    """
+    try:
+        return subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=Path(__file__).resolve().parent,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        logger.warning('Git commit unavailable; recording unknown.')
+        return 'unknown'
+
 
 def build_parser() -> argparse.ArgumentParser:
     """
@@ -124,6 +141,7 @@ def render_report(
     total_questions: int,
     *,
     input_sha256: str,
+    git_commit: str,
     enable_external: bool = True,
     seed: int = SEED,
     ) -> str:
@@ -136,6 +154,7 @@ def render_report(
         f'Model revision: {model.revision}\n\nStart time (UTC): {started_at.isoformat()}',
         f'Random seed: {seed}',
         f'Input SHA-256: {input_sha256}',
+        f'Git commit: {git_commit}',
         '## Summary',
         f'- Questions completed: {len(outputs)} / {total_questions}\n'
         f'- Average score: {average:.2%}\n'
@@ -158,6 +177,7 @@ def append_summary(
     total_questions: int,
     *,
     input_sha256: str,
+    git_commit: str,
     enable_external: bool = True,
     seed: int = SEED,
     ):
@@ -169,6 +189,7 @@ def append_summary(
         'revision': model.revision,
         'seed': seed,
         'input_sha256': input_sha256,
+        'git_commit': git_commit,
         'started_at_utc': started_at.isoformat(),
         'questions_completed': len(outputs),
         'total_questions': total_questions,
@@ -233,6 +254,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     if args.limit is not None:
         benchmarks = benchmarks[:args.limit]
+    git_commit = get_git_commit()
 
     model_slug = re.sub(r'[^a-z0-9]+', '_', args.model.value.lower()).strip('_')
     if not args.enable_external:
@@ -257,6 +279,7 @@ def main(argv: list[str] | None = None) -> None:
             started_at=started_at,
             total_questions=len(benchmarks),
             input_sha256=input_sha256,
+            git_commit=git_commit,
             enable_external=args.enable_external,
             seed=seed,
         ), encoding='utf-8')
@@ -270,6 +293,7 @@ def main(argv: list[str] | None = None) -> None:
                 started_at=started_at,
                 total_questions=len(benchmarks),
                 input_sha256=input_sha256,
+                git_commit=git_commit,
                 enable_external=args.enable_external,
                 seed=seed,
             ), encoding='utf-8')
@@ -277,6 +301,7 @@ def main(argv: list[str] | None = None) -> None:
         append_summary(
             summary_path, args.model, outputs, started_at, len(benchmarks),
             input_sha256=input_sha256,
+            git_commit=git_commit,
             enable_external=args.enable_external,
             seed=seed,
         )
