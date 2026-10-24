@@ -38,6 +38,19 @@ Other tools include:
 AWS SSO credentials can be used to access Bedrock automatically.
 Sonnet 4.5 (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`) is the whitelisted model ID.
 
+### Fact retrieval benchmarks
+
+By default, each benchmark invocation evaluates all stored benchmark seeds.
+Use `--seed` to evaluate just one seed, for example:
+
+```bash
+uv run run-fact-benchmark --seed 2028 --input-json 20261008_news_synthesis.json
+```
+
+Results are saved under `benchmarks/<input name>/`.
+Each seed run writes a Markdown report under `reports/`, named `<model>_<timestamp>.md`.
+CSV summaries and plots stay in the input's results directory and record every seed run.
+
 ### Neo4j
 
 This repository contains a [Docker compose](docker-compose.yml) file to set up a local Neo4j instance for testing.
