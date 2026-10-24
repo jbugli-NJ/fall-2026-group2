@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import cast
 from unittest.mock import Mock
+from monty_tool.news import s3_storage
 
 import pytest
 
@@ -81,3 +82,38 @@ def test_list_news_snapshot_keys_selects_json_in_job_prefix() -> None:
 
     assert result == [prefix + "a.json", prefix + "b.json"]
     bucket.objects.filter.assert_called_once_with(Prefix=prefix)
+
+def test_list_media_cloud_snapshot_keys_uses_upload_prefix() -> None:
+    bucket = Mock()
+    prefix = "test-owner/media_cloud_articles/snapshots/"
+    bucket.objects.filter.return_value = [
+        SimpleNamespace(key=prefix + "b.json"),
+        SimpleNamespace(key=prefix + "notes.txt"),
+        SimpleNamespace(key=prefix + "a.json"),
+    ]
+
+    keys = s3_storage.list_media_cloud_snapshot_keys(
+        cast(S3Bucket, bucket), prefix="test-owner"
+    )
+
+    assert keys == [prefix + "a.json", prefix + "b.json"]
+    bucket.objects.filter.assert_called_once_with(Prefix=prefix)
+
+
+def test_iter_media_cloud_snapshots_downloads_and_reads(monkeypatch) -> None:
+    bucket = Mock()
+    key = "test-owner/media_cloud_articles/snapshots/one.json"
+    bucket.objects.filter.return_value = [SimpleNamespace(key=key)]
+    run = Mock()
+    read = Mock(return_value=run)
+    monkeypatch.setattr(s3_storage, "read_media_cloud_snapshot", read)
+
+    found = list(
+        s3_storage.iter_media_cloud_snapshots(
+            cast(S3Bucket, bucket), prefix="test-owner"
+        )
+    )
+
+    assert found == [(key, run)]
+    assert bucket.download_file.call_args.args[0] == key
+    read.assert_called_once()

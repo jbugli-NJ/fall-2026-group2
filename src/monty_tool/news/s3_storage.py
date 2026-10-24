@@ -237,3 +237,30 @@ def upload_media_cloud_snapshot(
 
     upload_object(bucket, snapshot, key)
     return key
+
+def list_media_cloud_snapshot_keys(
+    bucket: S3Bucket, *, prefix: str
+) -> list[str]:
+    """List Media Cloud snapshots under the same prefix used for upload."""
+    folder = prefix.strip().strip("/")
+    if not folder:
+        raise ValueError("An explicit S3 folder prefix is required.")
+
+    snapshot_prefix = f"{folder}/media_cloud_articles/snapshots/"
+    return sorted(
+        obj.key
+        for obj in bucket.objects.filter(Prefix=snapshot_prefix)
+        if obj.key.endswith(".json")
+    )
+
+
+def iter_media_cloud_snapshots(
+    bucket: S3Bucket, *, prefix: str
+) -> Iterator[tuple[str, "MediaCloudJobRun"]]:
+    """Download and validate Media Cloud snapshots one at a time."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "snapshot.json"
+
+        for key in list_media_cloud_snapshot_keys(bucket, prefix=prefix):
+            download_object(bucket, key, path)
+            yield key, read_media_cloud_snapshot(path)
