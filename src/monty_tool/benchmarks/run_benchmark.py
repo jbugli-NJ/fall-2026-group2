@@ -208,13 +208,10 @@ def append_summary(
         writer.writerow(row)
 
 
-def save_summary_plot(summary_path: Path) -> Path:
+def build_summary_plot(rows: list[dict[str, str]]) -> Figure:
     """
-    Plot each run's score against runtime, with a color per model configuration.
+    Build a scatterplot displaying score svs. runtime colored by model.
     """
-    with summary_path.open(encoding='utf-8', newline='') as file:
-        rows = list(csv.DictReader(file))
-
     figure = Figure(figsize=(11, 6), layout='constrained')
     axes = figure.subplots()
     for model in dict.fromkeys(row['model'] for row in rows):
@@ -233,14 +230,85 @@ def save_summary_plot(summary_path: Path) -> Path:
     axes.set_ylim(-0.05, 1.1)
     axes.margins(x=0.3)
     axes.grid(alpha=0.25)
+    return figure
+
+
+def save_summary_plot(summary_path: Path) -> Path:
+    """
+    Read the comparison CSV and save its figure alongside it.
+    """
+    with summary_path.open(encoding='utf-8', newline='') as file:
+        rows = list(csv.DictReader(file))
+    figure = build_summary_plot(rows)
     plot_path = summary_path.with_suffix('.svg')
     figure.savefig(plot_path)
     return plot_path
 
 
+def run_seed(
+    benchmarks: list[BenchmarkInput],
+    model: FrozenModel,
+    output_dir: Path,
+    *,
+    input_sha256: str,
+    git_commit: str,
+    seed: int,
+    enable_external: bool = True,
+    ) -> Path:
+    """
+    Evaluate one seed, updating its report and appending its summary row.
+    """
+    logger.info(f'Running benchmark with seed {seed}')
+    set_seed(seed)
+    assistant = QueryAssistant(model_id=model, enable_external=enable_external)
+    model_slug = re.sub(r'[^a-z0-9]+', '_', model.value.lower()).strip('_')
+    if not enable_external:
+        model_slug += '_core_only'
+    reports_dir = output_dir / 'reports'
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    started_at = datetime.now(timezone.utc)
+    timestamp = started_at.strftime('%Y%m%dT%H%M%S.%fZ')
+    output_path = reports_dir / f'{model_slug}_{timestamp}.md'
+    outputs: list[BenchmarkOutput] = []
+
+    def write_report() -> None:
+        """
+        Save progress using the same run metadata on every update.
+        """
+        output_path.write_text(render_report(
+            model=model,
+            outputs=outputs,
+            started_at=started_at,
+            total_questions=len(benchmarks),
+            input_sha256=input_sha256,
+            git_commit=git_commit,
+            enable_external=enable_external,
+            seed=seed,
+        ), encoding='utf-8')
+
+    write_report()
+    for number, benchmark in enumerate(benchmarks, start=1):
+        logger.info(f'Question {number}/{len(benchmarks)}: {benchmark.research_question}')
+        output = run_question(assistant, benchmark)
+        outputs.append(output)
+        write_report()
+        logger.info(f'Question {number} score: {output.score:.2%}')
+    summary_path = output_dir / 'summary.csv'
+    append_summary(
+        summary_path, model, outputs, started_at, len(benchmarks),
+        input_sha256=input_sha256,
+        git_commit=git_commit,
+        enable_external=enable_external,
+        seed=seed,
+    )
+    logger.info(f'Saved benchmark report: {output_path}')
+    logger.info(f'Appended benchmark summary: {summary_path}')
+    return output_path
+
+
 def main(argv: list[str] | None = None) -> None:
     """
-    Run benchmarks with selected seeds, saving reports and summary rows per run.
+    Load benchmark inputs, evaluate selected seeds, and save the comparison plot.
     """
     args = build_parser().parse_args(argv)
     input_file = _INPUT_MODULE.joinpath(args.input_json)
@@ -249,66 +317,21 @@ def main(argv: list[str] | None = None) -> None:
     logger.info(f"Detected input file: {input_file.name}")
     input_bytes = input_file.read_bytes()
     input_sha256 = sha256(input_bytes).hexdigest()
-    benchmarks = (
-        TypeAdapter(list[BenchmarkInput])
-        .validate_json(input_bytes)
-    )
+    benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(input_bytes)
     if args.limit is not None:
         benchmarks = benchmarks[:args.limit]
     git_commit = get_git_commit()
-
-    model_slug = re.sub(r'[^a-z0-9]+', '_', args.model.value.lower()).strip('_')
-    if not args.enable_external:
-        model_slug += '_core_only'
-    input_name = Path(input_file.name).stem
-    output_dir = Path('benchmarks', input_name)
-    reports_dir = output_dir / 'reports'
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    summary_path = output_dir / 'summary.csv'
+    output_dir = Path('benchmarks', Path(input_file.name).stem)
     seeds = BENCHMARK_SEEDS if args.seed is None else (args.seed,)
     for seed in seeds:
-        logger.info(f'Running benchmark with seed {seed}')
-        set_seed(seed)
-        assistant = QueryAssistant(model_id=args.model, enable_external=args.enable_external)
-        started_at = datetime.now(timezone.utc)
-        timestamp = started_at.strftime('%Y%m%dT%H%M%S.%fZ')
-        output_path = reports_dir / f'{model_slug}_{timestamp}.md'
-        outputs = []
-        output_path.write_text(render_report(
-            model=args.model,
-            outputs=outputs,
-            started_at=started_at,
-            total_questions=len(benchmarks),
-            input_sha256=input_sha256,
-            git_commit=git_commit,
-            enable_external=args.enable_external,
-            seed=seed,
-        ), encoding='utf-8')
-        for number, benchmark in enumerate(benchmarks, start=1):
-            logger.info(f'Question {number}/{len(benchmarks)}: {benchmark.research_question}')
-            output = run_question(assistant, benchmark)
-            outputs.append(output)
-            output_path.write_text(render_report(
-                model=args.model,
-                outputs=outputs,
-                started_at=started_at,
-                total_questions=len(benchmarks),
-                input_sha256=input_sha256,
-                git_commit=git_commit,
-                enable_external=args.enable_external,
-                seed=seed,
-            ), encoding='utf-8')
-            logger.info(f'Question {number} score: {output.score:.2%}')
-        append_summary(
-            summary_path, args.model, outputs, started_at, len(benchmarks),
+        run_seed(
+            benchmarks, args.model, output_dir,
             input_sha256=input_sha256,
             git_commit=git_commit,
             enable_external=args.enable_external,
             seed=seed,
         )
-        logger.info(f'Saved benchmark report: {output_path}')
-        logger.info(f'Appended benchmark summary: {summary_path}')
-    plot_path = save_summary_plot(summary_path)
+    plot_path = save_summary_plot(output_dir / 'summary.csv')
     logger.info(f'Saved benchmark plot: {plot_path}')
 
 

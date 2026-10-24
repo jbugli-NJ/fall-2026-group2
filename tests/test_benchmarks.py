@@ -10,7 +10,9 @@ from hashlib import sha256
 from importlib.resources import files
 from pathlib import Path
 import subprocess
+from unittest.mock import Mock
 
+import numpy as np
 from pydantic import TypeAdapter
 import pytest
 
@@ -28,6 +30,40 @@ _INPUT_TEXT = (
 )
 INPUTS = TypeAdapter(list[BenchmarkInput]).validate_json(_INPUT_TEXT)
 FIRST_INPUT =  INPUTS[0]
+INPUT_BYTES = TypeAdapter(list[BenchmarkInput]).dump_json([FIRST_INPUT]) + b'\r\n'
+GIT_COMMIT = 'a' * 40
+
+
+# Fixtures and helpers
+
+@pytest.fixture
+def benchmark_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """
+    Prepare local inputs and replace model inference for command-line tests.
+    """
+    input_dir = tmp_path / 'inputs'
+    input_dir.mkdir()
+    for name in ('20261006_demo', 'custom'):
+        (input_dir / f'{name}.json').write_bytes(INPUT_BYTES)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(run_benchmark, '_INPUT_MODULE', input_dir)
+    monkeypatch.setattr(run_benchmark, 'get_git_commit', lambda: GIT_COMMIT)
+    monkeypatch.setattr(run_benchmark, 'set_seed', lambda seed: None)
+    assistant = Mock(spec=run_benchmark.QueryAssistant)
+    assistant.ask.return_value = {
+        'answer': FIRST_INPUT.full_answer_substrings[0],
+        'tool_results': [],
+    }
+    monkeypatch.setattr(run_benchmark, 'QueryAssistant', Mock(return_value=assistant))
+    return tmp_path
+
+
+def read_summary(output_dir: Path) -> list[dict[str, str]]:
+    """
+    Read completed run metadata from an input's output directory.
+    """
+    with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
+        return list(csv.DictReader(file))
 
 
 # Tests
@@ -39,89 +75,97 @@ def test_benchmark_input_length():
     assert len(INPUTS) > 25
 
 
-def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize('core_only', [False, True])
+def test_main_saves_results_and_metadata(benchmark_workspace: Path, core_only: bool):
     """
-    Run every default seed and preserve timestamped reports for explicit reruns.
+    Save reports and comparison files under the selected input's directory.
     """
-    input_dir = tmp_path / 'inputs'
-    input_dir.mkdir()
-    input_text = TypeAdapter(list[BenchmarkInput]).dump_json([FIRST_INPUT]).decode()
-    input_bytes = (input_text + '\r\n').encode('utf-8')
-    expected_hash = sha256(input_bytes).hexdigest()
-    for name in ('20261006_demo', 'custom'):
-        (input_dir / f'{name}.json').write_bytes(input_bytes)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(run_benchmark, '_INPUT_MODULE', input_dir)
-    git_commit = 'a' * 40
-    monkeypatch.setattr(run_benchmark, 'get_git_commit', lambda: git_commit)
-    seeds = []
+    args = ['--input-json', 'custom.json', '--seed', str(SEED)]
+    if core_only:
+        args.append('--no-enable-external')
+    run_benchmark.main(args)
+
+    output_dir = benchmark_workspace / 'benchmarks' / 'custom'
+    report, = (output_dir / 'reports').glob('*.md')
+    text = report.read_text(encoding='utf-8')
+    model = FrozenModel.QWEN3_5_4B.value + (' (core only)' if core_only else '')
+    assert text.startswith(f'# Benchmark: {model}\n')
+    assert FIRST_INPUT.research_question in text
+    assert f'Random seed: {SEED}' in text
+    assert f'Input SHA-256: {sha256(INPUT_BYTES).hexdigest()}' in text
+    assert f'Git commit: {GIT_COMMIT}' in text
+    row, = read_summary(output_dir)
+    assert row['model'] == model
+    assert row['questions_completed'] == '1'
+    assert row['average_score'] == '1.0'
+    assert row['input_sha256'] == sha256(INPUT_BYTES).hexdigest()
+    assert row['git_commit'] == GIT_COMMIT
+    assert row['seed'] == str(SEED)
+    assert (output_dir / 'summary.svg').is_file()
+
+
+@pytest.mark.parametrize('args, expected_seeds', [
+    ([], list(BENCHMARK_SEEDS)),
+    (['--seed', '2028'], [2028]),
+])
+def test_main_seed_selection(
+    benchmark_workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+    expected_seeds: list[int],
+):
+    """
+    Run all seeds by default, or only the explicitly selected seed.
+    """
+    seeds: list[int] = []
     monkeypatch.setattr(run_benchmark, 'set_seed', seeds.append)
-    monkeypatch.setattr(run_benchmark, 'QueryAssistant', lambda **kwargs: None)
-    monkeypatch.setattr(run_benchmark, 'run_question', lambda assistant, benchmark: BenchmarkOutput(
-        benchmark_input=benchmark, score=1, duration_seconds=1,
-    ))
 
-    run_benchmark.main([])
-    run_benchmark.main(['--input-json', 'custom.json'])
+    run_benchmark.main(args)
 
-    for name in ('20261006_demo', 'custom'):
-        output_dir = tmp_path / 'benchmarks' / name
-        reports = list((output_dir / 'reports').glob('*.md'))
-        assert len(reports) == len(BENCHMARK_SEEDS)
-        assert not list(output_dir.glob('*.md'))
-        report_seeds = set()
-        for report in reports:
-            text = report.read_text(encoding='utf-8')
-            assert FIRST_INPUT.research_question in text
-            assert f'Input SHA-256: {expected_hash}' in text
-            assert f'Git commit: {git_commit}' in text
-            report_seeds.add(next(line for line in text.splitlines() if line.startswith('Random seed:')))
-            assert '_seed_' not in report.name
-            timestamp = report.stem.rsplit('_', 1)[1]
-            datetime.strptime(timestamp, '%Y%m%dT%H%M%S.%fZ')
-        assert report_seeds == {f'Random seed: {seed}' for seed in BENCHMARK_SEEDS}
-        with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
-            rows = list(csv.DictReader(file))
-        assert len(rows) == len(BENCHMARK_SEEDS)
-        assert all(row['questions_completed'] == '1' for row in rows)
-        assert all(row['input_sha256'] == expected_hash for row in rows)
-        assert all(row['git_commit'] == git_commit for row in rows)
-        assert [row['seed'] for row in rows] == list(map(str, BENCHMARK_SEEDS))
-        assert (output_dir / 'summary.svg').is_file()
-    assert not (tmp_path / 'benchmarks' / 'summary.csv').exists()
+    output_dir = benchmark_workspace / 'benchmarks' / '20261006_demo'
+    assert seeds == expected_seeds
+    assert [row['seed'] for row in read_summary(output_dir)] == [str(seed) for seed in expected_seeds]
+    assert len(list((output_dir / 'reports').glob('*.md'))) == len(expected_seeds)
 
-    run_benchmark.main(['--no-enable-external'])
-    output_dir = tmp_path / 'benchmarks' / '20261006_demo'
-    reports_dir = output_dir / 'reports'
-    report = next(reports_dir.glob('*_core_only_*.md'))
-    assert '(core only)' in report.read_text(encoding='utf-8').splitlines()[0]
-    assert len(list(reports_dir.glob('*.md'))) == 2 * len(BENCHMARK_SEEDS)
-    with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
-        rows = list(csv.DictReader(file))
-    assert len(rows) == 2 * len(BENCHMARK_SEEDS)
-    assert rows[len(BENCHMARK_SEEDS)]['model'] == rows[0]['model'] + ' (core only)'
 
-    for seed in BENCHMARK_SEEDS:
-        previous_reports = set(reports_dir.glob('*.md'))
-        run_benchmark.main(['--seed', str(seed)])
-        new_reports = set(reports_dir.glob('*.md')) - previous_reports
-        assert len(new_reports) == 1
-        report = new_reports.pop()
-        assert f'Random seed: {seed}' in report.read_text(encoding='utf-8')
-    assert len(list(reports_dir.glob('*.md'))) == 3 * len(BENCHMARK_SEEDS)
-    assert seeds == list(BENCHMARK_SEEDS) * 4
-    with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
-        rows = list(csv.DictReader(file))
-    assert [row['seed'] for row in rows] == list(map(str, BENCHMARK_SEEDS)) * 3
-    figure = run_benchmark.Figure()
-    monkeypatch.setattr(run_benchmark, 'Figure', lambda **kwargs: figure)
-    run_benchmark.save_summary_plot(output_dir / 'summary.csv')
+def test_main_preserves_reports_on_rerun(benchmark_workspace: Path):
+    """
+    Repeating a configuration creates another report without replacing earlier results.
+    """
+    run_benchmark.main(['--seed', str(SEED)])
+    output_dir = benchmark_workspace / 'benchmarks' / '20261006_demo'
+    original_report, = (output_dir / 'reports').glob('*.md')
+    original_text = original_report.read_text()
+
+    run_benchmark.main(['--seed', str(SEED)])
+
+    assert len(list((output_dir / 'reports').glob('*.md'))) == 2
+    assert original_report.read_text() == original_text
+    assert len(read_summary(output_dir)) == 2
+
+
+def test_summary_plot_groups_model_configurations():
+    """
+    Repeated runs share a color, with one legend entry per configuration.
+    """
+    model = 'Qwen/Qwen3.5-4B'
+    rows = [
+        {'model': model, 'total_seconds': '10', 'average_score': '0.5'},
+        {'model': model + ' (core only)', 'total_seconds': '20', 'average_score': '0.3'},
+        {'model': model, 'total_seconds': '12', 'average_score': '0.6'},
+    ]
+
+    figure = run_benchmark.build_summary_plot(rows)
+
     legend = figure.axes[0].get_legend()
     assert legend is not None
     assert legend.get_title().get_text() == 'Model configuration'
     assert [label.get_text() for label in legend.get_texts()] == [
-        rows[0]['model'], rows[0]['model'] + ' (core only)',
+        model, model + ' (core only)',
     ]
+    full, core_only = figure.axes[0].collections
+    assert not np.array_equal(full.get_facecolor(), core_only.get_facecolor())
+    assert not figure.axes[0].texts
 
 
 def test_get_git_commit_uses_source_checkout(monkeypatch: pytest.MonkeyPatch):
@@ -130,15 +174,15 @@ def test_get_git_commit_uses_source_checkout(monkeypatch: pytest.MonkeyPatch):
     """
     commit = 'b' * 40
 
-    def check_output(command, *, cwd, text, stderr):
-        assert command == ['git', 'rev-parse', 'HEAD']
-        assert cwd == Path(run_benchmark.__file__).resolve().parent
-        assert text is True
-        assert stderr == subprocess.DEVNULL
-        return commit + '\n'
-
+    check_output = Mock(return_value=commit + '\n')
     monkeypatch.setattr(run_benchmark.subprocess, 'check_output', check_output)
     assert run_benchmark.get_git_commit() == commit
+    check_output.assert_called_once_with(
+        ['git', 'rev-parse', 'HEAD'],
+        cwd=Path(run_benchmark.__file__).resolve().parent,
+        text=True,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 @pytest.mark.parametrize('error', [FileNotFoundError(), subprocess.CalledProcessError(128, 'git')])
@@ -146,10 +190,7 @@ def test_get_git_commit_unavailable(monkeypatch: pytest.MonkeyPatch, error: Exce
     """
     Allow benchmarks to run when Git or checkout metadata is unavailable.
     """
-    def check_output(*args, **kwargs):
-        raise error
-
-    monkeypatch.setattr(run_benchmark.subprocess, 'check_output', check_output)
+    monkeypatch.setattr(run_benchmark.subprocess, 'check_output', Mock(side_effect=error))
     assert run_benchmark.get_git_commit() == 'unknown'
 
 
