@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 from time import perf_counter
+from typing import Literal
 
 from matplotlib.figure import Figure
 from matplotlib.ticker import PercentFormatter
@@ -21,7 +22,7 @@ from pydantic import TypeAdapter
 from transformers import set_seed
 
 from monty_tool.benchmarks.schemas import BenchmarkInput, BenchmarkOutput
-from monty_tool.llm.client import QueryAssistant
+from monty_tool.llm.client import DEFAULT_BEDROCK_MODEL_ID, BedrockQueryAssistant, QueryAssistant
 from monty_tool.llm.schemas import QueryAssistantResponse
 from monty_tool.utils.versions import BENCHMARK_SEEDS, FrozenModel, SEED
 
@@ -35,9 +36,19 @@ logger.setLevel(level=logging.INFO)
 # Benchmark inputs
 
 _INPUT_MODULE = files('monty_tool.benchmarks.inputs')
+type BenchmarkModel = FrozenModel | Literal['bedrock']
 
 
 # Helpers
+
+def model_metadata(model: BenchmarkModel) -> tuple[str, str]:
+    """
+    Identify the evaluated model and its revision when available.
+    """
+    if isinstance(model, FrozenModel):
+        return model.value, model.revision
+    return DEFAULT_BEDROCK_MODEL_ID, 'not applicable'
+
 
 def get_git_commit() -> str:
     """
@@ -61,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        '--model', type=FrozenModel, choices=list(FrozenModel),
+        '--model', type=str, choices=[*FrozenModel, 'bedrock'],
         default=FrozenModel.QWEN3_5_4B,
         help='Model ID to evaluate (in the supported set)',
     )
@@ -107,7 +118,7 @@ def score_answer(benchmark: BenchmarkInput, answer: str) -> float:
 
 
 def run_question(
-    assistant: QueryAssistant,
+    assistant: QueryAssistant | BedrockQueryAssistant,
     benchmark: BenchmarkInput,
     ) -> BenchmarkOutput:
     """
@@ -135,7 +146,7 @@ def run_question(
 
 
 def render_report(
-    model: FrozenModel,
+    model: BenchmarkModel,
     outputs: list[BenchmarkOutput],
     started_at: datetime,
     total_questions: int,
@@ -149,9 +160,10 @@ def render_report(
     Build a markdown report with summary stats and all question outputs.
     """
     average = sum(output.score for output in outputs) / len(outputs) if outputs else 0.0
+    model_id, revision = model_metadata(model)
     sections = [
-        f'# Benchmark: {model.value}' + ('' if enable_external else ' (core only)'),
-        f'Model revision: {model.revision}\n\nStart time (UTC): {started_at.isoformat()}',
+        f'# Benchmark: {model_id}' + ('' if enable_external else ' (core only)'),
+        f'Model revision: {revision}\n\nStart time (UTC): {started_at.isoformat()}',
         f'Random seed: {seed}',
         f'Input SHA-256: {input_sha256}',
         f'Git commit: {git_commit}',
@@ -171,7 +183,7 @@ def render_report(
 
 def append_summary(
     path: Path,
-    model: FrozenModel,
+    model: BenchmarkModel,
     outputs: list[BenchmarkOutput],
     started_at: datetime,
     total_questions: int,
@@ -184,9 +196,10 @@ def append_summary(
     """
     Append one run's aggregate statistics to a CSV covering all runs.
     """
+    model_id, revision = model_metadata(model)
     row = {
-        'model': model.value + ('' if enable_external else ' (core only)'),
-        'revision': model.revision,
+        'model': model_id + ('' if enable_external else ' (core only)'),
+        'revision': revision,
         'seed': seed,
         'input_sha256': input_sha256,
         'git_commit': git_commit,
@@ -247,7 +260,7 @@ def save_summary_plot(summary_path: Path) -> Path:
 
 def run_seed(
     benchmarks: list[BenchmarkInput],
-    model: FrozenModel,
+    model: BenchmarkModel,
     output_dir: Path,
     *,
     input_sha256: str,
@@ -260,8 +273,12 @@ def run_seed(
     """
     logger.info(f'Running benchmark with seed {seed}')
     set_seed(seed)
-    assistant = QueryAssistant(model_id=model, enable_external=enable_external)
-    model_slug = re.sub(r'[^a-z0-9]+', '_', model.value.lower()).strip('_')
+    if isinstance(model, FrozenModel):
+        assistant = QueryAssistant(model_id=model, enable_external=enable_external)
+        model_slug = re.sub(r'[^a-z0-9]+', '_', model.value.lower()).strip('_')
+    else:
+        assistant = BedrockQueryAssistant(enable_external=enable_external)
+        model_slug = 'bedrock'
     if not enable_external:
         model_slug += '_core_only'
     reports_dir = output_dir / 'reports'
@@ -311,6 +328,7 @@ def main(argv: list[str] | None = None) -> None:
     Load benchmark inputs, evaluate selected seeds, and save the comparison plot.
     """
     args = build_parser().parse_args(argv)
+    model: BenchmarkModel = 'bedrock' if args.model == 'bedrock' else FrozenModel(args.model)
     input_file = _INPUT_MODULE.joinpath(args.input_json)
     if not input_file.is_file():
         raise ValueError(f"Selected input not detected: {input_file.name}")
@@ -325,7 +343,7 @@ def main(argv: list[str] | None = None) -> None:
     seeds = BENCHMARK_SEEDS if args.seed is None else (args.seed,)
     for seed in seeds:
         run_seed(
-            benchmarks, args.model, output_dir,
+            benchmarks, model, output_dir,
             input_sha256=input_sha256,
             git_commit=git_commit,
             enable_external=args.enable_external,
