@@ -21,7 +21,7 @@ from transformers import set_seed
 from monty_tool.benchmarks.schemas import BenchmarkInput, BenchmarkOutput
 from monty_tool.llm.client import QueryAssistant
 from monty_tool.llm.schemas import QueryAssistantResponse
-from monty_tool.utils.versions import FrozenModel, SEED
+from monty_tool.utils.versions import BENCHMARK_SEEDS, FrozenModel, SEED
 
 
 # Logging
@@ -39,13 +39,20 @@ _INPUT_MODULE = files('monty_tool.benchmarks.inputs')
 
 def build_parser() -> argparse.ArgumentParser:
     """
-    Define model selection and optional benchmark size controls.
+    Define model and seed selection and optional benchmark size controls.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         '--model', type=FrozenModel, choices=list(FrozenModel),
         default=FrozenModel.QWEN3_5_4B,
         help='Model ID to evaluate (in the supported set)',
+    )
+    parser.add_argument(
+        '--seed', type=int, choices=BENCHMARK_SEEDS,
+        help=(
+            'Run a seed available in the whitelisted set. '
+            'Defaults to running all benchmark seeds. '
+        ),
     )
     parser.add_argument(
         '--input-json', type=str,
@@ -116,6 +123,7 @@ def render_report(
     total_questions: int,
     *,
     enable_external: bool = True,
+    seed: int = SEED,
     ) -> str:
     """
     Build a markdown report with summary stats and all question outputs.
@@ -124,6 +132,7 @@ def render_report(
     sections = [
         f'# Benchmark: {model.value}' + ('' if enable_external else ' (core only)'),
         f'Model revision: {model.revision}\n\nStart time (UTC): {started_at.isoformat()}',
+        f'Random seed: {seed}',
         '## Summary',
         f'- Questions completed: {len(outputs)} / {total_questions}\n'
         f'- Average score: {average:.2%}\n'
@@ -146,6 +155,7 @@ def append_summary(
     total_questions: int,
     *,
     enable_external: bool = True,
+    seed: int = SEED,
     ):
     """
     Append one run's aggregate statistics to a CSV covering all runs.
@@ -153,6 +163,7 @@ def append_summary(
     row = {
         'model': model.value + ('' if enable_external else ' (core only)'),
         'revision': model.revision,
+        'seed': seed,
         'started_at_utc': started_at.isoformat(),
         'questions_completed': len(outputs),
         'total_questions': total_questions,
@@ -185,7 +196,7 @@ def save_summary_plot(summary_path: Path) -> Path:
     axes.scatter(durations, scores)
     for row, duration, score in zip(rows, durations, scores):
         axes.annotate(
-            row['model'], (duration, score),
+            f"{row['model']} (seed {row['seed']})", (duration, score),
             xytext=(6, 6), textcoords='offset points', fontsize=9,
         )
     axes.set_title('Fact retrieval benchmark')
@@ -202,7 +213,7 @@ def save_summary_plot(summary_path: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> None:
     """
-    Save a model-specific report and append this run to the comparison CSV.
+    Run benchmarks with selected seeds, saving reports and summary rows per run.
     """
     args = build_parser().parse_args(argv)
     input_file = _INPUT_MODULE.joinpath(args.input_json)
@@ -216,36 +227,52 @@ def main(argv: list[str] | None = None) -> None:
     if args.limit is not None:
         benchmarks = benchmarks[:args.limit]
 
-    set_seed(SEED)
-    assistant = QueryAssistant(model_id=args.model, enable_external=args.enable_external)
     model_slug = re.sub(r'[^a-z0-9]+', '_', args.model.value.lower()).strip('_')
     if not args.enable_external:
         model_slug += '_core_only'
     input_name = Path(input_file.name).stem
-    output_path = Path('benchmarks', input_name, f'{model_slug}.md')
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    started_at = datetime.now(timezone.utc)
-    outputs = []
-    for number, benchmark in enumerate(benchmarks, start=1):
-        logger.info(f'Question {number}/{len(benchmarks)}: {benchmark.research_question}')
-        output = run_question(assistant, benchmark)
-        outputs.append(output)
+    output_dir = Path('benchmarks', input_name)
+    reports_dir = output_dir / 'reports'
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = output_dir / 'summary.csv'
+    seeds = BENCHMARK_SEEDS if args.seed is None else (args.seed,)
+    for seed in seeds:
+        logger.info(f'Running benchmark with seed {seed}')
+        set_seed(seed)
+        assistant = QueryAssistant(model_id=args.model, enable_external=args.enable_external)
+        started_at = datetime.now(timezone.utc)
+        timestamp = started_at.strftime('%Y%m%dT%H%M%S.%fZ')
+        output_path = reports_dir / f'{model_slug}_{timestamp}.md'
+        outputs = []
         output_path.write_text(render_report(
             model=args.model,
             outputs=outputs,
             started_at=started_at,
             total_questions=len(benchmarks),
             enable_external=args.enable_external,
+            seed=seed,
         ), encoding='utf-8')
-        logger.info(f'Question {number} qcore: {output.score:.2%}')
-    summary_path = output_path.parent / 'summary.csv'
-    append_summary(
-        summary_path, args.model, outputs, started_at, len(benchmarks),
-        enable_external=args.enable_external,
-    )
+        for number, benchmark in enumerate(benchmarks, start=1):
+            logger.info(f'Question {number}/{len(benchmarks)}: {benchmark.research_question}')
+            output = run_question(assistant, benchmark)
+            outputs.append(output)
+            output_path.write_text(render_report(
+                model=args.model,
+                outputs=outputs,
+                started_at=started_at,
+                total_questions=len(benchmarks),
+                enable_external=args.enable_external,
+                seed=seed,
+            ), encoding='utf-8')
+            logger.info(f'Question {number} score: {output.score:.2%}')
+        append_summary(
+            summary_path, args.model, outputs, started_at, len(benchmarks),
+            enable_external=args.enable_external,
+            seed=seed,
+        )
+        logger.info(f'Saved benchmark report: {output_path}')
+        logger.info(f'Appended benchmark summary: {summary_path}')
     plot_path = save_summary_plot(summary_path)
-    logger.info(f'Saved benchmark report: {output_path}')
-    logger.info(f'Appended benchmark summary: {summary_path}')
     logger.info(f'Saved benchmark plot: {plot_path}')
 
 

@@ -14,7 +14,7 @@ import pytest
 
 from monty_tool.benchmarks.schemas import BenchmarkInput, BenchmarkOutput
 from monty_tool.benchmarks import run_benchmark
-from monty_tool.utils.versions import FrozenModel
+from monty_tool.utils.versions import BENCHMARK_SEEDS, FrozenModel, SEED
 
 
 # Benchmark inputs
@@ -39,7 +39,7 @@ def test_benchmark_input_length():
 
 def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """
-    Confirm that benchmark outputs are saved in dedicated folders.
+    Run every default seed and preserve timestamped reports for explicit reruns.
     """
     input_dir = tmp_path / 'inputs'
     input_dir.mkdir()
@@ -48,7 +48,8 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
         (input_dir / f'{name}.json').write_text(input_text, encoding='utf-8')
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(run_benchmark, '_INPUT_MODULE', input_dir)
-    monkeypatch.setattr(run_benchmark, 'set_seed', lambda seed: None)
+    seeds = []
+    monkeypatch.setattr(run_benchmark, 'set_seed', seeds.append)
     monkeypatch.setattr(run_benchmark, 'QueryAssistant', lambda **kwargs: None)
     monkeypatch.setattr(run_benchmark, 'run_question', lambda assistant, benchmark: BenchmarkOutput(
         benchmark_input=benchmark, score=1, duration_seconds=1,
@@ -59,25 +60,61 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
 
     for name in ('20261006_demo', 'custom'):
         output_dir = tmp_path / 'benchmarks' / name
-        reports = list(output_dir.glob('*.md'))
-        assert len(reports) == 1
-        assert FIRST_INPUT.research_question in reports[0].read_text(encoding='utf-8')
+        reports = list((output_dir / 'reports').glob('*.md'))
+        assert len(reports) == len(BENCHMARK_SEEDS)
+        assert not list(output_dir.glob('*.md'))
+        report_seeds = set()
+        for report in reports:
+            text = report.read_text(encoding='utf-8')
+            assert FIRST_INPUT.research_question in text
+            report_seeds.add(next(line for line in text.splitlines() if line.startswith('Random seed:')))
+            assert '_seed_' not in report.name
+            timestamp = report.stem.rsplit('_', 1)[1]
+            datetime.strptime(timestamp, '%Y%m%dT%H%M%S.%fZ')
+        assert report_seeds == {f'Random seed: {seed}' for seed in BENCHMARK_SEEDS}
         with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
             rows = list(csv.DictReader(file))
-        assert len(rows) == 1
-        assert rows[0]['questions_completed'] == '1'
+        assert len(rows) == len(BENCHMARK_SEEDS)
+        assert all(row['questions_completed'] == '1' for row in rows)
+        assert [row['seed'] for row in rows] == list(map(str, BENCHMARK_SEEDS))
         assert (output_dir / 'summary.svg').is_file()
     assert not (tmp_path / 'benchmarks' / 'summary.csv').exists()
 
     run_benchmark.main(['--no-enable-external'])
     output_dir = tmp_path / 'benchmarks' / '20261006_demo'
-    report = next(output_dir.glob('*_core_only.md'))
+    reports_dir = output_dir / 'reports'
+    report = next(reports_dir.glob('*_core_only_*.md'))
     assert '(core only)' in report.read_text(encoding='utf-8').splitlines()[0]
-    assert len(list(output_dir.glob('*.md'))) == 2
+    assert len(list(reports_dir.glob('*.md'))) == 2 * len(BENCHMARK_SEEDS)
     with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
         rows = list(csv.DictReader(file))
-    assert len(rows) == 2
-    assert rows[1]['model'] == rows[0]['model'] + ' (core only)'
+    assert len(rows) == 2 * len(BENCHMARK_SEEDS)
+    assert rows[len(BENCHMARK_SEEDS)]['model'] == rows[0]['model'] + ' (core only)'
+
+    for seed in BENCHMARK_SEEDS:
+        previous_reports = set(reports_dir.glob('*.md'))
+        run_benchmark.main(['--seed', str(seed)])
+        new_reports = set(reports_dir.glob('*.md')) - previous_reports
+        assert len(new_reports) == 1
+        report = new_reports.pop()
+        assert f'Random seed: {seed}' in report.read_text(encoding='utf-8')
+    assert len(list(reports_dir.glob('*.md'))) == 3 * len(BENCHMARK_SEEDS)
+    assert seeds == list(BENCHMARK_SEEDS) * 4
+    with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
+        rows = list(csv.DictReader(file))
+    assert [row['seed'] for row in rows] == list(map(str, BENCHMARK_SEEDS)) * 3
+    plot = (output_dir / 'summary.svg').read_text(encoding='utf-8')
+    assert 'seed 2028' in plot
+    assert 'seed 2030' in plot
+
+
+def test_parser_rejects_unsupported_seed():
+    """
+    Reject seeds outside the supported reproducible benchmark set.
+    """
+    with pytest.raises(SystemExit) as error:
+        run_benchmark.build_parser().parse_args(['--seed', '2027'])
+    assert error.value.code == 2
 
 
 def test_scoring():
@@ -171,6 +208,7 @@ def test_summary_appends_runs(tmp_path: Path):
     assert rows[0] == {
         'model': model.value,
         'revision': model.revision,
+        'seed': str(SEED),
         'started_at_utc': started_at.isoformat(),
         'questions_completed': '3',
         'total_questions': '3',
