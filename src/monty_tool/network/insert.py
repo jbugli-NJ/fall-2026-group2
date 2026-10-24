@@ -33,7 +33,7 @@ from monty_tool.network.schemas import (
     GOAppealNodeData,
     GOEventNodeData,
     MontandonItemNodeData,
-    NewsArticleInsertData,
+    MediaCloudArticleInsertData,
 )
 
 
@@ -260,10 +260,12 @@ def insert_go_records_into_graph_db(
         insert_go_appeal_nodes(driver, appeal_data)
         insert_go_appeal_links(driver, appeal_data)
 
-def insert_news_articles(
-    driver: Driver, node_data: list[NewsArticleInsertData]
+
+def insert_media_cloud_articles(
+    driver: Driver,
+    node_data: list[MediaCloudArticleInsertData],
 ) -> int:
-    """Link news candidates to existing events without creating new events."""
+    """Link classified Media Cloud articles to existing events."""
     if not node_data:
         return 0
 
@@ -291,19 +293,44 @@ def insert_news_articles(
             MATCH (event:Event {id: item.event_id})
             MERGE (article:NewsArticle {url: item.url})
             SET article.title = item.title,
-                article.description = item.description,
-                article.source_id = item.source_id,
                 article.source_name = item.source_name,
-                article.published_at = item.published_at
-            MERGE (article)-[link:RETRIEVED_FOR]->(event)
-            SET link.snapshot_s3_uris =
-                CASE
-                    WHEN link.snapshot_s3_uris IS NULL
-                    THEN [item.snapshot_s3_uri]
-                    WHEN item.snapshot_s3_uri IN link.snapshot_s3_uris
-                    THEN link.snapshot_s3_uris
-                    ELSE link.snapshot_s3_uris + item.snapshot_s3_uri
-                END
+                article.published_at = item.published_at,
+                article.body_text = item.body_text,
+                article.media_cloud_story_id = item.story_id
+
+            FOREACH (_ IN CASE
+                WHEN item.relationship_type = 'VERIFIED_FOR' THEN [1]
+                ELSE []
+            END |
+                MERGE (article)-[verified:VERIFIED_FOR]->(event)
+                SET verified.decision_reason = item.decision_reason,
+                    verified.evidence_excerpt = item.evidence_excerpt,
+                    verified.snapshot_s3_uris =
+                        CASE
+                            WHEN verified.snapshot_s3_uris IS NULL
+                            THEN [item.snapshot_s3_uri]
+                            WHEN item.snapshot_s3_uri IN verified.snapshot_s3_uris
+                            THEN verified.snapshot_s3_uris
+                            ELSE verified.snapshot_s3_uris + item.snapshot_s3_uri
+                        END
+            )
+
+            FOREACH (_ IN CASE
+                WHEN item.relationship_type = 'CONTEXT_FOR' THEN [1]
+                ELSE []
+            END |
+                MERGE (article)-[context:CONTEXT_FOR]->(event)
+                SET context.decision_reason = item.decision_reason,
+                    context.evidence_excerpt = item.evidence_excerpt,
+                    context.snapshot_s3_uris =
+                        CASE
+                            WHEN context.snapshot_s3_uris IS NULL
+                            THEN [item.snapshot_s3_uri]
+                            WHEN item.snapshot_s3_uri IN context.snapshot_s3_uris
+                            THEN context.snapshot_s3_uris
+                            ELSE context.snapshot_s3_uris + item.snapshot_s3_uri
+                        END
+            )
             RETURN count(item) AS processed
             """,
             items=node_data,

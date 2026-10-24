@@ -171,27 +171,6 @@ class AppealSearchArguments(GraphSearchArguments):
     disaster_type: str | None = Field(default=None, min_length=1, max_length=100)
     text: str | None = Field(default=None, min_length=1, max_length=200)
 
-
-class QueryNewsArguments(BaseModel):
-    """
-    Arguments accepted by the direct NewsAPI tool.
-    """
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    query: str = Field(min_length=1, max_length=500)
-    from_date: date
-    to_date: date
-    location: str | None = Field(default=None, min_length=1, max_length=100)
-
-    @model_validator(mode="after")
-    def validate_date_range(self) -> QueryNewsArguments:
-        """
-        Require the NewsAPI date range to run forward in time.
-        """
-        if self.from_date > self.to_date:
-            raise ValueError("from_date must be on or before to_date.")
-        return self
-
-
 def _json_value(value: Any) -> Any:
     """
     Convert Neo4j outputs into JSON, stripping embeddings.
@@ -436,9 +415,9 @@ class QueryTools:
                 "function": {
                     "name": "get_event_news",
                     "description": (
-                        "Get saved NewsAPI article candidates retrieved for an "
-                        "existing disaster event by event_id. These are search "
-                        "results, not verified reports about the event."
+                         "Get saved Media Cloud articles linked to an existing disaster event. "
+                         "VERIFIED_FOR means classified as covering the event; CONTEXT_FOR "
+                        "provides related background and is not direct event evidence."
                     ),
                     "parameters": {
                         "type": "object",

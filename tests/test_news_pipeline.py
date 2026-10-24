@@ -1,38 +1,32 @@
 """Offline tests for disaster selection in the news pipeline."""
 
 from copy import deepcopy
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
+import json
+from pathlib import Path
 from typing import Any
+from typing import cast
+from unittest.mock import Mock
 
 import pytest
 
 from monty_tool.event_context import build_event_context
 from monty_tool.news import query as news_query_module
-from monty_tool.news.pipeline import (prepare_news_jobs, select_disaster_records,)
-
-import json
-from unittest.mock import Mock
-from requests.exceptions import Timeout
-
-from monty_tool import news_api
+from monty_tool.news.pipeline import (
+    prepare_media_cloud_jobs,
+    select_disaster_records,
+)
+from monty_tool.news.schemas import MediaCloudPage, MediaCloudStory
 from monty_tool.news import collector
-from monty_tool.news.pipeline import NewsCollectionJob
-from monty_tool.news.schemas import NewsArticle, NewsQuery, NewsSearchResult
-from monty_tool.news.history import load_recent_snapshots, news_job_key
 from monty_tool.news import runner
-from monty_tool.news import cli
-from pathlib import Path
-from typing import cast
+from monty_tool.news import verification
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.news.s3_storage import (
-    download_news_snapshot,
-    news_snapshot_key,
-    upload_news_snapshot,
-    read_news_snapshot,
-    iter_news_snapshots,
+    save_media_cloud_snapshot,
+    read_media_cloud_snapshot,
+    upload_media_cloud_snapshot,
 )
-from monty_tool.network.node_data import news_result_to_node_data
 
 def make_record(
     item_id: str,
@@ -205,1122 +199,465 @@ def fixed_news_today(monkeypatch):
     monkeypatch.setattr(news_query_module, "date", FixedDate)
 
 
-def test_prepare_jobs_preserves_event_and_builds_query(fixed_news_today):
-    event = build_event_context(make_record("event-a", source_id="a"))
-    original = event.model_dump()
-
-    jobs = prepare_news_jobs([event])
-
-    assert len(jobs) == 1
-    assert jobs[0].event.model_dump() == original
-    assert jobs[0].query.item_id == "event-a"
-    assert jobs[0].query.query == "Earthquake AND Japan"
-    assert jobs[0].query.search_in == "title,description"
-    assert jobs[0].query.from_date == date(2026, 9, 9)
-    assert jobs[0].query.to_date == date(2026, 9, 13)
-    assert event.model_dump() == original
-
-
-@pytest.mark.parametrize(
-    ("hazards", "countries", "expected"),
-    [
-        (["GH0101"], ["NPL"], "Earthquake AND Nepal"),
-        (["EQ"], ["USA"], 'Earthquake AND "United States"'),
-        (["EN0205"], ["COD", "ZMB", "COD"], "Wildfires AND (Congo OR Zambia)"),
-    ],
-)
-def test_constructed_search(collection_job, hazards, countries, expected):
-    event = collection_job.event
-    event.hazard_codes = hazards
-    event.country_codes = countries
-
-    query = news_query_module.build_news_query(event)
-
-    assert query.query == expected
-    assert query.search_in == "title,description"
-
-
-def test_query_override_is_scoped_to_collection_and_id(fixed_news_today):
-    events = [
-        build_event_context(make_record(
-            "same-id", source_id="a", collection="gdacs-events",
-        )),
-        build_event_context(make_record(
-            "same-id", source_id="a", collection="emdat-events",
-        )),
-    ]
-
-    jobs = prepare_news_jobs(
-        events,
-        query_overrides={
-            ("gdacs-events", "same-id"): "Japan AND earthquake",
-        },
-    )
-
-    queries = {
-        job.event.collection: job.query.query
-        for job in jobs
-    }
-    assert queries == {
-        "gdacs-events": "Japan AND earthquake",
-        "emdat-events": "Earthquake AND Japan",
-    }
-
-
-@pytest.mark.parametrize(
-    ("days_before", "days_after", "expected_start", "expected_end"),
-    [
-        (0, 0, date(2026, 9, 10), date(2026, 9, 10)),
-        (2, 4, date(2026, 9, 8), date(2026, 9, 14)),
-    ],
-)
-def test_custom_search_window(
-    fixed_news_today,
-    days_before,
-    days_after,
-    expected_start,
-    expected_end,
-):
+def test_media_cloud_query_dates_and_terms(fixed_news_today):
     event = build_event_context(make_record("event-a", source_id="a"))
 
-    job = prepare_news_jobs(
-        [event],
-        days_before=days_before,
-        days_after=days_after,
-    )[0]
+    query = news_query_module.build_media_cloud_query(event)
 
-    assert job.query.from_date == expected_start
-    assert job.query.to_date == expected_end
+    assert query.query == "Earthquake AND Japan AND language:en"
+    assert query.from_date == date(2026, 9, 9)
+    assert query.to_date == date(2026, 9, 13)
 
 
-def test_search_end_is_capped_at_today(fixed_news_today):
-    event = build_event_context(
-        make_record("event-a", source_id="a", day=29)
-    )
-
-    job = prepare_news_jobs([event])[0]
-
-    assert job.query.from_date == date(2026, 9, 28)
-    assert job.query.to_date == date(2026, 9, 29)
-
-
-@pytest.mark.parametrize(
-    ("name", "value"),
-    [
-        ("days_before", -1),
-        ("days_before", True),
-        ("days_before", 1.5),
-        ("days_after", -1),
-        ("days_after", True),
-        ("days_after", 1.5),
-    ],
-)
-def test_invalid_day_settings_are_rejected(name, value):
-    with pytest.raises(ValueError, match=name):
-        prepare_news_jobs([], **{name: value})
-
-
-@pytest.mark.parametrize("query_text", ["", "   ", "x" * 501])
-def test_invalid_query_override_is_rejected(fixed_news_today, query_text):
+def test_media_cloud_query_rejects_blank_override(fixed_news_today):
     event = build_event_context(make_record("event-a", source_id="a"))
 
     with pytest.raises(ValueError, match="Search query"):
-        prepare_news_jobs(
-            [event],
-            query_overrides={
-                ("gdacs-events", "event-a"): query_text,
-            },
+        news_query_module.build_media_cloud_query(event, search_query="   ")
+
+def test_prepare_media_cloud_jobs_records_search_scope(fixed_news_today):
+    event = build_event_context(make_record("event-a", source_id="a"))
+
+    jobs = prepare_media_cloud_jobs(
+        [event],
+        collection_ids=[456, 123, 456],
+    )
+
+    assert len(jobs) == 1
+    assert jobs[0].event.model_dump() == event.model_dump()
+    assert jobs[0].collection_ids == (123, 456)
+    assert jobs[0].query.query == "Earthquake AND Japan AND language:en"
+    assert jobs[0].query.from_date == date(2026, 9, 9)
+    assert jobs[0].query.to_date == date(2026, 9, 13)
+
+def test_media_cloud_query_can_search_title_only(fixed_news_today):
+    event = build_event_context(make_record("event-a", source_id="a"))
+
+    query = news_query_module.build_media_cloud_query(event, title_only=True)
+
+    assert query.query == (
+        "article_title:Earthquake AND article_title:Japan AND language:en")
+
+def test_prepare_media_cloud_jobs_rejects_missing_collections():
+    with pytest.raises(ValueError, match="collection_ids"):
+        prepare_media_cloud_jobs([], collection_ids=[])
+
+def test_media_cloud_collector_pages_and_deduplicates(monkeypatch):
+    event = build_event_context(make_record("event", source_id="event"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+
+    search = Mock(
+        side_effect=[
+            MediaCloudPage(
+                stories=[
+                    MediaCloudStory(id=1, url="https://example.com/one"),
+                    MediaCloudStory(id=2, url="https://example.com/two"),
+                ],
+                pagination_token="next",
+            ),
+            MediaCloudPage(
+                stories=[
+                    MediaCloudStory(id=2, url="https://example.com/two"),
+                    MediaCloudStory(id=3, url="https://example.com/three"),
+                ],
+                pagination_token="more",
+            ),
+        ]
+    )
+    monkeypatch.setattr(collector.media_cloud_api, "search_media_cloud_page", search)
+
+    result = collector.collect_media_cloud_candidates(
+        job, max_pages=2, page_interval_seconds=0
+    )
+
+    assert [story.id for story in result.stories] == [1, 2, 3]
+    assert result.pages_fetched == 2
+    assert result.duplicates_removed == 1
+    assert result.next_page_token == "more"
+    assert search.call_args_list[1].kwargs["pagination_token"] == "next"
+
+
+def test_media_cloud_collector_stops_when_no_next_page(monkeypatch):
+    event = build_event_context(make_record("event", source_id="event"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+
+    search = Mock(
+        return_value=MediaCloudPage(
+            stories=[MediaCloudStory(id=1, url="https://example.com/one")],
+            pagination_token=None,
+        )
+    )
+    monkeypatch.setattr(collector.media_cloud_api, "search_media_cloud_page", search)
+
+    result = collector.collect_media_cloud_candidates(
+        job, max_pages=5, page_interval_seconds=0
+    )
+
+    assert result.pages_fetched == 1
+    assert result.next_page_token is None
+    search.assert_called_once()
+
+def test_media_cloud_evidence_keeps_all_candidates(monkeypatch):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+    batch = collector.MediaCloudCandidateBatch(
+        stories=[
+            MediaCloudStory(id=1, url=None),
+            MediaCloudStory(id=2, url="https://example.com/two"),
+            MediaCloudStory(id=3, url="https://example.com/three"),
+            MediaCloudStory(id=4, url="https://example.com/four"),
+        ],
+        pages_fetched=1,
+        next_page_token=None,
+        duplicates_removed=0,
+    )
+
+    fetch = Mock(
+        side_effect=[
+            ("<html>article</html>", "https://example.com/two"),
+            None,
+        ]
+    )
+    extract = Mock(return_value="Publisher article text")
+    monkeypatch.setattr(runner, "fetch_publisher_html", fetch)
+    monkeypatch.setattr(runner, "extract_publisher_body", extract)
+
+    evidence = runner.gather_media_cloud_evidence(
+        job, batch, max_body_attempts=2
+    )
+
+    assert len(evidence) == 4
+    assert [item.body_status for item in evidence] == [
+        "missing_url",
+        "body_available",
+        "html_unavailable",
+        "not_attempted",
+    ]
+    assert [item.story.id for item in evidence] == [1, 2, 3, 4]
+    assert all(item.event_id == "event-a" for item in evidence)
+    assert evidence[1].body_text == "Publisher article text"
+    assert "body_text" not in evidence[1].model_dump()
+    assert fetch.call_count == 2
+    extract.assert_called_once_with(
+        "<html>article</html>", url="https://example.com/two"
+    )
+
+
+def test_media_cloud_evidence_keeps_candidate_when_body_extraction_fails(
+    monkeypatch,
+):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+    batch = collector.MediaCloudCandidateBatch(
+        stories=[MediaCloudStory(id=1, url="https://example.com/one")],
+        pages_fetched=1,
+        next_page_token=None,
+        duplicates_removed=0,
+    )
+
+    monkeypatch.setattr(
+        runner,
+        "fetch_publisher_html",
+        Mock(return_value=("<html></html>", "https://example.com/one")),
+    )
+    monkeypatch.setattr(
+        runner, "extract_publisher_body", Mock(return_value=None)
+    )
+
+    evidence = runner.gather_media_cloud_evidence(
+        job, batch, max_body_attempts=1
+    )
+
+    assert len(evidence) == 1
+    assert evidence[0].body_status == "body_unavailable"
+    assert evidence[0].story.url == "https://example.com/one"
+
+
+def test_media_cloud_verification_requires_body_and_real_excerpt():
+    event = build_event_context(make_record("event-a", source_id="a"))
+    candidate = runner.MediaCloudCandidateEvidence(
+        event_id=event.item_id,
+        event_collection=event.collection,
+        story=MediaCloudStory(
+            id=1,
+            title="Earthquake in Japan",
+            url="https://example.com/one",
+        ),
+        body_status="body_available",
+        body_text="An earthquake struck Japan on September 10.",
+    )
+    judge = Mock(
+        return_value=(
+            "same_event",
+            "The article describes this event.",
+            "earthquake struck Japan on September 10",
+        )
+    )
+
+    decision = verification.decide_media_cloud_candidate(
+        event, candidate, judge=judge
+    )
+    assert decision.status == "same_event"
+    assert decision.event_id == event.item_id
+    assert decision.url == candidate.story.url
+    judge.assert_called_once_with(event, candidate.story, candidate.body_text)
+
+    unavailable = candidate.model_copy(
+        update={"body_status": "html_unavailable", "body_text": None}
+    )
+    judge.reset_mock()
+    decision = verification.decide_media_cloud_candidate(
+        event, unavailable, judge=judge
+    )
+    assert decision.status == "uncertain"
+    assert decision.url == candidate.story.url
+    judge.assert_not_called()
+
+    judge.return_value = (
+        "same_event",
+        "The article describes this event.",
+        "a sentence that is not in the article",
+    )
+    decision = verification.decide_media_cloud_candidate(
+        event, candidate, judge=judge
+    )
+    assert decision.status == "uncertain"
+    assert decision.evidence_excerpt is None
+
+    wrong_event = candidate.model_copy(update={"event_id": "another-event"})
+    with pytest.raises(ValueError, match="identities do not match"):
+        verification.decide_media_cloud_candidate(
+            event, wrong_event, judge=judge
         )
 
-
-def test_reversed_event_dates_are_rejected(fixed_news_today):
-    record = make_record("event-a", source_id="a")
-    record["properties"]["end_datetime"] = "2026-09-09T00:00:00Z"
-    event = build_event_context(record)
-
-    with pytest.raises(ValueError, match="Event end precedes"):
-        prepare_news_jobs([event])
-
-
-def test_invalid_search_period_is_rejected(fixed_news_today):
-    event = build_event_context(
-        make_record("future-event", source_id="a", day=30)
-    )
-
-    with pytest.raises(ValueError, match="Invalid news search period"):
-        prepare_news_jobs([event], days_before=0)
-
-
-def test_prepare_jobs_accepts_empty_input():
-    assert prepare_news_jobs([]) == []
-
-@pytest.fixture
-def collection_job():
-    event = build_event_context(
-        make_record("test-event", source_id="test-source")
-    )
-    return NewsCollectionJob(
-        event=event,
-        query=NewsQuery(
-            item_id=event.item_id,
-            query="earthquake Japan",
-            from_date=date(2026, 9, 9),
-            to_date=date(2026, 9, 13),
+@pytest.mark.parametrize(
+    "status",
+    ["same_event", "related_context", "different_event", "uncertain"],
+)
+def test_qwen_event_judge_returns_all_four_statuses(status):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    candidate = runner.MediaCloudCandidateEvidence(
+        event_id=event.item_id,
+        event_collection=event.collection,
+        story=MediaCloudStory(
+            id=1,
+            title="Earthquake in Japan",
+            url="https://example.com/one",
         ),
+        body_status="body_available",
+        body_text="An earthquake struck Japan on September 10.",
+    )
+    excerpt = (
+        None if status == "uncertain"
+        else "earthquake struck Japan on September 10"
+    )
+    assistant = Mock()
+    assistant._generate.return_value = {
+        "content": json.dumps({
+            "status": status,
+            "reason": "Test decision based on the article.",
+            "evidence_excerpt": excerpt,
+        })
+    }
+
+    judge = verification.make_qwen_event_judge(assistant)
+    decision = verification.decide_media_cloud_candidate(
+        event, candidate, judge=judge
     )
 
+    assert decision.status == status
+    assert decision.url == candidate.story.url
+    assistant._generate.assert_called_once()
+    assert assistant._generate.call_args.kwargs["use_tools"] is False
 
-def make_search_result(
-    job: NewsCollectionJob,
-    article_count: int,
-) -> NewsSearchResult:
-    return NewsSearchResult(
-        **job.query.model_dump(),
-        total_results=250 if article_count else 0,
-        articles=[
-            NewsArticle.model_validate({
-                "source": {"name": "Test News"},
-                "title": f"Earthquake report {index}",
-                "description": f"Test description {index}",
-                "publishedAt": "2026-09-10T12:00:00Z",
-                "url": f"https://example.com/articles/{index}",
-            })
-            for index in range(article_count)
-        ],
+
+def test_qwen_event_judge_keeps_candidate_when_output_is_invalid():
+    event = build_event_context(make_record("event-a", source_id="a"))
+    candidate = runner.MediaCloudCandidateEvidence(
+        event_id=event.item_id,
+        event_collection=event.collection,
+        story=MediaCloudStory(id=1, url="https://example.com/one"),
+        body_status="body_available",
+        body_text="An earthquake struck Japan.",
+    )
+    assistant = Mock()
+    assistant._generate.return_value = {"content": "not JSON"}
+
+    decision = verification.decide_media_cloud_candidate(
+        event,
+        candidate,
+        judge=verification.make_qwen_event_judge(assistant),
     )
 
-def test_news_result_to_node_data_preserves_article_and_source(collection_job):
-    result = make_search_result(collection_job, 1)
-    s3_uri = f"s3://test-bucket/{news_snapshot_key(collection_job)}"
+    assert decision.status == "uncertain"
+    assert decision.url == candidate.story.url
 
-    rows = news_result_to_node_data(
-        collection_job, result, snapshot_s3_uri=s3_uri
+def test_run_media_cloud_job_keeps_all_candidates_and_decisions(monkeypatch):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    job = prepare_media_cloud_jobs([event], collection_ids=[123])[0]
+    first_story = MediaCloudStory(
+        id=1,
+        title="Earthquake in Japan",
+        url="https://example.com/one",
     )
-
-    assert rows == [
-        {
-            "url": "https://example.com/articles/0",
-            "title": "Earthquake report 0",
-            "description": "Test description 0",
-            "source_id": None,
-            "source_name": "Test News",
-            "published_at": datetime(2026, 9, 10, 12, tzinfo=timezone.utc),
-            "event_id": collection_job.event.item_id,
-            "snapshot_s3_uri": s3_uri,
-        }
+    second_story = MediaCloudStory(
+        id=2,
+        title="Another article",
+        url="https://example.com/two",
+    )
+    batch = collector.MediaCloudCandidateBatch(
+        stories=[first_story, second_story],
+        pages_fetched=1,
+        next_page_token="next-page",
+        duplicates_removed=0,
+    )
+    evidence = [
+        runner.MediaCloudCandidateEvidence(
+            event_id=event.item_id,
+            event_collection=event.collection,
+            story=first_story,
+            body_status="body_available",
+            body_text="An earthquake struck Japan.",
+        ),
+        runner.MediaCloudCandidateEvidence(
+            event_id=event.item_id,
+            event_collection=event.collection,
+            story=second_story,
+            body_status="html_unavailable",
+        ),
     ]
 
+    collect = Mock(return_value=batch)
+    gather = Mock(return_value=evidence)
+    judge = Mock(
+        return_value=(
+            "same_event",
+            "The article describes the event.",
+            "earthquake struck Japan",
+        )
+    )
+    monkeypatch.setattr(runner, "collect_media_cloud_candidates", collect)
+    monkeypatch.setattr(runner, "gather_media_cloud_evidence", gather)
 
-def test_news_result_to_node_data_rejects_different_event(collection_job):
-    result = make_search_result(collection_job, 1).model_copy(
-        update={"item_id": "different-event"}
+    result = runner.run_media_cloud_job(
+        job,
+        judge=judge,
+        max_body_attempts=1,
+        max_pages=1,
+        page_interval_seconds=0,
     )
 
-    with pytest.raises(ValueError, match="does not match"):
-        news_result_to_node_data(
-            collection_job,
-            result,
-            snapshot_s3_uri="s3://test-bucket/news.json",
+    assert result.pages_fetched == 1
+    assert result.next_page_token == "next-page"
+    assert [item.decision.status for item in result.assessments] == [
+        "same_event",
+        "uncertain",
+    ]
+    assert [item.evidence.story.id for item in result.assessments] == [1, 2]
+    collect.assert_called_once_with(
+        job, page_size=100, max_pages=1, page_interval_seconds=0
+    )
+    gather.assert_called_once_with(job, batch, max_body_attempts=1)
+    judge.assert_called_once_with(
+        event, first_story, "An earthquake struck Japan."
+    )
+
+def test_media_cloud_snapshot_preserves_evidence(
+    tmp_path: Path,
+) -> None:
+    event = build_event_context(
+        make_record("event-a", source_id="a")
+    )
+    job = prepare_media_cloud_jobs(
+        [event],
+        collection_ids=[123],
+    )[0]
+
+    body = "The earthquake affected communities in Japan."
+    assessments: list[runner.MediaCloudCandidateAssessment] = []
+
+    for story_id, text in (
+        ("with-body", body),
+        ("without-body", None),
+    ):
+        story = MediaCloudStory(
+            id=story_id,
+            title="Earthquake report",
+            url=f"https://example.com/{story_id}",
+        )
+        evidence = runner.MediaCloudCandidateEvidence(
+            event_id=event.item_id,
+            event_collection=event.collection,
+            story=story,
+            body_status=(
+                "body_available"
+                if text is not None
+                else "html_unavailable"
+            ),
+            body_text=text,
+        )
+        decision = verification.EventMatchDecision(
+            event_id=event.item_id,
+            event_collection=event.collection,
+            story_id=story.id,
+            url=story.url,
+            status="uncertain",
+            reason="Storage test; no model judgment performed.",
+        )
+        assessments.append(
+            runner.MediaCloudCandidateAssessment(
+                evidence=evidence,
+                decision=decision,
+            )
         )
 
-@pytest.mark.parametrize("article_count", [0, 100])
-def test_collection_preserves_complete_result(
-    monkeypatch, tmp_path, collection_job, article_count
-):
-    result = make_search_result(collection_job, article_count)
-    search = Mock(return_value=result)
-    monkeypatch.setattr(news_api, "search_news", search)
-
-    output = collector.collect_news_job(
-        collection_job,
-        output_dir=tmp_path / "results",
+    run = runner.MediaCloudJobRun(
+        job=job,
+        pages_fetched=1,
+        next_page_token="next-page",
+        duplicates_removed=2,
+        assessments=assessments,
     )
-    report = json.loads(output.read_text(encoding="utf-8"))
 
-    search.assert_called_once_with(
-        collection_job.query,
-        page_size=100,
-        language="en",
-        sort_by="relevancy",
+    snapshot = save_media_cloud_snapshot(
+        run,
+        output_dir=tmp_path,
     )
-    assert report["status"] == ("ok" if article_count else "empty")
-    assert report["request_attempted"] is True
-    assert report["job"] == collection_job.model_dump(mode="json")
-    assert report["result"] == result.model_dump(mode="json")
-    assert len(report["result"]["articles"]) == article_count
-    assert report["error"] is None
-    assert not list(output.parent.glob("*.tmp"))
+    restored = read_media_cloud_snapshot(snapshot)
 
+    assert snapshot.is_file()
+    assert restored.job == job
+    assert restored.pages_fetched == 1
+    assert restored.next_page_token == "next-page"
+    assert restored.duplicates_removed == 2
+    assert len(restored.assessments) == 2
 
-def test_collector_does_not_enforce_request_limit(
-    monkeypatch, tmp_path, collection_job
-):
-    search = Mock(return_value=make_search_result(collection_job, 1))
-    monkeypatch.setattr(news_api, "search_news", search)
-    output_dir = tmp_path / "results"
-
-    first = collector.collect_news_job(collection_job, output_dir=output_dir)
-    second = collector.collect_news_job(collection_job, output_dir=output_dir)
-
-    assert first != second
-    assert len(list(output_dir.glob("*.json"))) == 2
-    assert search.call_count == 2
-
-
-@pytest.mark.parametrize("error_type", [Timeout, RuntimeError, ValueError])
-def test_collection_records_search_failure(
-    monkeypatch, tmp_path, collection_job, error_type
-):
-    search = Mock(side_effect=error_type("sensitive-test-message"))
-    monkeypatch.setattr(news_api, "search_news", search)
-    settings = {
-        "output_dir": tmp_path / "results",
-    }
-
-    output = collector.collect_news_job(collection_job, **settings)
-    contents = output.read_text(encoding="utf-8")
-    report = json.loads(contents)
-
-    assert report["status"] == "error"
-    assert report["request_attempted"] is True
-    assert report["result"] is None
-    assert report["error"] == {"type": error_type.__name__}
-    assert "sensitive-test-message" not in contents
-
-    search.assert_called_once()
-
-
-def test_collection_propagates_storage_failure(
-    monkeypatch, tmp_path, collection_job
-):
-    search = Mock(return_value=make_search_result(collection_job, 1))
-    monkeypatch.setattr(news_api, "search_news", search)
-    monkeypatch.setattr(
-        collector.os,
-        "fsync",
-        Mock(side_effect=OSError("Simulated storage failure")),
+    assert restored.assessments[0].evidence.body_text == body
+    assert restored.assessments[1].evidence.body_text is None
+    assert (
+        restored.assessments[1].evidence.story.url
+        == "https://example.com/without-body"
     )
-    output_dir = tmp_path / "results"
-
-    with pytest.raises(OSError, match="Simulated storage failure"):
-        collector.collect_news_job(
-            collection_job,
-            output_dir=output_dir,
-        )
-
-    search.assert_called_once()
-    assert not list(output_dir.glob("*.json"))
-    assert not list(output_dir.glob("*.tmp"))
-
-@pytest.mark.parametrize("page_size", [0, 101, -1, True, 1.5])
-def test_collection_rejects_invalid_page_size_before_request(
-    monkeypatch, tmp_path, collection_job, page_size
-):
-    search = Mock()
-    monkeypatch.setattr(news_api, "search_news", search)
-
-    with pytest.raises(ValueError, match="page_size"):
-        collector.collect_news_job(
-            collection_job,
-            output_dir=tmp_path / "results",
-            page_size=page_size,
-        )
-
-    search.assert_not_called()
-
-@pytest.fixture
-def history_now():
-    return datetime(2026, 9, 29, 12, tzinfo=timezone.utc)
-
-
-def write_history_snapshot(path, job, *, status, finished_at):
-    """Write a synthetic collection report without calling NewsAPI."""
-    result = None
-    if status in {"ok", "empty"}:
-        result = make_search_result(
-            job,
-            1 if status == "ok" else 0,
-        ).model_dump(mode="json")
-
-    report = {
-        "schema_version": 1,
-        "job": job.model_dump(mode="json"),
-        "search_parameters": {
-            "page_size": 100,
-            "language": "en",
-            "sort_by": "relevancy",
-            "page": 1,
-        },
-        "started_at": finished_at.isoformat(),
-        "finished_at": finished_at.isoformat(),
-        "request_attempted": status != "budget_exhausted",
-        "status": status,
-        "result": result,
-        "error": {"type": "Timeout"} if status == "error" else None,
-    }
-    path.write_text(json.dumps(report), encoding="utf-8")
-    return path
-
-def test_s3_upload_uses_stable_search_key(tmp_path, collection_job):
-    snapshot = write_history_snapshot(
-        tmp_path / "news-result.json",
-        collection_job,
-        status="ok",
-        finished_at=datetime(2026, 9, 29, tzinfo=timezone.utc),
+    assert (
+        restored.assessments[0].decision
+        == assessments[0].decision
     )
+
     bucket = Mock()
+    key = upload_media_cloud_snapshot(
+        cast(S3Bucket, bucket),
+        snapshot,
+        prefix="test-owner",
+    )
 
-    key = upload_news_snapshot(cast(S3Bucket, bucket), snapshot)
-
-    assert key == news_snapshot_key(collection_job)
+    assert key.startswith(
+        "test-owner/media_cloud_articles/snapshots/"
+    )
     bucket.upload_file.assert_called_once_with(snapshot, key)
 
-def test_read_news_snapshot_accepts_matching_key(
-    tmp_path, collection_job, history_now
-):
-    snapshot = write_history_snapshot(
-        tmp_path / "news-result.json",
-        collection_job,
-        status="ok",
-        finished_at=history_now,
-    )
-    key = news_snapshot_key(collection_job)
-
-    job, result = read_news_snapshot(snapshot, key=key)
-
-    assert job == collection_job
-    assert result.item_id == collection_job.event.item_id
-    assert len(result.articles) == 1
-
-
-def test_read_news_snapshot_rejects_wrong_key(
-    tmp_path, collection_job, history_now
-):
-    snapshot = write_history_snapshot(
-        tmp_path / "news-result.json",
-        collection_job,
-        status="ok",
-        finished_at=history_now,
-    )
-
-    with pytest.raises(ValueError, match="Invalid S3 news snapshot"):
-        read_news_snapshot(snapshot, key="wrong/by-job/result.json")
-
-def test_iter_news_snapshots_downloads_saved_result(
-    tmp_path, collection_job, history_now
-):
-    snapshot = write_history_snapshot(
-        tmp_path / "news-result.json",
-        collection_job,
-        status="ok",
-        finished_at=history_now,
-    )
-    key = news_snapshot_key(collection_job)
-    bucket = Mock()
-    bucket.objects.filter.return_value = [Mock(key=key)]
-    bucket.download_file.side_effect = (
-        lambda _key, filename: Path(filename).write_bytes(snapshot.read_bytes())
-    )
-
-    found = list(iter_news_snapshots(cast(S3Bucket, bucket)))
-
-    assert len(found) == 1
-    assert found[0][0] == key
-    assert found[0][1] == collection_job
-    assert len(found[0][2].articles) == 1
-    assert bucket.download_file.call_args.args[0] == key
-
-def test_s3_news_snapshot_missing(tmp_path, collection_job):
-    bucket = Mock()
-    bucket.objects.filter.return_value = []
-    key = news_snapshot_key(collection_job)
-
-    found = download_news_snapshot(
-        cast(S3Bucket, bucket),
-        job=collection_job,
-        output_dir=tmp_path,
-    )
-
-    assert found is None
-    bucket.objects.filter.assert_called_once_with(Prefix=key)
-    bucket.download_file.assert_not_called()
-
-
-def test_s3_news_snapshot_reuses_old_result(tmp_path, collection_job):
-    source = write_history_snapshot(
-        tmp_path / "source.json",
-        collection_job,
-        status="ok",
-        finished_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
-    )
-    bucket = Mock()
-    key = news_snapshot_key(collection_job)
-    bucket.objects.filter.return_value = [Mock(key=key)]
-    bucket.download_file.side_effect = (
-        lambda _key, destination: Path(destination).write_bytes(
-            source.read_bytes()
-        )
-    )
-
-    found = download_news_snapshot(
-        cast(S3Bucket, bucket),
-        job=collection_job,
-        output_dir=tmp_path,
-    )
-
-    assert found is not None
-    assert found.read_bytes() == source.read_bytes()
-    bucket.objects.filter.assert_called_once_with(Prefix=key)
-    bucket.download_file.assert_called_once_with(key, found)
-
-def test_s3_news_snapshot_rejects_invalid_json(tmp_path, collection_job):
-    bucket = Mock()
-    key = news_snapshot_key(collection_job)
-    bucket.objects.filter.return_value = [Mock(key=key)]
-    bucket.download_file.side_effect = (
-        lambda _key, destination: Path(destination).write_text(
-            "{invalid", encoding="utf-8"
-        )
-    )
-
-    with pytest.raises(ValueError, match="Invalid S3 news snapshot"):
-        download_news_snapshot(
+    with pytest.raises(ValueError, match="explicit S3"):
+        upload_media_cloud_snapshot(
             cast(S3Bucket, bucket),
-            job=collection_job,
-            output_dir=tmp_path,
+            snapshot,
+            prefix="",
         )
-
-
-def test_s3_news_snapshot_does_not_hide_permission_error(
-    tmp_path, collection_job
-):
-    bucket = Mock()
-    bucket.objects.filter.side_effect = PermissionError("access denied")
-
-    with pytest.raises(PermissionError, match="access denied"):
-        download_news_snapshot(
-            cast(S3Bucket, bucket),
-            job=collection_job,
-            output_dir=tmp_path,
-        )
-
-    bucket.download_file.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "changed_field",
-    ["query", "from_date", "to_date", "collection", "page_size", "search_in"],
-)
-def test_history_key_distinguishes_search_settings(
-    collection_job, changed_field
-):
-    original = news_job_key(collection_job)
-    changed = collection_job.model_copy(deep=True)
-    page_size = 100
-
-    if changed_field == "query":
-        changed.query.query = "earthquake Tokyo"
-    elif changed_field == "from_date":
-        changed.query.from_date -= timedelta(days=1)
-    elif changed_field == "to_date":
-        changed.query.to_date += timedelta(days=1)
-    elif changed_field == "collection":
-        changed.event.collection = "emdat-events"
-    elif changed_field == "search_in":
-        changed.query.search_in = "title,description"
-    else:
-        page_size = 20
-
-    assert news_job_key(changed, page_size=page_size) != original
-    assert news_job_key(collection_job) == original
-
-
-@pytest.mark.parametrize(
-    ("status", "reusable"),
-    [
-        ("ok", True),
-        ("empty", True),
-        ("error", False),
-        ("budget_exhausted", False),
-    ],
-)
-def test_history_reuses_only_successful_searches(
-    tmp_path, collection_job, history_now, status, reusable
-):
-    path = write_history_snapshot(
-        tmp_path / "news-status.json",
-        collection_job,
-        status=status,
-        finished_at=history_now - timedelta(hours=1),
-    )
-
-    recent = load_recent_snapshots(tmp_path, now=history_now)
-
-    expected = {news_job_key(collection_job): path} if reusable else {}
-    assert recent == expected
-    assert path.exists()
-
-
-@pytest.mark.parametrize(
-    ("age_hours", "reusable"),
-    [(23, True), (24, False), (25, False)],
-)
-def test_history_expires_without_deleting_snapshots(
-    tmp_path, collection_job, history_now, age_hours, reusable
-):
-    path = write_history_snapshot(
-        tmp_path / "news-age.json",
-        collection_job,
-        status="ok",
-        finished_at=history_now - timedelta(hours=age_hours),
-    )
-
-    recent = load_recent_snapshots(tmp_path, now=history_now)
-
-    assert (news_job_key(collection_job) in recent) is reusable
-    assert path.exists()
-
-
-def test_history_selects_newest_successful_snapshot(
-    tmp_path, collection_job, history_now
-):
-    newest = write_history_snapshot(
-        tmp_path / "news-a-newest.json",
-        collection_job,
-        status="ok",
-        finished_at=history_now - timedelta(hours=1),
-    )
-    older = write_history_snapshot(
-        tmp_path / "news-z-older.json",
-        collection_job,
-        status="ok",
-        finished_at=history_now - timedelta(hours=3),
-    )
-
-    recent = load_recent_snapshots(tmp_path, now=history_now)
-
-    assert recent == {news_job_key(collection_job): newest}
-    assert older.exists()
-
-
-def test_history_handles_missing_output_directory(tmp_path, history_now):
-    recent = load_recent_snapshots(
-        tmp_path / "not-created",
-        now=history_now,
-    )
-
-    assert recent == {}
-
-
-def test_history_reports_invalid_json(tmp_path, history_now):
-    path = tmp_path / "news-broken.json"
-    path.write_text("{invalid json", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="Invalid news snapshot"):
-        load_recent_snapshots(tmp_path, now=history_now)
-
-@pytest.fixture
-def fake_collection_search(monkeypatch):
-    def respond(query, **kwargs):
-        return NewsSearchResult(
-            **query.model_dump(),
-            total_results=0,
-            articles=[],
-        )
-
-    search = Mock(side_effect=respond)
-    monkeypatch.setattr(news_api, "search_news", search)
-    return search
-
-
-def make_runner_jobs(job, count):
-    """Create distinct search jobs from one test event."""
-    jobs = []
-    for index in range(count):
-        copied = job.model_copy(deep=True)
-        copied.query.query = f"earthquake Japan report {index}"
-        jobs.append(copied)
-    return jobs
-
-
-def test_runner_reuses_results_across_runs(
-    tmp_path, collection_job, fake_collection_search
-):
-    settings = {
-        "output_dir": tmp_path / "results",
-        "request_limit": 1,
-    }
-    first = runner.run_news_collection([collection_job], **settings)
-    second = runner.run_news_collection([collection_job], **settings)
-
-    assert first.stop_reason == "completed"
-    assert len(first.collected) == 1
-    assert first.reused == []
-    assert second.stop_reason == "completed"
-    assert second.collected == []
-    assert second.reused == first.collected
-    assert fake_collection_search.call_count == 1
-
-def test_runner_reuses_s3_result_without_newsapi(
-    monkeypatch, tmp_path, collection_job, fake_collection_search
-):
-    stored = write_history_snapshot(
-        tmp_path / "stored.json",
-        collection_job,
-        status="ok",
-        finished_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
-    )
-    bucket = Mock()
-    download = Mock(return_value=stored)
-    monkeypatch.setattr(runner, "download_news_snapshot", download)
-    output_dir = tmp_path / "results"
-
-    summary = runner.run_news_collection(
-        [collection_job],
-        output_dir=output_dir,
-        request_limit=1,
-        s3_bucket=cast(S3Bucket, bucket),
-    )
-
-    assert summary.stop_reason == "completed"
-    assert summary.collected == []
-    assert summary.reused == [stored]
-    fake_collection_search.assert_not_called()
-    download.assert_called_once_with(
-        bucket,
-        job=collection_job,
-        output_dir=output_dir,
-        page_size=100,
-    )
-
-def test_runner_request_limit_resets_each_run(
-    tmp_path, collection_job, fake_collection_search
-):
-    jobs = make_runner_jobs(collection_job, 2)
-    output_dir = tmp_path / "results"
-
-    first = runner.run_news_collection(
-        [jobs[0]],
-        output_dir=output_dir,
-        request_limit=1,
-    )
-    second = runner.run_news_collection(
-        [jobs[1]],
-        output_dir=output_dir,
-        request_limit=1,
-    )
-
-    assert first.stop_reason == "completed"
-    assert second.stop_reason == "completed"
-    assert len(first.collected) == 1
-    assert len(second.collected) == 1
-    assert fake_collection_search.call_count == 2
-
-def test_runner_skips_duplicates_within_one_run(
-    tmp_path, collection_job, fake_collection_search
-):
-    summary = runner.run_news_collection(
-        [collection_job, collection_job],
-        output_dir=tmp_path / "results",
-        request_limit=1,
-    )
-
-    assert summary.stop_reason == "completed"
-    assert len(summary.collected) == 1
-    assert summary.reused == summary.collected
-    assert fake_collection_search.call_count == 1
-
-def test_runner_stops_at_per_run_request_limit(
-    tmp_path, collection_job, fake_collection_search
-):
-    jobs = make_runner_jobs(collection_job, 3)
-    output_dir = tmp_path / "results"
-
-    summary = runner.run_news_collection(
-        jobs,
-        output_dir=output_dir,
-        request_limit=1,
-    )
-
-    assert summary.stop_reason == "budget_exhausted"
-    assert len(summary.collected) == 1
-    assert summary.stop_report is None
-    assert fake_collection_search.call_count == 1
-    assert len(list(output_dir.glob("news-*.json"))) == 1
-
-@pytest.mark.parametrize("error_type", [Timeout, RuntimeError])
-def test_runner_stops_on_search_error(
-    tmp_path, collection_job, fake_collection_search, error_type
-):
-    jobs = make_runner_jobs(collection_job, 3)
-    fake_collection_search.side_effect = error_type("Test failure")
-
-    summary = runner.run_news_collection(
-        jobs,
-        output_dir=tmp_path / "results",
-        request_limit=3,
-    )
-
-    assert summary.stop_reason == "error"
-    assert summary.collected == []
-    assert summary.stop_report is not None
-    assert fake_collection_search.call_count == 1
-
-    report = json.loads(
-        summary.stop_report.read_text(encoding="utf-8")
-    )
-    assert report["status"] == "error"
-    assert report["error"] == {"type": error_type.__name__}
-
-
-def test_runner_refreshes_expired_snapshot(
-    tmp_path, collection_job, fake_collection_search
-):
-    output_dir = tmp_path / "results"
-    output_dir.mkdir()
-    old_path = write_history_snapshot(
-        output_dir / "news-old.json",
-        collection_job,
-        status="empty",
-        finished_at=datetime.now(timezone.utc) - timedelta(hours=25),
-    )
-
-    summary = runner.run_news_collection(
-        [collection_job],
-        output_dir=output_dir,
-        request_limit=1,
-    )
-
-    assert summary.stop_reason == "completed"
-    assert len(summary.collected) == 1
-    assert summary.reused == []
-    assert fake_collection_search.call_count == 1
-    assert old_path.exists()
-    assert summary.collected[0] != old_path
-
-
-def test_runner_propagates_storage_failure(
-    monkeypatch, tmp_path, collection_job, fake_collection_search
-):
-    collect = Mock(side_effect=OSError("Test storage failure"))
-    monkeypatch.setattr(runner, "collect_news_job", collect)
-
-    with pytest.raises(OSError, match="Test storage failure"):
-        runner.run_news_collection(
-            make_runner_jobs(collection_job, 3),
-            output_dir=tmp_path / "results",
-            request_limit=3,
-        )
-
-    assert collect.call_count == 1
-    fake_collection_search.assert_not_called()
-
-
-def test_runner_handles_empty_job_list(tmp_path, fake_collection_search):
-    summary = runner.run_news_collection(
-        [],
-        output_dir=tmp_path / "results",
-        request_limit=1,
-    )
-
-    assert summary.stop_reason == "completed"
-    assert summary.collected == []
-    assert summary.reused == []
-    assert summary.stop_report is None
-    fake_collection_search.assert_not_called()
-
-@pytest.fixture
-def cli_environment(monkeypatch, tmp_path, fixed_news_today):
-    load = Mock(return_value=[
-        make_record("cli-event", source_id="cli-source")
-    ])
-    run = Mock(side_effect=AssertionError("Unexpected collection run"))
-    search = Mock(side_effect=AssertionError("Unexpected NewsAPI call"))
-
-    monkeypatch.setattr(cli, "load_collection", load)
-    monkeypatch.setattr(cli, "run_news_collection", run)
-    monkeypatch.setattr(cli, "get_bucket", Mock())
-    monkeypatch.setattr(cli, "download_collection_cache", Mock())
-    monkeypatch.setattr(cli, "upload_news_snapshot", Mock())
-    monkeypatch.setattr(news_api, "search_news", search)
-
-    arguments = [
-        "--collection", "gdacs-events",
-        "--start-date", "2026-09-01",
-        "--end-date", "2026-09-29",
-        "--max-records", "1",
-        "--output-dir", str(tmp_path / "results"),
-    ]
-    return arguments, load, run, search
-
-
-def test_cli_dry_run_does_not_collect_or_write(
-    cli_environment, tmp_path, capsys
-):
-    arguments, load, run, search = cli_environment
-
-    exit_code = cli.main([*arguments, "--dry-run"])
-    plan = json.loads(capsys.readouterr().out)
-
-    assert exit_code == 0
-    assert plan["mode"] == "dry_run"
-    assert plan["planned_jobs"] == 1
-    assert plan["news_api_requests_made"] == 0
-    assert plan["jobs"][0]["item_id"] == "cli-event"
-    assert plan["jobs"][0]["from_date"] == "2026-09-09"
-    assert plan["jobs"][0]["to_date"] == "2026-09-13"
-
-    load.assert_called_once()
-    run.assert_not_called()
-    search.assert_not_called()
-    assert list(tmp_path.iterdir()) == []
-    cast(Mock, cli.upload_news_snapshot).assert_not_called()
-
-
-def test_cli_execute_requires_explicit_budget(cli_environment):
-    arguments, load, run, search = cli_environment
-
-    with pytest.raises(SystemExit) as error:
-        cli.main([*arguments, "--execute"])
-
-    assert error.value.code == 2
-    load.assert_not_called()
-    run.assert_not_called()
-    search.assert_not_called()
-
-
-def test_cli_requires_explicit_mode(cli_environment):
-    arguments, load, run, search = cli_environment
-
-    with pytest.raises(SystemExit) as error:
-        cli.main(arguments)
-
-    assert error.value.code == 2
-    load.assert_not_called()
-    run.assert_not_called()
-    search.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    ("stop_reason", "expected_exit"),
-    [
-        ("completed", 0),
-        ("budget_exhausted", 0),
-        ("error", 1),
-    ],
-)
-def test_cli_passes_execution_settings_and_reports_status(
-    cli_environment, tmp_path, capsys, stop_reason, expected_exit
-):
-    arguments, load, run, search = cli_environment
-    run.side_effect = None
-    run.return_value = runner.NewsCollectionRun(stop_reason=stop_reason)
-
-    exit_code = cli.main([
-        *arguments,
-        "--execute",
-        "--request-limit", "2",
-        "--page-size", "50",
-        "--refresh-hours", "12",
-    ])
-
-    assert exit_code == expected_exit
-    run.assert_called_once()
-
-    jobs = run.call_args.args[0]
-    assert len(jobs) == 1
-    assert jobs[0].event.item_id == "cli-event"
-    assert run.call_args.kwargs == {
-        "output_dir": tmp_path / "results",
-        "request_limit": 2,
-        "page_size": 50,
-        "refresh_after": timedelta(hours=12),
-        "s3_bucket": cast(Mock, cli.get_bucket).return_value,
-    }
-
-    output = json.loads(capsys.readouterr().out)
-    assert output["stop_reason"] == stop_reason
-    search.assert_not_called()
-
-
-def test_cli_rejects_oversized_article_request(cli_environment):
-    arguments, load, run, search = cli_environment
-
-    with pytest.raises(SystemExit) as error:
-        cli.main([*arguments, "--dry-run", "--page-size", "101"])
-
-    assert error.value.code == 2
-    load.assert_not_called()
-    run.assert_not_called()
-    search.assert_not_called()
-
-
-def test_cli_rejects_local_input(
-    cli_environment, tmp_path, capsys
-):
-    arguments, load, run, search = cli_environment
-
-    with pytest.raises(SystemExit) as error:
-        cli.main([*arguments, "--dry-run", "--cache-dir", str(tmp_path / "raw")])
-
-    assert error.value.code == 2
-    load.assert_not_called()
-    run.assert_not_called()
-    search.assert_not_called()
-    capsys.readouterr()
-
-def test_cli_dry_run_uses_s3_source(cli_environment, monkeypatch, capsys):
-    arguments, load, run, search = cli_environment
-    bucket = Mock()
-    get_bucket = Mock(return_value=bucket)
-    download = Mock()
-
-    monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
-    monkeypatch.setattr(cli, "get_bucket", get_bucket)
-    monkeypatch.setattr(cli, "download_collection_cache", download)
-
-    source_key = "aidan.carlisle@gwu.edu/raw/gdacs-events.jsonl.gz"
-    exit_code = cli.main([
-        *arguments, "--dry-run", "--s3-source-key", source_key,
-    ])
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["planned_jobs"] == 1
-    get_bucket.assert_called_once_with("test-bucket")
-    download.assert_called_once()
-    assert download.call_args.args == (bucket,)
-    assert download.call_args.kwargs["source_key"] == source_key
-
-    cache_dir = download.call_args.kwargs["cache_dir"]
-    load.assert_called_once_with(
-        "gdacs-events", cache_dir=cache_dir, geometry=True,
-    )
-    assert not cache_dir.exists()
-    run.assert_not_called()
-    search.assert_not_called()
-
-@pytest.mark.parametrize("no_geometry", [False, True])
-def test_cli_defaults_to_s3_source(
-    cli_environment, monkeypatch, capsys, no_geometry
-):
-    arguments, load, run, search = cli_environment
-    monkeypatch.setenv("AWS_BUCKET_PREFIX", " /team/news/ ")
-    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
-    bucket = Mock()
-    get_bucket = Mock(return_value=bucket)
-    download = Mock()
-    monkeypatch.setattr(cli, "get_bucket", get_bucket)
-    monkeypatch.setattr(cli, "download_collection_cache", download)
-
-    flags = ["--no-geometry"] if no_geometry else []
-    assert cli.main([*arguments, "--dry-run", *flags]) == 0
-
-    suffix = ".nogeom.jsonl.gz" if no_geometry else ".jsonl.gz"
-    get_bucket.assert_called_once_with("test-bucket")
-    download.assert_called_once()
-    assert download.call_args.args == (bucket,)
-    assert download.call_args.kwargs["source_key"] == (
-        f"team/news/raw/gdacs-events{suffix}"
-    )
-    cache_dir = download.call_args.kwargs["cache_dir"]
-    load.assert_called_once_with(
-        "gdacs-events", cache_dir=cache_dir, geometry=not no_geometry,
-    )
-    assert not cache_dir.exists()
-    assert json.loads(capsys.readouterr().out)["news_api_requests_made"] == 0
-    run.assert_not_called()
-    search.assert_not_called()
-
-def test_cli_execute_uploads_news_snapshots(
-    cli_environment, monkeypatch, tmp_path, capsys
-):
-    arguments, load, run, search = cli_environment
-    bucket = Mock()
-    get_bucket = Mock(return_value=bucket)
-    upload = Mock()
-    new = tmp_path / "new.json"
-    reused = tmp_path / "reused.json"
-
-    run.side_effect = None
-    run.return_value = runner.NewsCollectionRun(
-        collected=[new],
-        reused=[reused],
-    )
-    monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
-    monkeypatch.setattr(cli, "get_bucket", get_bucket)
-    monkeypatch.setattr(cli, "upload_news_snapshot", upload)
-
-    assert cli.main([
-        *arguments, "--execute", "--request-limit", "2",
-    ]) == 0
-
-    get_bucket.assert_called_once_with("test-bucket")
-    assert run.call_args.kwargs["s3_bucket"] is bucket
-    assert [item.args for item in upload.call_args_list] == [
-        (bucket, new),
-        (bucket, reused),
-    ]
-    run.assert_called_once()
-    search.assert_not_called()
-    capsys.readouterr()
-
-def test_cli_reuses_s3_result_with_fresh_output_dir(
-    monkeypatch, tmp_path, capsys, fixed_news_today
-):
-    objects: dict[str, bytes] = {}
-    bucket = Mock()
-    bucket.objects.filter.side_effect = lambda Prefix: [
-        Mock(key=key) for key in objects if key.startswith(Prefix)
-    ]
-    bucket.upload_file.side_effect = lambda filename, key: (
-        objects.__setitem__(key, Path(filename).read_bytes())
-    )
-    bucket.download_file.side_effect = lambda key, filename: (
-        Path(filename).write_bytes(objects[key])
-    )
-
-    monkeypatch.setattr(cli, "get_env_bucket_name", lambda: "test-bucket")
-    monkeypatch.setattr(cli, "get_bucket", lambda _name: bucket)
-    monkeypatch.setattr(cli, "download_collection_cache", Mock())
-    monkeypatch.setattr(
-        cli,
-        "load_collection",
-        lambda *_args, **_kwargs: [
-            make_record("cli-event", source_id="cli-source")
-        ],
-    )
-    search = Mock(
-        side_effect=lambda query, **_kwargs: NewsSearchResult(
-            **query.model_dump(),
-            total_results=0,
-            articles=[],
-        )
-    )
-    monkeypatch.setattr(news_api, "search_news", search)
-
-    arguments = [
-        "--execute",
-        "--collection", "gdacs-events",
-        "--start-date", "2026-09-01",
-        "--end-date", "2026-09-29",
-        "--max-records", "1",
-        "--request-limit", "1",
-    ]
-
-    assert cli.main([
-        *arguments, "--output-dir", str(tmp_path / "first")
-    ]) == 0
-    first = json.loads(capsys.readouterr().out)
-    assert len(first["collected"]) == 1
-    assert first["reused"] == []
-    assert search.call_count == 1
-    assert len(objects) == 1
-
-    assert cli.main([
-        *arguments, "--output-dir", str(tmp_path / "second")
-    ]) == 0
-    second = json.loads(capsys.readouterr().out)
-    assert second["collected"] == []
-    assert len(second["reused"]) == 1
-    assert search.call_count == 1
-    assert len(objects) == 1

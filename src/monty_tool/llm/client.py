@@ -26,7 +26,7 @@ from monty_tool.utils.versions import FrozenModel
 
 class QueryAssistant:
     """
-    Answer questions by querying the local graph and NewsAPI.
+    Answer questions by querying the local graph and saved news.
     """
 
     _CONTEXT_LIMIT = 32_768
@@ -125,7 +125,7 @@ class QueryAssistant:
                         "get_disaster_context returns disaster info, including weather data. "
                         "Use get_event_news only when the question requires information "
                         "from news articles. "
-                        "Distinguish disaster event facts from news article candidates. "
+                        "Distinguish disaster-record facts from news coverage; treat CONTEXT_FOR articles as background, not direct evidence of the event. "
                         if self.tools.enable_external else ""
                     )
                     + "Base your answer on tool results. Answer in the user's language."
@@ -264,7 +264,7 @@ class BedrockQueryAssistant:
                 "get_disaster_context returns disaster info, including weather data. "
                 "Use get_event_news only when the question requires information "
                 "from news articles. "
-                "Distinguish disaster event facts from news article candidates. "
+                "Distinguish disaster-record facts from news coverage; treat CONTEXT_FOR articles as background, not direct evidence of the event. "
                 if self.tools.enable_external else ""
             )
             + "Base your answer on tool results. Answer in the user's language."
