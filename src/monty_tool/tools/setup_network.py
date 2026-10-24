@@ -229,7 +229,7 @@ def main():
                 bucket_name=bucket_name,
                 driver=driver,
             )
-        logger.info("Loaded %d NewsAPI article-event links", news_links)
+        logger.info("Loaded %d classified Media Cloud article-event links", news_links)
 
 if __name__ == '__main__':
     main()
