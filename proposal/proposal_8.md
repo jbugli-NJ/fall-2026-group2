@@ -112,18 +112,22 @@ PHASE 3: NETWORK ANALYSIS & REPORTING TOOLS (Weeks 5-8)
   - Expanding benchmarking for LLM recommendations across more/different questions, new models, etc.
   - Transitioning from local execution to an API with more intelligent frontier models
 - Draft report on initial findings
+- Complete interim presentation
 
-[Week 7: Network Reporting]
-- Draft the first complete reports for the full network setup and LLM integration
+[Week 7: API integration, news sourcing]
+- Adding Bedrock LLM integration to the repository as an alternative to local LLMs, starting to integrate that into the demo app and benchmarks
+- Exploring an alternative to the existing news collection process that supports more historical retrieval and higher volume
 - Sync with Red Cross stakeholders on initial findings and proof-of-concept direction
 
 PHASE 4: PROOF OF CONCEPT, EVALUATION & PAPER WORK (Weeks 8-12)
 
 [Weeks 8-10: Complete the Proof of Concept]
-- Build a proof-of-concept tool/pipeline, extending on existing work for more concrete Red Cross utility
+- Transition the demo app to a full proof-of-concept, extending on existing work for more concrete Red Cross utility
   - Potentially could be distributed as a Python library or a separate repository
-- Test on data bank records
-- Begin organizing the paper around the investigation process, methods, and initial findings
+- Complete and freeze benchmarking
+- Respond to feedback from the interim presentation
+- Draft first complete reports for the full network setup and LLM integration
+  - Sketch out the investigation process, methods, and initial findings
 
 [Week 11: Revision & Paper Work]
 - Revise the proof-of-concept based on Red Cross stakeholder feedback
