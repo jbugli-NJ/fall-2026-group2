@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from importlib.resources import files
 from pathlib import Path
+import subprocess
 
 from pydantic import TypeAdapter
 import pytest
@@ -51,6 +52,8 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
         (input_dir / f'{name}.json').write_bytes(input_bytes)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(run_benchmark, '_INPUT_MODULE', input_dir)
+    git_commit = 'a' * 40
+    monkeypatch.setattr(run_benchmark, 'get_git_commit', lambda: git_commit)
     seeds = []
     monkeypatch.setattr(run_benchmark, 'set_seed', seeds.append)
     monkeypatch.setattr(run_benchmark, 'QueryAssistant', lambda **kwargs: None)
@@ -71,6 +74,7 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
             text = report.read_text(encoding='utf-8')
             assert FIRST_INPUT.research_question in text
             assert f'Input SHA-256: {expected_hash}' in text
+            assert f'Git commit: {git_commit}' in text
             report_seeds.add(next(line for line in text.splitlines() if line.startswith('Random seed:')))
             assert '_seed_' not in report.name
             timestamp = report.stem.rsplit('_', 1)[1]
@@ -81,6 +85,7 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
         assert len(rows) == len(BENCHMARK_SEEDS)
         assert all(row['questions_completed'] == '1' for row in rows)
         assert all(row['input_sha256'] == expected_hash for row in rows)
+        assert all(row['git_commit'] == git_commit for row in rows)
         assert [row['seed'] for row in rows] == list(map(str, BENCHMARK_SEEDS))
         assert (output_dir / 'summary.svg').is_file()
     assert not (tmp_path / 'benchmarks' / 'summary.csv').exists()
@@ -112,6 +117,35 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
     assert 'seed 2028' in plot
     assert 'seed 2030' in plot
     assert expected_hash not in plot
+
+
+def test_get_git_commit_uses_source_checkout(monkeypatch: pytest.MonkeyPatch):
+    """
+    Read the source commit independently of the benchmark output directory.
+    """
+    commit = 'b' * 40
+
+    def check_output(command, *, cwd, text, stderr):
+        assert command == ['git', 'rev-parse', 'HEAD']
+        assert cwd == Path(run_benchmark.__file__).resolve().parent
+        assert text is True
+        assert stderr == subprocess.DEVNULL
+        return commit + '\n'
+
+    monkeypatch.setattr(run_benchmark.subprocess, 'check_output', check_output)
+    assert run_benchmark.get_git_commit() == commit
+
+
+@pytest.mark.parametrize('error', [FileNotFoundError(), subprocess.CalledProcessError(128, 'git')])
+def test_get_git_commit_unavailable(monkeypatch: pytest.MonkeyPatch, error: Exception):
+    """
+    Allow benchmarks to run when Git or checkout metadata is unavailable.
+    """
+    def check_output(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(run_benchmark.subprocess, 'check_output', check_output)
+    assert run_benchmark.get_git_commit() == 'unknown'
 
 
 def test_parser_rejects_unsupported_seed():
@@ -207,8 +241,13 @@ def test_summary_appends_runs(tmp_path: Path):
     ]
     model = FrozenModel.QWEN3_1_7B
     input_hash = sha256(_INPUT_TEXT.encode('utf-8')).hexdigest()
-    run_benchmark.append_summary(path, model, outputs, started_at, 3, input_sha256=input_hash)
-    run_benchmark.append_summary(path, model, [], started_at, 0, input_sha256=input_hash)
+    git_commit = 'c' * 40
+    run_benchmark.append_summary(
+        path, model, outputs, started_at, 3, input_sha256=input_hash, git_commit=git_commit,
+    )
+    run_benchmark.append_summary(
+        path, model, [], started_at, 0, input_sha256=input_hash, git_commit=git_commit,
+    )
     with path.open(newline='') as file:
         rows = list(csv.DictReader(file))
     assert len(rows) == 2
@@ -217,6 +256,7 @@ def test_summary_appends_runs(tmp_path: Path):
         'revision': model.revision,
         'seed': str(SEED),
         'input_sha256': input_hash,
+        'git_commit': git_commit,
         'started_at_utc': started_at.isoformat(),
         'questions_completed': '3',
         'total_questions': '3',
