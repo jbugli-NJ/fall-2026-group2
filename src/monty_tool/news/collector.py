@@ -2,7 +2,6 @@
 
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -14,12 +13,7 @@ from pydantic import BaseModel
 from monty_tool.news.pipeline import MediaCloudCollectionJob
 from monty_tool.news.schemas import MediaCloudStory
 
-from requests.exceptions import RequestException
-
-from monty_tool import news_api
-from monty_tool.news.pipeline import NewsCollectionJob
-from monty_tool.news.schemas import news_search_parameters
-
+from monty_tool import media_cloud_api
 
 def _save_snapshot(
     output_dir: Path,
@@ -51,55 +45,6 @@ def _save_snapshot(
         if temporary is not None:
             temporary.unlink(missing_ok=True)
 
-
-def collect_news_job(
-    job: NewsCollectionJob,
-    *,
-    output_dir: Path,
-    page_size: int = 100,
-) -> Path:
-    """Collect one search and save its outcome."""
-    if type(page_size) is not int or not 1 <= page_size <= 100:
-        raise ValueError("page_size must be an integer between 1 and 100.")
-
-    if job.query.item_id != job.event.item_id:
-        raise ValueError("The query and event must have the same item_id.")
-
-    if job.query.from_date > job.query.to_date:
-        raise ValueError("The query date range is invalid.")
-
-    if not job.query.query.strip() or len(job.query.query) > 500:
-        raise ValueError("Search query must contain 1 to 500 characters.")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    report: dict[str, Any] = {
-        "schema_version": 1,
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "job": job.model_dump(mode="json"),
-        "search_parameters": news_search_parameters(job.query, page_size=page_size),
-        "request_attempted": True,
-        "status": "error",
-        "result": None,
-        "error": None,
-    }
-
-    try:
-        result = news_api.search_news(
-            job.query,
-            page_size=page_size,
-            language="en",
-            sort_by="relevancy",
-        )
-        report["status"] = "ok" if result.articles else "empty"
-        report["result"] = result.model_dump(mode="json")
-
-    except (RequestException, RuntimeError, ValueError) as exc:
-        # Do not persist potentially sensitive exception messages.
-        report["error"] = {"type": type(exc).__name__}
-
-    report["finished_at"] = datetime.now(timezone.utc).isoformat()
-    return _save_snapshot(output_dir, report)
 
 class MediaCloudCandidateBatch(BaseModel):
     """Unverified candidates collected from a bounded number of pages."""
@@ -144,7 +89,7 @@ def collect_media_cloud_candidates(
         if page_number > 0:
             sleep(page_interval_seconds)
 
-        page = news_api.search_media_cloud_page(
+        page = media_cloud_api.search_media_cloud_page(
             query=job.query.query,
             start_date=job.query.from_date,
             end_date=job.query.to_date,

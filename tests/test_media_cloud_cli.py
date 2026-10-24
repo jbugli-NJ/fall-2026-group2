@@ -2,11 +2,12 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
-from monty_tool.news import cli, runner
+from monty_tool.news import cli, history, runner
 from monty_tool.news.collector import MediaCloudCandidateBatch
 from monty_tool.news.schemas import MediaCloudStory
 from monty_tool.news.s3_storage import read_media_cloud_snapshot
@@ -38,6 +39,7 @@ def environment(monkeypatch, tmp_path):
     load = Mock(side_effect=lambda *_a, **_k: iter([record()]))
     monkeypatch.setattr(cli, "load_collection", load)
     bucket = Mock()
+    bucket.objects.filter.return_value = []
     get_bucket = Mock(return_value=bucket)
     monkeypatch.setattr(cli, "get_bucket", get_bucket)
     download = Mock()
@@ -102,6 +104,35 @@ def test_execute_saves_body_and_unavailable_candidate(environment, capsys):
     get_bucket.assert_not_called()
 
 
+def test_exact_local_run_is_reused_without_new_requests(environment, capsys):
+    args, _, collect, model, _, _, _, _ = environment
+    assert cli.main([*args, *EXECUTE]) == 0
+    first = json.loads(capsys.readouterr().out)
+
+    assert cli.main([*args, *EXECUTE]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert collect.call_count == 1
+    assert second["requests_made"] == 0
+    assert second["saved"][0]["reused_from"] == "local"
+    assert second["saved"][0]["snapshot"] == first["saved"][0]["snapshot"]
+    model.assert_not_called()
+
+
+def test_refresh_collects_again_even_with_exact_local_run(environment, monkeypatch, capsys):
+    args, _, collect, _, _, _, _, _ = environment
+    monkeypatch.setattr(runner, "fetch_publisher_html", Mock(side_effect=[
+        ("<html>test</html>", "https://example.com/one"), None,
+    ] * 2))
+    assert cli.main([*args, *EXECUTE]) == 0
+    capsys.readouterr()
+
+    assert cli.main([*args, *EXECUTE, "--refresh"]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert collect.call_count == 2
+    assert second["requests_made"] == 1
+    assert second["saved"][0]["reused_from"] is None
+
+
 @pytest.mark.parametrize("flags", [
     [], ["--execute"],
     ["--execute", "--request-limit", "1", "--max-body-attempts", "0"],
@@ -154,6 +185,45 @@ def test_s3_upload_is_explicit_and_separate_from_legacy_prefix(environment, monk
     assert saved["s3_key"].startswith("test-owner/media_cloud_articles/snapshots/")
     bucket.upload_file.assert_called_once_with(Path(saved["snapshot"]), saved["s3_key"])
     get_bucket.assert_called_once_with("test-bucket")
+
+
+def test_refresh_upload_keeps_previous_s3_snapshot(environment, monkeypatch, capsys):
+    args, _, _, _, _, bucket, _, _ = environment
+    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
+    monkeypatch.setattr(runner, "fetch_publisher_html", Mock(side_effect=[
+        ("<html>test</html>", "https://example.com/one"), None,
+    ] * 2))
+    flags = [*EXECUTE, "--s3-upload", "--s3-prefix", "test-owner"]
+    assert cli.main([*args, *flags]) == 0
+    first = json.loads(capsys.readouterr().out)["saved"][0]
+
+    assert cli.main([*args, *flags, "--refresh"]) == 0
+    second = json.loads(capsys.readouterr().out)["saved"][0]
+    assert first["s3_key"] != second["s3_key"]
+    assert bucket.upload_file.call_count == 2
+
+
+def test_exact_s3_run_is_reused_without_new_requests(environment, monkeypatch, tmp_path, capsys):
+    args, _, collect, model, _, bucket, _, _ = environment
+    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
+    flags = [*EXECUTE, "--s3-upload", "--s3-prefix", "test-owner"]
+    assert cli.main([*args, *flags]) == 0
+    first = json.loads(capsys.readouterr().out)["saved"][0]
+
+    bucket.objects.filter.return_value = [SimpleNamespace(key=first["s3_key"])]
+    monkeypatch.setattr(history, "download_object", Mock(side_effect=lambda _bucket, _key, destination: destination.write_bytes(
+        Path(first["snapshot"]).read_bytes()
+    )))
+    next_args = list(args)
+    next_args[next_args.index("--output-dir") + 1] = str(tmp_path / "other-results")
+    assert cli.main([*next_args, *flags]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["requests_made"] == 0
+    assert second["saved"][0]["reused_from"] == "s3"
+    assert second["saved"][0]["s3_key"] == first["s3_key"]
+    assert collect.call_count == 1
+    bucket.upload_file.assert_called_once()
+    model.assert_not_called()
 
 
 def test_missing_s3_prefix_rejected_before_requests(environment, monkeypatch):

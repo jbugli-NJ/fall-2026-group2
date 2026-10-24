@@ -1,9 +1,4 @@
-"""
-News provider clients.
-
-Media Cloud supports the new collection pipeline.
-The existing NewsAPI client remains until its callers are migrated.
-"""
+"""Media Cloud story-list client."""
 
 from __future__ import annotations
 
@@ -14,81 +9,10 @@ from datetime import date
 import requests
 from dotenv import load_dotenv
 
-from monty_tool.news.schemas import (
-    MediaCloudPage,
-    NewsAPIResponse,
-    NewsQuery,
-    NewsSearchResult,
-)
+from monty_tool.news.schemas import MediaCloudPage
 
 
 MEDIA_CLOUD_STORY_LIST_URL = "https://search.mediacloud.org/api/search/story-list"
-NEWS_API_URL = "https://newsapi.org/v2/everything"
-
-
-def get_news_api_key() -> str:
-    """Load NEWS_API_KEY from a local .env file."""
-    load_dotenv()
-
-    api_key = os.getenv("NEWS_API_KEY")
-
-    if not api_key:
-        raise RuntimeError(
-            "NEWS_API_KEY is missing. "
-            "Add NEWS_API_KEY=your_key to your local .env file."
-        )
-
-    return api_key
-
-
-def search_news(
-    news_query: NewsQuery,
-    *,
-    language: str = "en",
-    page_size: int = 20,
-    sort_by: str = "relevancy",
-) -> NewsSearchResult:
-    """
-    Search NewsAPI using prepared search parameters.
-    """
-
-    params = {
-        "q": news_query.query,
-        "from": news_query.from_date.isoformat(),
-        "to": news_query.to_date.isoformat(),
-        "language": language,
-        "sortBy": sort_by,
-        "pageSize": page_size,
-        "page": 1,
-    }
-    if news_query.search_in is not None:
-        params["searchIn"] = news_query.search_in
-
-    response = requests.get(
-        NEWS_API_URL,
-        params=params,
-        headers={"X-Api-Key": get_news_api_key()},
-        timeout=30,
-    )
-
-    payload = response.json()
-
-    if response.status_code != 200 or payload.get("status") != "ok":
-        raise RuntimeError(
-            f"NewsAPI failed: "
-            f"{payload.get('code')} - {payload.get('message')}"
-        )
-
-    validated_response = NewsAPIResponse.model_validate(payload)
-
-    return NewsSearchResult(
-        item_id=news_query.item_id,
-        query=news_query.query,
-        from_date=news_query.from_date,
-        to_date=news_query.to_date,
-        total_results=validated_response.total_results,
-        articles=validated_response.articles,
-    )
 
 
 def get_media_cloud_api_key() -> str:

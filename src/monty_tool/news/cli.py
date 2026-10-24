@@ -18,10 +18,20 @@ from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.boto3_utils.s3_utils import download_object, get_bucket
 from monty_tool.data_cache import load_collection, raw_cache_path
 from monty_tool.event_context import EventContext
+from monty_tool.news.history import (
+    MediaCloudRunSettings,
+    download_media_cloud_snapshot_for_run,
+    find_local_media_cloud_snapshot,
+    media_cloud_run_key,
+)
 from monty_tool.news.pipeline import prepare_media_cloud_jobs, select_disaster_records
 from monty_tool.news.runner import run_media_cloud_job
 from monty_tool.news.schemas import MediaCloudStory
-from monty_tool.news.s3_storage import save_media_cloud_snapshot, upload_media_cloud_snapshot
+from monty_tool.news.s3_storage import (
+    read_media_cloud_snapshot,
+    save_media_cloud_snapshot,
+    upload_media_cloud_snapshot,
+)
 from monty_tool.news.verification import EventJudge, JudgeResult, make_qwen_event_judge
 from monty_tool.utils.versions import FrozenModel
 
@@ -86,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     judge.add_argument("--defer-verification", action="store_true",
                        help="Preserve evidence as uncertain without loading Qwen.")
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/media-cloud"))
+    parser.add_argument("--refresh", action="store_true", help="Collect again even when an exact saved run exists.")
     parser.add_argument("--s3-upload", action="store_true", help="Also upload each saved snapshot to S3.")
     parser.add_argument("--s3-prefix", help="Upload folder; otherwise uses explicit AWS_BUCKET_PREFIX.")
     return parser
@@ -169,10 +180,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("MEDIACLOUD_API_KEY is required for execution.")
 
     if args.defer_verification:
-        judge = deferred_judge
+        verification_mode = "deferred"
     else:
         assert args.model is not None
-        judge = load_qwen_judge(args.model)
+        verification_mode = args.model
+    judge: EventJudge | None = deferred_judge if args.defer_verification else None
     saved: list[dict[str, object]] = []
     requests_made = 0
     stop_reason = "completed"
@@ -181,28 +193,67 @@ def main(argv: Sequence[str] | None = None) -> int:
         if remaining <= 0:
             stop_reason = "budget_exhausted"
             break
-        if requests_made:
-            sleep(31.0)  # Also space requests across different events.
+        settings: MediaCloudRunSettings = {
+            "page_size": args.page_size,
+            "max_pages": min(args.max_pages, remaining),
+            "max_body_attempts": args.max_body_attempts,
+            "verification_mode": verification_mode,
+        }
+        run_key = media_cloud_run_key(job, settings)
         snapshot: Path | None = None
+        reused_from: str | None = None
+        reused_s3_key: str | None = None
         try:
-            result = run_media_cloud_job(
-                job, judge=judge, max_body_attempts=args.max_body_attempts,
-                page_size=args.page_size, max_pages=min(args.max_pages, remaining),
-            )
-            requests_made += result.pages_fetched
-            snapshot = save_media_cloud_snapshot(result, output_dir=args.output_dir)
+            if not args.refresh:
+                snapshot = find_local_media_cloud_snapshot(
+                    args.output_dir, job=job, settings=settings, run_key=run_key,
+                )
+                if snapshot is not None:
+                    reused_from = "local"
+                elif args.s3_upload:
+                    assert bucket is not None
+                    s3_match = download_media_cloud_snapshot_for_run(
+                        bucket, prefix=upload_prefix, output_dir=args.output_dir,
+                        job=job, settings=settings, run_key=run_key,
+                    )
+                    if s3_match is not None:
+                        snapshot, reused_s3_key = s3_match
+                        reused_from = "s3"
+            if snapshot is not None:
+                result = read_media_cloud_snapshot(snapshot)
+            else:
+                if requests_made:
+                    sleep(31.0)  # Space actual requests across events.
+                if judge is None:
+                    assert args.model is not None
+                    judge = load_qwen_judge(args.model)
+                result = run_media_cloud_job(
+                    job, judge=judge, max_body_attempts=args.max_body_attempts,
+                    page_size=args.page_size, max_pages=settings["max_pages"],
+                )
+                requests_made += result.pages_fetched
+                snapshot = save_media_cloud_snapshot(
+                    result, output_dir=args.output_dir, run_key=run_key,
+                    request_settings=settings,
+                )
             entry: dict[str, object] = {
                 "event_id": job.event.item_id, "snapshot": str(snapshot),
                 "candidates": len(result.assessments),
                 "decisions": dict(Counter(item.decision.status for item in result.assessments)),
                 "has_more_pages": bool(result.next_page_token),
                 "verification_mode": "deferred" if args.defer_verification else "qwen",
+                "reused_from": reused_from,
             }
             saved.append(entry)
             print(f"Saved: {snapshot}", file=sys.stderr)
             if args.s3_upload:
                 assert bucket is not None
-                entry["s3_key"] = upload_media_cloud_snapshot(bucket, snapshot, prefix=upload_prefix)
+                if reused_from == "s3":
+                    entry["s3_key"] = reused_s3_key
+                else:
+                    entry["s3_key"] = upload_media_cloud_snapshot(
+                        bucket, snapshot, prefix=upload_prefix,
+                    )
         except Exception as exc:
             print(json.dumps({
                 "stop_reason": "error", "event_id": job.event.item_id,

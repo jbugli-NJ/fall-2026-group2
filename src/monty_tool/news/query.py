@@ -78,50 +78,6 @@ def _default_search(context: EventContext) -> str:
     )
     return context.title.strip()
 
-
-def build_news_query(
-    item: MontandonItem | EventContext,
-    days_before: int = 1,
-    days_after: int = 3,
-    *,
-    search_query: str | None = None,
-) -> NewsQuery:
-    """Build a news query using the supplied keywords and event dates."""
-
-    if isinstance(item, EventContext):
-        context = item
-    else:
-        context = build_event_context(item)
-
-    query_text = (
-        _default_search(context)
-        if search_query is None
-        else search_query.strip()
-    )
-
-    if not query_text or len(query_text) > 500:
-        raise ValueError(
-            "Search query must contain 1 to 500 characters."
-        )
-
-    from_date = (
-        context.start_datetime.date()
-        - timedelta(days=days_before)
-    )
-
-    to_date = min(
-        context.end_datetime.date() + timedelta(days=days_after),
-        date.today(),
-    )
-
-    return NewsQuery(
-        item_id=context.item_id,
-        query=query_text,
-        from_date=from_date,
-        to_date=to_date,
-        search_in="title,description",
-    )
-
 def build_media_cloud_query(
     item: MontandonItem | EventContext,
     days_before: int = 1,
@@ -207,5 +163,4 @@ def build_media_cloud_query(
         query=query_text,
         from_date=from_date,
         to_date=to_date,
-        search_in=None,
     )

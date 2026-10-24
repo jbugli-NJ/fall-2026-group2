@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 from requests.exceptions import Timeout
 
-from monty_tool import news_api
+from monty_tool import media_cloud_api
 
 
 def mock_media_cloud_get(
@@ -18,8 +18,8 @@ def mock_media_cloud_get(
     response = Mock(status_code=status_code)
     response.json.return_value = payload
     get = Mock(return_value=response)
-    monkeypatch.setattr(news_api.requests, "get", get)
-    monkeypatch.setattr(news_api, "get_media_cloud_api_key", lambda: "test-key")
+    monkeypatch.setattr(media_cloud_api.requests, "get", get)
+    monkeypatch.setattr(media_cloud_api, "get_media_cloud_api_key", lambda: "test-key")
     return get
 
 
@@ -41,7 +41,7 @@ def test_story_list_request_and_pagination_token(
         },
     )
 
-    page = news_api.search_media_cloud_page(
+    page = media_cloud_api.search_media_cloud_page(
         query='"climate change"',
         start_date=date(2026, 9, 1),
         end_date=date(2026, 10, 1),
@@ -53,7 +53,7 @@ def test_story_list_request_and_pagination_token(
     assert len(page.stories) == 1
     assert page.stories[0].id == 123
     assert page.pagination_token == "next-token"
-    assert get.call_args.args[0] == news_api.MEDIA_CLOUD_STORY_LIST_URL
+    assert get.call_args.args[0] == media_cloud_api.MEDIA_CLOUD_STORY_LIST_URL
     assert get.call_args.kwargs["params"] == {
         "q": '"climate change"',
         "start": "2026-09-01",
@@ -74,7 +74,7 @@ def test_first_page_omits_pagination_token(
         monkeypatch, {"stories": [], "pagination_token": None}
     )
 
-    news_api.search_media_cloud_page(
+    media_cloud_api.search_media_cloud_page(
         query="earthquake",
         start_date=date(2026, 9, 1),
         end_date=date(2026, 9, 2),
@@ -93,7 +93,7 @@ def test_http_error_is_not_an_empty_page(
     )
 
     with pytest.raises(RuntimeError, match=f"HTTP {status_code}"):
-        news_api.search_media_cloud_page(
+        media_cloud_api.search_media_cloud_page(
             query="earthquake",
             start_date=date(2026, 9, 1),
             end_date=date(2026, 9, 2),
@@ -111,7 +111,7 @@ def test_error_payload_is_not_an_empty_page(
     mock_media_cloud_get(monkeypatch, payload)
 
     with pytest.raises(ValueError, match="stories list"):
-        news_api.search_media_cloud_page(
+        media_cloud_api.search_media_cloud_page(
             query="earthquake",
             start_date=date(2026, 9, 1),
             end_date=date(2026, 9, 2),
@@ -122,7 +122,7 @@ def test_error_payload_is_not_an_empty_page(
 @pytest.mark.parametrize("page_size", [0, 101, True])
 def test_invalid_page_size_is_rejected(page_size: int) -> None:
     with pytest.raises(ValueError, match="page_size"):
-        news_api.search_media_cloud_page(
+        media_cloud_api.search_media_cloud_page(
             query="earthquake",
             start_date=date(2026, 9, 1),
             end_date=date(2026, 9, 2),
@@ -134,11 +134,11 @@ def test_invalid_page_size_is_rejected(page_size: int) -> None:
 def test_network_failure_does_not_return_empty_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(news_api.requests, "get", Mock(side_effect=Timeout))
-    monkeypatch.setattr(news_api, "get_media_cloud_api_key", lambda: "test-key")
+    monkeypatch.setattr(media_cloud_api.requests, "get", Mock(side_effect=Timeout))
+    monkeypatch.setattr(media_cloud_api, "get_media_cloud_api_key", lambda: "test-key")
 
     with pytest.raises(RuntimeError, match="request failed"):
-        news_api.search_media_cloud_page(
+        media_cloud_api.search_media_cloud_page(
             query="earthquake",
             start_date=date(2026, 9, 1),
             end_date=date(2026, 9, 2),
@@ -152,7 +152,7 @@ def test_single_day_media_cloud_search_is_allowed(
         monkeypatch, {"stories": [], "pagination_token": None}
     )
 
-    news_api.search_media_cloud_page(
+    media_cloud_api.search_media_cloud_page(
         query="earthquake",
         start_date=date(2026, 9, 10),
         end_date=date(2026, 9, 10),
