@@ -113,10 +113,15 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
     with (output_dir / 'summary.csv').open(encoding='utf-8', newline='') as file:
         rows = list(csv.DictReader(file))
     assert [row['seed'] for row in rows] == list(map(str, BENCHMARK_SEEDS)) * 3
-    plot = (output_dir / 'summary.svg').read_text(encoding='utf-8')
-    assert 'seed 2028' in plot
-    assert 'seed 2030' in plot
-    assert expected_hash not in plot
+    figure = run_benchmark.Figure()
+    monkeypatch.setattr(run_benchmark, 'Figure', lambda **kwargs: figure)
+    run_benchmark.save_summary_plot(output_dir / 'summary.csv')
+    legend = figure.axes[0].get_legend()
+    assert legend is not None
+    assert legend.get_title().get_text() == 'Model configuration'
+    assert [label.get_text() for label in legend.get_texts()] == [
+        rows[0]['model'], rows[0]['model'] + ' (core only)',
+    ]
 
 
 def test_get_git_commit_uses_source_checkout(monkeypatch: pytest.MonkeyPatch):
