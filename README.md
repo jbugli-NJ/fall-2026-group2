@@ -47,6 +47,10 @@ Use `--seed` to evaluate just one seed, for example:
 uv run run-fact-benchmark --seed 2028 --input-json 20261008_news_synthesis.json
 ```
 
+Use `--model bedrock` to evaluate the Bedrock assistant's default Sonnet 4.5 model with AWS credentials instead of a local model.
+`--no-enable-external` also applies to Bedrock runs.
+Reports and summaries record the Bedrock model ID; its revision is recorded as `not applicable`.
+
 Results are saved under `benchmarks/<input name>/`.
 Each seed run writes a Markdown report under `reports/`, named `<model>_<timestamp>.md`.
 CSV summaries and plots stay in the input's results directory and record every seed run.

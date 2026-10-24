@@ -128,6 +128,33 @@ def test_main_seed_selection(
     assert len(list((output_dir / 'reports').glob('*.md'))) == len(expected_seeds)
 
 
+@pytest.mark.parametrize('core_only', [False, True])
+def test_main_uses_bedrock(benchmark_workspace: Path, monkeypatch: pytest.MonkeyPatch, core_only: bool):
+    """
+    Select the Bedrock assistant and record its actual model ID in the results.
+    """
+    assistant = Mock(spec=run_benchmark.BedrockQueryAssistant)
+    assistant.ask.return_value = {'answer': FIRST_INPUT.full_answer_substrings[0], 'tool_results': []}
+    bedrock = Mock(return_value=assistant)
+    monkeypatch.setattr(run_benchmark, 'BedrockQueryAssistant', bedrock)
+    args = ['--model', 'bedrock', '--seed', str(SEED)]
+    if core_only:
+        args.append('--no-enable-external')
+
+    run_benchmark.main(args)
+
+    bedrock.assert_called_once_with(enable_external=not core_only)
+    assistant.ask.assert_called_once_with(FIRST_INPUT.research_question)
+    output_dir = benchmark_workspace / 'benchmarks' / '20261006_demo'
+    row, = read_summary(output_dir)
+    model_id = run_benchmark.DEFAULT_BEDROCK_MODEL_ID + (' (core only)' if core_only else '')
+    assert row['model'] == model_id
+    assert row['revision'] == 'not applicable'
+    assert row['average_score'] == '1.0'
+    report, = (output_dir / 'reports').glob('bedrock_*.md')
+    assert report.read_text().startswith(f'# Benchmark: {model_id}\n')
+
+
 def test_main_preserves_reports_on_rerun(benchmark_workspace: Path):
     """
     Repeating a configuration creates another report without replacing earlier results.
