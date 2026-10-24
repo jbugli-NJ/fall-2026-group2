@@ -210,21 +210,22 @@ def append_summary(
 
 def save_summary_plot(summary_path: Path) -> Path:
     """
-    Plot each run's average score against total runtime, labeled by model.
+    Plot each run's score against runtime, with a color per model configuration.
     """
     with summary_path.open(encoding='utf-8', newline='') as file:
         rows = list(csv.DictReader(file))
 
-    figure = Figure(figsize=(9, 6), layout='constrained')
+    figure = Figure(figsize=(11, 6), layout='constrained')
     axes = figure.subplots()
-    durations = [float(row['total_seconds']) for row in rows]
-    scores = [float(row['average_score']) for row in rows]
-    axes.scatter(durations, scores)
-    for row, duration, score in zip(rows, durations, scores):
-        axes.annotate(
-            f"{row['model']} (seed {row['seed']})", (duration, score),
-            xytext=(6, 6), textcoords='offset points', fontsize=9,
+    for model in dict.fromkeys(row['model'] for row in rows):
+        runs = [row for row in rows if row['model'] == model]
+        axes.scatter(
+            [float(row['total_seconds']) for row in runs],
+            [float(row['average_score']) for row in runs],
+            label=model,
         )
+    if rows:
+        axes.legend(title='Model configuration', loc='upper left', bbox_to_anchor=(1.02, 1))
     axes.set_title('Fact retrieval benchmark')
     axes.set_xlabel('Total runtime (seconds)')
     axes.set_ylabel('Average score')
