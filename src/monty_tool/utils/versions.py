@@ -10,6 +10,7 @@ from enum import StrEnum
 # Seed
 
 SEED = 2026
+BENCHMARK_SEEDS = (SEED, 2028, 2030)
 
 
 # Model enum
