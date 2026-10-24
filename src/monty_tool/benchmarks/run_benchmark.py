@@ -7,11 +7,14 @@ Run a fact retrieval benchmark and save a model report, CSV summary, and plot.
 import argparse
 import csv
 from datetime import datetime, timezone
+from hashlib import sha256
 from importlib.resources import files
 import logging
 from pathlib import Path
 import re
+import subprocess
 from time import perf_counter
+from typing import Literal
 
 from matplotlib.figure import Figure
 from matplotlib.ticker import PercentFormatter
@@ -19,9 +22,9 @@ from pydantic import TypeAdapter
 from transformers import set_seed
 
 from monty_tool.benchmarks.schemas import BenchmarkInput, BenchmarkOutput
-from monty_tool.llm.client import QueryAssistant
+from monty_tool.llm.client import DEFAULT_BEDROCK_MODEL_ID, BedrockQueryAssistant, QueryAssistant
 from monty_tool.llm.schemas import QueryAssistantResponse
-from monty_tool.utils.versions import FrozenModel, SEED
+from monty_tool.utils.versions import BENCHMARK_SEEDS, FrozenModel, SEED
 
 
 # Logging
@@ -33,19 +36,52 @@ logger.setLevel(level=logging.INFO)
 # Benchmark inputs
 
 _INPUT_MODULE = files('monty_tool.benchmarks.inputs')
+type BenchmarkModel = FrozenModel | Literal['bedrock']
 
 
 # Helpers
 
+def model_metadata(model: BenchmarkModel) -> tuple[str, str]:
+    """
+    Identify the evaluated model and its revision when available.
+    """
+    if isinstance(model, FrozenModel):
+        return model.value, model.revision
+    return DEFAULT_BEDROCK_MODEL_ID, 'not applicable'
+
+
+def get_git_commit() -> str:
+    """
+    Identify the source checkout's commit, or report unavailable Git metadata.
+    """
+    try:
+        return subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=Path(__file__).resolve().parent,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        logger.warning('Git commit unavailable; recording unknown.')
+        return 'unknown'
+
+
 def build_parser() -> argparse.ArgumentParser:
     """
-    Define model selection and optional benchmark size controls.
+    Define model and seed selection and optional benchmark size controls.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        '--model', type=FrozenModel, choices=list(FrozenModel),
+        '--model', type=str, choices=[*FrozenModel, 'bedrock'],
         default=FrozenModel.QWEN3_5_4B,
         help='Model ID to evaluate (in the supported set)',
+    )
+    parser.add_argument(
+        '--seed', type=int, choices=BENCHMARK_SEEDS,
+        help=(
+            'Run a seed available in the whitelisted set. '
+            'Defaults to running all benchmark seeds. '
+        ),
     )
     parser.add_argument(
         '--input-json', type=str,
@@ -82,7 +118,7 @@ def score_answer(benchmark: BenchmarkInput, answer: str) -> float:
 
 
 def run_question(
-    assistant: QueryAssistant,
+    assistant: QueryAssistant | BedrockQueryAssistant,
     benchmark: BenchmarkInput,
     ) -> BenchmarkOutput:
     """
@@ -110,20 +146,27 @@ def run_question(
 
 
 def render_report(
-    model: FrozenModel,
+    model: BenchmarkModel,
     outputs: list[BenchmarkOutput],
     started_at: datetime,
     total_questions: int,
     *,
+    input_sha256: str,
+    git_commit: str,
     enable_external: bool = True,
+    seed: int = SEED,
     ) -> str:
     """
     Build a markdown report with summary stats and all question outputs.
     """
     average = sum(output.score for output in outputs) / len(outputs) if outputs else 0.0
+    model_id, revision = model_metadata(model)
     sections = [
-        f'# Benchmark: {model.value}' + ('' if enable_external else ' (core only)'),
-        f'Model revision: {model.revision}\n\nStart time (UTC): {started_at.isoformat()}',
+        f'# Benchmark: {model_id}' + ('' if enable_external else ' (core only)'),
+        f'Model revision: {revision}\n\nStart time (UTC): {started_at.isoformat()}',
+        f'Random seed: {seed}',
+        f'Input SHA-256: {input_sha256}',
+        f'Git commit: {git_commit}',
         '## Summary',
         f'- Questions completed: {len(outputs)} / {total_questions}\n'
         f'- Average score: {average:.2%}\n'
@@ -140,19 +183,26 @@ def render_report(
 
 def append_summary(
     path: Path,
-    model: FrozenModel,
+    model: BenchmarkModel,
     outputs: list[BenchmarkOutput],
     started_at: datetime,
     total_questions: int,
     *,
+    input_sha256: str,
+    git_commit: str,
     enable_external: bool = True,
+    seed: int = SEED,
     ):
     """
     Append one run's aggregate statistics to a CSV covering all runs.
     """
+    model_id, revision = model_metadata(model)
     row = {
-        'model': model.value + ('' if enable_external else ' (core only)'),
-        'revision': model.revision,
+        'model': model_id + ('' if enable_external else ' (core only)'),
+        'revision': revision,
+        'seed': seed,
+        'input_sha256': input_sha256,
+        'git_commit': git_commit,
         'started_at_utc': started_at.isoformat(),
         'questions_completed': len(outputs),
         'total_questions': total_questions,
@@ -171,23 +221,21 @@ def append_summary(
         writer.writerow(row)
 
 
-def save_summary_plot(summary_path: Path) -> Path:
+def build_summary_plot(rows: list[dict[str, str]]) -> Figure:
     """
-    Plot each run's average score against total runtime, labeled by model.
+    Build a scatterplot displaying score svs. runtime colored by model.
     """
-    with summary_path.open(encoding='utf-8', newline='') as file:
-        rows = list(csv.DictReader(file))
-
-    figure = Figure(figsize=(9, 6), layout='constrained')
+    figure = Figure(figsize=(11, 6), layout='constrained')
     axes = figure.subplots()
-    durations = [float(row['total_seconds']) for row in rows]
-    scores = [float(row['average_score']) for row in rows]
-    axes.scatter(durations, scores)
-    for row, duration, score in zip(rows, durations, scores):
-        axes.annotate(
-            row['model'], (duration, score),
-            xytext=(6, 6), textcoords='offset points', fontsize=9,
+    for model in dict.fromkeys(row['model'] for row in rows):
+        runs = [row for row in rows if row['model'] == model]
+        axes.scatter(
+            [float(row['total_seconds']) for row in runs],
+            [float(row['average_score']) for row in runs],
+            label=model,
         )
+    if rows:
+        axes.legend(title='Model configuration', loc='upper left', bbox_to_anchor=(1.02, 1))
     axes.set_title('Fact retrieval benchmark')
     axes.set_xlabel('Total runtime (seconds)')
     axes.set_ylabel('Average score')
@@ -195,57 +243,113 @@ def save_summary_plot(summary_path: Path) -> Path:
     axes.set_ylim(-0.05, 1.1)
     axes.margins(x=0.3)
     axes.grid(alpha=0.25)
+    return figure
+
+
+def save_summary_plot(summary_path: Path) -> Path:
+    """
+    Read the comparison CSV and save its figure alongside it.
+    """
+    with summary_path.open(encoding='utf-8', newline='') as file:
+        rows = list(csv.DictReader(file))
+    figure = build_summary_plot(rows)
     plot_path = summary_path.with_suffix('.svg')
     figure.savefig(plot_path)
     return plot_path
 
 
-def main(argv: list[str] | None = None) -> None:
+def run_seed(
+    benchmarks: list[BenchmarkInput],
+    model: BenchmarkModel,
+    output_dir: Path,
+    *,
+    input_sha256: str,
+    git_commit: str,
+    seed: int,
+    enable_external: bool = True,
+    ) -> Path:
     """
-    Save a model-specific report and append this run to the comparison CSV.
+    Evaluate one seed, updating its report and appending its summary row.
     """
-    args = build_parser().parse_args(argv)
-    input_file = _INPUT_MODULE.joinpath(args.input_json)
-    if not input_file.is_file():
-        raise ValueError(f"Selected input not detected: {input_file.name}")
-    logger.info(f"Detected input file: {input_file.name}")
-    benchmarks = (
-        TypeAdapter(list[BenchmarkInput])
-        .validate_json(input_file.read_text(encoding='utf-8'))
-    )
-    if args.limit is not None:
-        benchmarks = benchmarks[:args.limit]
-
-    set_seed(SEED)
-    assistant = QueryAssistant(model_id=args.model, enable_external=args.enable_external)
-    model_slug = re.sub(r'[^a-z0-9]+', '_', args.model.value.lower()).strip('_')
-    if not args.enable_external:
+    logger.info(f'Running benchmark with seed {seed}')
+    set_seed(seed)
+    if isinstance(model, FrozenModel):
+        assistant = QueryAssistant(model_id=model, enable_external=enable_external)
+        model_slug = re.sub(r'[^a-z0-9]+', '_', model.value.lower()).strip('_')
+    else:
+        assistant = BedrockQueryAssistant(enable_external=enable_external)
+        model_slug = 'bedrock'
+    if not enable_external:
         model_slug += '_core_only'
-    input_name = Path(input_file.name).stem
-    output_path = Path('benchmarks', input_name, f'{model_slug}.md')
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    reports_dir = output_dir / 'reports'
+    reports_dir.mkdir(parents=True, exist_ok=True)
     started_at = datetime.now(timezone.utc)
-    outputs = []
+    timestamp = started_at.strftime('%Y%m%dT%H%M%S.%fZ')
+    output_path = reports_dir / f'{model_slug}_{timestamp}.md'
+    outputs: list[BenchmarkOutput] = []
+
+    def write_report() -> None:
+        """
+        Save progress using the same run metadata on every update.
+        """
+        output_path.write_text(render_report(
+            model=model,
+            outputs=outputs,
+            started_at=started_at,
+            total_questions=len(benchmarks),
+            input_sha256=input_sha256,
+            git_commit=git_commit,
+            enable_external=enable_external,
+            seed=seed,
+        ), encoding='utf-8')
+
+    write_report()
     for number, benchmark in enumerate(benchmarks, start=1):
         logger.info(f'Question {number}/{len(benchmarks)}: {benchmark.research_question}')
         output = run_question(assistant, benchmark)
         outputs.append(output)
-        output_path.write_text(render_report(
-            model=args.model,
-            outputs=outputs,
-            started_at=started_at,
-            total_questions=len(benchmarks),
-            enable_external=args.enable_external,
-        ), encoding='utf-8')
-        logger.info(f'Question {number} qcore: {output.score:.2%}')
-    summary_path = output_path.parent / 'summary.csv'
+        write_report()
+        logger.info(f'Question {number} score: {output.score:.2%}')
+    summary_path = output_dir / 'summary.csv'
     append_summary(
-        summary_path, args.model, outputs, started_at, len(benchmarks),
-        enable_external=args.enable_external,
+        summary_path, model, outputs, started_at, len(benchmarks),
+        input_sha256=input_sha256,
+        git_commit=git_commit,
+        enable_external=enable_external,
+        seed=seed,
     )
-    plot_path = save_summary_plot(summary_path)
     logger.info(f'Saved benchmark report: {output_path}')
     logger.info(f'Appended benchmark summary: {summary_path}')
+    return output_path
+
+
+def main(argv: list[str] | None = None) -> None:
+    """
+    Load benchmark inputs, evaluate selected seeds, and save the comparison plot.
+    """
+    args = build_parser().parse_args(argv)
+    model: BenchmarkModel = 'bedrock' if args.model == 'bedrock' else FrozenModel(args.model)
+    input_file = _INPUT_MODULE.joinpath(args.input_json)
+    if not input_file.is_file():
+        raise ValueError(f"Selected input not detected: {input_file.name}")
+    logger.info(f"Detected input file: {input_file.name}")
+    input_bytes = input_file.read_bytes()
+    input_sha256 = sha256(input_bytes).hexdigest()
+    benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(input_bytes)
+    if args.limit is not None:
+        benchmarks = benchmarks[:args.limit]
+    git_commit = get_git_commit()
+    output_dir = Path('benchmarks', Path(input_file.name).stem)
+    seeds = BENCHMARK_SEEDS if args.seed is None else (args.seed,)
+    for seed in seeds:
+        run_seed(
+            benchmarks, model, output_dir,
+            input_sha256=input_sha256,
+            git_commit=git_commit,
+            enable_external=args.enable_external,
+            seed=seed,
+        )
+    plot_path = save_summary_plot(output_dir / 'summary.csv')
     logger.info(f'Saved benchmark plot: {plot_path}')
 
 
