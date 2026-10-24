@@ -51,7 +51,7 @@ def benchmark_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     monkeypatch.setattr(run_benchmark, 'set_seed', lambda seed: None)
     assistant = Mock(spec=run_benchmark.QueryAssistant)
     assistant.ask.return_value = {
-        'answer': FIRST_INPUT.full_answer_substrings[0],
+        'answer': f'<{FIRST_INPUT.full_answer_substrings[0]}>',
         'tool_results': [],
     }
     monkeypatch.setattr(run_benchmark, 'QueryAssistant', Mock(return_value=assistant))
@@ -134,7 +134,7 @@ def test_main_uses_bedrock(benchmark_workspace: Path, monkeypatch: pytest.Monkey
     Select the Bedrock assistant and record its actual model ID in the results.
     """
     assistant = Mock(spec=run_benchmark.BedrockQueryAssistant)
-    assistant.ask.return_value = {'answer': FIRST_INPUT.full_answer_substrings[0], 'tool_results': []}
+    assistant.ask.return_value = {'answer': f'<{FIRST_INPUT.full_answer_substrings[0]}>', 'tool_results': []}
     bedrock = Mock(return_value=assistant)
     monkeypatch.setattr(run_benchmark, 'BedrockQueryAssistant', bedrock)
     args = ['--model', 'bedrock', '--seed', str(SEED)]
@@ -286,7 +286,7 @@ def test_output():
     """
     output = BenchmarkOutput(
         benchmark_input=FIRST_INPUT, score=1, duration_seconds=0,
-        response={'answer': '3,000', 'tool_results': [{
+        response={'answer': '<answer>3,000</answer>', 'tool_results': [{
             'call': {'name': 'search_disaster_events', 'arguments': {'text': 'Sri Lanka'}},
             'result': 'private trace',
         }]},
@@ -295,7 +295,7 @@ def test_output():
     assert run_benchmark.score_answer(FIRST_INPUT, output.response['answer']) == 1.0
     markdown = output.to_md(1)
     assert FIRST_INPUT.research_question in markdown
-    assert '**Answer:** 3,000' in markdown
+    assert '**Answer:** <answer>3,000</answer>' in markdown
     assert '**Tool calls:** 1' in markdown
     assert '    - search_disaster_events: {"text": "Sri Lanka"}' in markdown
     assert 'private trace' not in markdown
