@@ -6,6 +6,7 @@ Tests for benchmark scoring and reports.
 
 import csv
 from datetime import datetime, timezone
+from hashlib import sha256
 from importlib.resources import files
 from pathlib import Path
 
@@ -44,8 +45,10 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
     input_dir = tmp_path / 'inputs'
     input_dir.mkdir()
     input_text = TypeAdapter(list[BenchmarkInput]).dump_json([FIRST_INPUT]).decode()
+    input_bytes = (input_text + '\r\n').encode('utf-8')
+    expected_hash = sha256(input_bytes).hexdigest()
     for name in ('20261006_demo', 'custom'):
-        (input_dir / f'{name}.json').write_text(input_text, encoding='utf-8')
+        (input_dir / f'{name}.json').write_bytes(input_bytes)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(run_benchmark, '_INPUT_MODULE', input_dir)
     seeds = []
@@ -67,6 +70,7 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
         for report in reports:
             text = report.read_text(encoding='utf-8')
             assert FIRST_INPUT.research_question in text
+            assert f'Input SHA-256: {expected_hash}' in text
             report_seeds.add(next(line for line in text.splitlines() if line.startswith('Random seed:')))
             assert '_seed_' not in report.name
             timestamp = report.stem.rsplit('_', 1)[1]
@@ -76,6 +80,7 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
             rows = list(csv.DictReader(file))
         assert len(rows) == len(BENCHMARK_SEEDS)
         assert all(row['questions_completed'] == '1' for row in rows)
+        assert all(row['input_sha256'] == expected_hash for row in rows)
         assert [row['seed'] for row in rows] == list(map(str, BENCHMARK_SEEDS))
         assert (output_dir / 'summary.svg').is_file()
     assert not (tmp_path / 'benchmarks' / 'summary.csv').exists()
@@ -106,6 +111,7 @@ def test_main_separates_results_by_input(tmp_path: Path, monkeypatch: pytest.Mon
     plot = (output_dir / 'summary.svg').read_text(encoding='utf-8')
     assert 'seed 2028' in plot
     assert 'seed 2030' in plot
+    assert expected_hash not in plot
 
 
 def test_parser_rejects_unsupported_seed():
@@ -200,8 +206,9 @@ def test_summary_appends_runs(tmp_path: Path):
         BenchmarkOutput(benchmark_input=FIRST_INPUT, score=0, duration_seconds=4, error='failed'),
     ]
     model = FrozenModel.QWEN3_1_7B
-    run_benchmark.append_summary(path, model, outputs, started_at, 3)
-    run_benchmark.append_summary(path, model, [], started_at, 0)
+    input_hash = sha256(_INPUT_TEXT.encode('utf-8')).hexdigest()
+    run_benchmark.append_summary(path, model, outputs, started_at, 3, input_sha256=input_hash)
+    run_benchmark.append_summary(path, model, [], started_at, 0, input_sha256=input_hash)
     with path.open(newline='') as file:
         rows = list(csv.DictReader(file))
     assert len(rows) == 2
@@ -209,6 +216,7 @@ def test_summary_appends_runs(tmp_path: Path):
         'model': model.value,
         'revision': model.revision,
         'seed': str(SEED),
+        'input_sha256': input_hash,
         'started_at_utc': started_at.isoformat(),
         'questions_completed': '3',
         'total_questions': '3',

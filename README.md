@@ -51,6 +51,9 @@ Results are saved under `benchmarks/<input name>/`.
 Each seed run writes a Markdown report under `reports/`, named `<model>_<timestamp>.md`.
 CSV summaries and plots stay in the input's results directory and record every seed run.
 
+Markdown reports and CSV summaries store a hash of the input file's bytes.the full SHA-256 hash of the input file's
+raw bytes, including whitespace. The hash covers the entire file even when runs are limited.
+
 ### Neo4j
 
 This repository contains a [Docker compose](docker-compose.yml) file to set up a local Neo4j instance for testing.

@@ -7,6 +7,7 @@ Run a fact retrieval benchmark and save a model report, CSV summary, and plot.
 import argparse
 import csv
 from datetime import datetime, timezone
+from hashlib import sha256
 from importlib.resources import files
 import logging
 from pathlib import Path
@@ -122,6 +123,7 @@ def render_report(
     started_at: datetime,
     total_questions: int,
     *,
+    input_sha256: str,
     enable_external: bool = True,
     seed: int = SEED,
     ) -> str:
@@ -133,6 +135,7 @@ def render_report(
         f'# Benchmark: {model.value}' + ('' if enable_external else ' (core only)'),
         f'Model revision: {model.revision}\n\nStart time (UTC): {started_at.isoformat()}',
         f'Random seed: {seed}',
+        f'Input SHA-256: {input_sha256}',
         '## Summary',
         f'- Questions completed: {len(outputs)} / {total_questions}\n'
         f'- Average score: {average:.2%}\n'
@@ -154,6 +157,7 @@ def append_summary(
     started_at: datetime,
     total_questions: int,
     *,
+    input_sha256: str,
     enable_external: bool = True,
     seed: int = SEED,
     ):
@@ -164,6 +168,7 @@ def append_summary(
         'model': model.value + ('' if enable_external else ' (core only)'),
         'revision': model.revision,
         'seed': seed,
+        'input_sha256': input_sha256,
         'started_at_utc': started_at.isoformat(),
         'questions_completed': len(outputs),
         'total_questions': total_questions,
@@ -220,9 +225,11 @@ def main(argv: list[str] | None = None) -> None:
     if not input_file.is_file():
         raise ValueError(f"Selected input not detected: {input_file.name}")
     logger.info(f"Detected input file: {input_file.name}")
+    input_bytes = input_file.read_bytes()
+    input_sha256 = sha256(input_bytes).hexdigest()
     benchmarks = (
         TypeAdapter(list[BenchmarkInput])
-        .validate_json(input_file.read_text(encoding='utf-8'))
+        .validate_json(input_bytes)
     )
     if args.limit is not None:
         benchmarks = benchmarks[:args.limit]
@@ -249,6 +256,7 @@ def main(argv: list[str] | None = None) -> None:
             outputs=outputs,
             started_at=started_at,
             total_questions=len(benchmarks),
+            input_sha256=input_sha256,
             enable_external=args.enable_external,
             seed=seed,
         ), encoding='utf-8')
@@ -261,12 +269,14 @@ def main(argv: list[str] | None = None) -> None:
                 outputs=outputs,
                 started_at=started_at,
                 total_questions=len(benchmarks),
+                input_sha256=input_sha256,
                 enable_external=args.enable_external,
                 seed=seed,
             ), encoding='utf-8')
             logger.info(f'Question {number} score: {output.score:.2%}')
         append_summary(
             summary_path, args.model, outputs, started_at, len(benchmarks),
+            input_sha256=input_sha256,
             enable_external=args.enable_external,
             seed=seed,
         )
