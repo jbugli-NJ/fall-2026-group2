@@ -244,12 +244,25 @@ def build_summary_plot(rows: list[dict[str, str]]) -> Figure:
     return figure
 
 
-def save_summary_plot(summary_path: Path) -> Path:
+def save_summary_plot(summary_path: Path, total_questions: int) -> Path:
     """
     Read the comparison CSV and save its figure alongside it.
     """
+    current_revisions = {
+        model_id + suffix: revision
+        for model_id, revision in [
+            *(model_metadata(model) for model in FrozenModel),
+            model_metadata('bedrock'),
+        ]
+        for suffix in ('', ' (no tools)')
+    }
     with summary_path.open(encoding='utf-8', newline='') as file:
-        rows = list(csv.DictReader(file))
+        rows = [
+            row for row in csv.DictReader(file)
+            if row['revision'] == current_revisions.get(row['model'])
+            and int(row['total_questions']) == total_questions
+            and int(row['questions_completed']) == total_questions
+        ]
     figure = build_summary_plot(rows)
     plot_path = summary_path.with_suffix('.svg')
     figure.savefig(plot_path)
@@ -333,6 +346,7 @@ def main(argv: list[str] | None = None) -> None:
     input_bytes = input_file.read_bytes()
     input_sha256 = sha256(input_bytes).hexdigest()
     benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(input_bytes)
+    total_questions = len(benchmarks)
     if args.limit is not None:
         benchmarks = benchmarks[:args.limit]
     git_commit = get_git_commit()
@@ -353,7 +367,7 @@ def main(argv: list[str] | None = None) -> None:
                 use_tools=use_tools,
                 seed=seed,
             )
-    plot_path = save_summary_plot(output_dir.joinpath('summary.csv'))
+    plot_path = save_summary_plot(output_dir.joinpath('summary.csv'), total_questions)
     logger.info(f'Saved benchmark plot: {plot_path}')
 
 

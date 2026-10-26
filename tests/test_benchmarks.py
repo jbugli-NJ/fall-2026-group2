@@ -351,3 +351,44 @@ def test_summary_appends_runs(tmp_path: Path):
     }
     assert rows[1]['questions_completed'] == '0'
     assert rows[1]['average_score'] == '0.0'
+
+
+def test_summary_plot_filters_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """
+    Plot current full runs and exclude stale revisions, old modes, and partial runs.
+    """
+    model = FrozenModel.QWEN3_1_7B
+    other_model = FrozenModel.QWEN3_5_4B
+    rows = [
+        (model.value, model.revision, 3, 3),
+        (model.value + ' (no tools)', model.revision, 3, 3),
+        (other_model.value, other_model.revision, 3, 3),
+        (model.value, 'old-revision', 3, 3),
+        (model.value + ' (no tools)', 'old-revision', 3, 3),
+        (model.value, model.revision, 2, 2),
+        (model.value, model.revision, 2, 3),
+        (model.value, model.revision, 4, 4),
+        (model.value + ' (core only)', model.revision, 3, 3),
+        ('unknown-model', model.revision, 3, 3),
+    ]
+    path = tmp_path.joinpath('summary.csv')
+    with path.open('w', encoding='utf-8', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            'model', 'revision', 'questions_completed', 'total_questions',
+            'total_seconds', 'average_score',
+        ])
+        for index, row in enumerate(rows):
+            writer.writerow([*row, index + 1, 0.5])
+    build_plot = Mock()
+    monkeypatch.setattr(run_benchmark, 'build_summary_plot', build_plot)
+
+    assert run_benchmark.save_summary_plot(path, 3) == path.with_suffix('.svg')
+
+    build_plot.assert_called_once()
+    plotted_rows = build_plot.call_args.args[0]
+    assert [row['model'] for row in plotted_rows] == [
+        model.value, model.value + ' (no tools)', other_model.value,
+    ]
+    assert [float(row['total_seconds']) for row in plotted_rows] == [1.0, 2.0, 3.0]
+    build_plot.return_value.savefig.assert_called_once_with(path.with_suffix('.svg'))
