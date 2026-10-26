@@ -1,12 +1,11 @@
 """Transfer disaster input and Media Cloud snapshots through S3."""
 import json
-import re
 from collections.abc import Iterator
 from datetime import datetime, timezone
-from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.boto3_utils.s3_utils import download_object, upload_object
@@ -16,6 +15,23 @@ from monty_tool.tools.resources import RAW_BUCKET_PREFIX
 if TYPE_CHECKING:
     from monty_tool.news.history import MediaCloudRunSettings
     from monty_tool.news.runner import MediaCloudJobRun
+
+
+def current_snapshot_path(output_dir: Path, *, collection: str, event_id: str) -> Path:
+    """Use one current file per event, with path-safe identity components."""
+    if any(not value.strip() or value in {".", ".."} for value in (collection, event_id)):
+        raise ValueError("A collection and event ID are required for a snapshot.")
+    return output_dir / "current" / quote(collection, safe="") / f"{quote(event_id, safe='')}.json"
+
+
+def current_snapshot_key(*, prefix: str, collection: str, event_id: str) -> str:
+    """Return the canonical S3 key for an event's current result."""
+    folder = prefix.strip().strip("/")
+    if not folder:
+        raise ValueError("An explicit S3 folder prefix is required.")
+    relative = current_snapshot_path(Path(), collection=collection, event_id=event_id)
+    return f"{folder}/media_cloud_articles/{relative.as_posix()}"
+
 
 def download_collection_cache(
     bucket: S3Bucket,
@@ -42,7 +58,7 @@ def save_media_cloud_snapshot(
     run_key: str | None = None,
     request_settings: "MediaCloudRunSettings | None" = None,
 ) -> Path:
-    """Save candidates, available bodies, and relevance decisions."""
+    """Atomically replace this event's current candidates and decisions."""
     if (run_key is None) != (request_settings is None):
         raise ValueError("run_key and request_settings must be supplied together.")
     from monty_tool.news.collector import _save_snapshot
@@ -67,7 +83,16 @@ def save_media_cloud_snapshot(
     if run_key is not None:
         report["run_key"] = run_key
         report["request_settings"] = request_settings
-    return _save_snapshot(output_dir, report)
+    destination = current_snapshot_path(
+        output_dir, collection=run.job.event.collection, event_id=run.job.event.item_id,
+    )
+    staged = _save_snapshot(destination.parent, report)
+    try:
+        read_media_cloud_snapshot(staged)
+        staged.replace(destination)
+    finally:
+        staged.unlink(missing_ok=True)
+    return destination
 
 
 def read_media_cloud_snapshot(path: Path) -> "MediaCloudJobRun":
@@ -93,28 +118,11 @@ def upload_media_cloud_snapshot(
     *,
     prefix: str,
 ) -> str:
-    """Upload a validated snapshot under an explicit S3 prefix."""
-    folder = prefix.strip().strip("/")
-    if not folder:
-        raise ValueError("An explicit S3 folder prefix is required.")
-
-    read_media_cloud_snapshot(snapshot)
-    report = json.loads(snapshot.read_text(encoding="utf-8"))
-    run_key = report.get("run_key")
-    if run_key is not None and not (
-        isinstance(run_key, str) and re.fullmatch(r"[0-9a-f]{64}", run_key)
-    ):
-        raise ValueError("Invalid Media Cloud run key.")
-    digest = sha256(snapshot.read_bytes()).hexdigest()
-    if run_key is None:
-        identifier = digest
-    else:
-        saved_at = datetime.fromisoformat(report["saved_at"])
-        if saved_at.utcoffset() is None:
-            raise ValueError("Media Cloud snapshot timestamp must include a timezone.")
-        timestamp = saved_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        identifier = f"{run_key}-{timestamp}-{digest}"
-    key = f"{folder}/media_cloud_articles/snapshots/{identifier}.json"
+    """Replace the event's current S3 object after validating the snapshot."""
+    run = read_media_cloud_snapshot(snapshot)
+    key = current_snapshot_key(
+        prefix=prefix, collection=run.job.event.collection, event_id=run.job.event.item_id,
+    )
 
     upload_object(bucket, snapshot, key)
     return key
@@ -122,26 +130,32 @@ def upload_media_cloud_snapshot(
 def list_media_cloud_snapshot_keys(
     bucket: S3Bucket, *, prefix: str
 ) -> list[str]:
-    """List Media Cloud snapshots under the same prefix used for upload."""
+    """List current results only; legacy snapshots are not graph input."""
     folder = prefix.strip().strip("/")
     if not folder:
         raise ValueError("An explicit S3 folder prefix is required.")
 
-    snapshot_prefix = f"{folder}/media_cloud_articles/snapshots/"
+    snapshot_prefix = f"{folder}/media_cloud_articles/current/"
     return sorted(
         obj.key
         for obj in bucket.objects.filter(Prefix=snapshot_prefix)
-        if obj.key.endswith(".json")
+        if obj.key.startswith(snapshot_prefix) and obj.key.endswith(".json")
     )
 
 
 def iter_media_cloud_snapshots(
     bucket: S3Bucket, *, prefix: str
 ) -> Iterator[tuple[str, "MediaCloudJobRun"]]:
-    """Download and validate Media Cloud snapshots one at a time."""
+    """Download current snapshots and validate their event-to-key identity."""
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "snapshot.json"
 
         for key in list_media_cloud_snapshot_keys(bucket, prefix=prefix):
             download_object(bucket, key, path)
-            yield key, read_media_cloud_snapshot(path)
+            run = read_media_cloud_snapshot(path)
+            expected_key = current_snapshot_key(
+                prefix=prefix, collection=run.job.event.collection, event_id=run.job.event.item_id,
+            )
+            if key != expected_key:
+                raise ValueError(f"Media Cloud snapshot event does not match its key: {key}")
+            yield key, run

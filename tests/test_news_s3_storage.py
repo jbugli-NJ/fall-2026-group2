@@ -56,11 +56,12 @@ def test_download_rejects_other_prefix(tmp_path: Path) -> None:
 
 def test_list_media_cloud_snapshot_keys_uses_upload_prefix() -> None:
     bucket = Mock()
-    prefix = "test-owner/media_cloud_articles/snapshots/"
+    prefix = "test-owner/media_cloud_articles/current/"
     bucket.objects.filter.return_value = [
         SimpleNamespace(key=prefix + "b.json"),
         SimpleNamespace(key=prefix + "notes.txt"),
         SimpleNamespace(key=prefix + "a.json"),
+        SimpleNamespace(key="test-owner/media_cloud_articles/snapshots/old.json"),
     ]
 
     keys = s3_storage.list_media_cloud_snapshot_keys(
@@ -73,9 +74,11 @@ def test_list_media_cloud_snapshot_keys_uses_upload_prefix() -> None:
 
 def test_iter_media_cloud_snapshots_downloads_and_reads(monkeypatch) -> None:
     bucket = Mock()
-    key = "test-owner/media_cloud_articles/snapshots/one.json"
+    key = "test-owner/media_cloud_articles/current/emdat-events/event-1.json"
     bucket.objects.filter.return_value = [SimpleNamespace(key=key)]
     run = Mock()
+    run.job.event.collection = "emdat-events"
+    run.job.event.item_id = "event-1"
     read = Mock(return_value=run)
     monkeypatch.setattr(s3_storage, "read_media_cloud_snapshot", read)
 
@@ -88,3 +91,23 @@ def test_iter_media_cloud_snapshots_downloads_and_reads(monkeypatch) -> None:
     assert found == [(key, run)]
     assert bucket.download_file.call_args.args[0] == key
     read.assert_called_once()
+
+
+def test_iter_rejects_snapshot_stored_under_another_event(monkeypatch) -> None:
+    bucket = Mock()
+    key = "test-owner/media_cloud_articles/current/emdat-events/event-1.json"
+    bucket.objects.filter.return_value = [SimpleNamespace(key=key)]
+    run = Mock()
+    run.job.event.collection = "emdat-events"
+    run.job.event.item_id = "event-2"
+    monkeypatch.setattr(s3_storage, "read_media_cloud_snapshot", Mock(return_value=run))
+    with pytest.raises(ValueError, match="does not match its key"):
+        list(s3_storage.iter_media_cloud_snapshots(bucket, prefix="test-owner"))
+
+
+def test_current_path_encodes_event_ids_without_path_traversal(tmp_path) -> None:
+    path = s3_storage.current_snapshot_path(
+        tmp_path, collection="emdat-events", event_id="../event/a",
+    )
+    assert path.parent == tmp_path / "current" / "emdat-events"
+    assert path.name == "..%2Fevent%2Fa.json"

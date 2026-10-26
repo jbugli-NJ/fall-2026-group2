@@ -670,9 +670,7 @@ def test_media_cloud_snapshot_preserves_evidence(
         prefix="test-owner",
     )
 
-    assert key.startswith(
-        "test-owner/media_cloud_articles/snapshots/"
-    )
+    assert key == "test-owner/media_cloud_articles/current/gdacs-events/event-a.json"
     bucket.upload_file.assert_called_once_with(snapshot, key)
 
     with pytest.raises(ValueError, match="explicit S3"):

@@ -118,19 +118,75 @@ def test_exact_local_run_is_reused_without_new_requests(environment, capsys):
     model.assert_not_called()
 
 
-def test_refresh_collects_again_even_with_exact_local_run(environment, monkeypatch, capsys):
-    args, _, collect, _, _, _, _, _ = environment
+def test_refresh_replaces_local_decision_and_third_run_reuses_it(environment, monkeypatch, capsys):
+    args, _, collect, model, _, _, _, _ = environment
+    model.side_effect = None
+    model.return_value = Mock(side_effect=[
+        ("same_event", "First assessment.", "Earthquake relief in Japan."),
+        ("different_event", "Revised assessment.", "Earthquake relief in Japan."),
+    ])
+    flags = [*EXECUTE[:-1], "--model", "Qwen/Qwen3.5-4B"]
     monkeypatch.setattr(runner, "fetch_publisher_html", Mock(side_effect=[
         ("<html>test</html>", "https://example.com/one"), None,
     ] * 2))
-    assert cli.main([*args, *EXECUTE]) == 0
-    capsys.readouterr()
+    assert cli.main([*args, *flags]) == 0
+    first = json.loads(capsys.readouterr().out)["saved"][0]
+    assert first["decisions"] == {"same_event": 1, "uncertain": 1}
 
-    assert cli.main([*args, *EXECUTE, "--refresh"]) == 0
+    assert cli.main([*args, *flags, "--refresh"]) == 0
     second = json.loads(capsys.readouterr().out)
     assert collect.call_count == 2
     assert second["requests_made"] == 1
     assert second["saved"][0]["reused_from"] is None
+    assert second["saved"][0]["snapshot"] == first["snapshot"]
+    assert second["saved"][0]["decisions"] == {"different_event": 1, "uncertain": 1}
+
+    assert cli.main([*args, *flags]) == 0
+    third = json.loads(capsys.readouterr().out)
+    assert third["saved"][0]["decisions"] == second["saved"][0]["decisions"]
+    assert third["saved"][0]["reused_from"] == "local"
+    assert third["requests_made"] == 0
+    assert collect.call_count == model.call_count == 2
+
+
+def test_failed_refresh_preserves_local_current(environment, capsys):
+    args, _, collect, *_ = environment
+    assert cli.main([*args, *EXECUTE]) == 0
+    path = Path(json.loads(capsys.readouterr().out)["saved"][0]["snapshot"])
+    previous = path.read_bytes()
+    collect.side_effect = RuntimeError("Search failed")
+    assert cli.main([*args, *EXECUTE, "--refresh"]) == 1
+    assert json.loads(capsys.readouterr().out)["stop_reason"] == "error"
+    assert path.read_bytes() == previous
+
+
+def test_existing_local_current_can_be_uploaded_without_recollection(environment, monkeypatch, capsys):
+    args, _, collect, _, _, bucket, _, _ = environment
+    assert cli.main([*args, *EXECUTE]) == 0
+    first = json.loads(capsys.readouterr().out)["saved"][0]
+    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
+    assert cli.main([*args, *EXECUTE, "--s3-upload", "--s3-prefix", "test-owner"]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["requests_made"] == 0
+    assert second["saved"][0]["reused_from"] == "local"
+    assert second["saved"][0]["snapshot"] == first["snapshot"]
+    assert collect.call_count == 1
+    bucket.upload_file.assert_called_once()
+
+
+def test_legacy_local_snapshots_are_not_reused(environment, monkeypatch, capsys):
+    args, _, collect, *_ = environment
+    monkeypatch.setattr(runner, "fetch_publisher_html", Mock(return_value=None))
+    assert cli.main([*args, *EXECUTE]) == 0
+    current = Path(json.loads(capsys.readouterr().out)["saved"][0]["snapshot"])
+    legacy = current.parents[2] / "news-legacy.json"
+    current.rename(legacy)
+    assert cli.main([*args, *EXECUTE]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["saved"][0]["reused_from"] is None
+    assert collect.call_count == 2
+    assert legacy.is_file()
+    assert current.is_file()
 
 
 @pytest.mark.parametrize("flags", [
@@ -182,24 +238,50 @@ def test_s3_upload_is_explicit_and_separate_from_legacy_prefix(environment, monk
     monkeypatch.setenv("AWS_BUCKET", "test-bucket")
     assert cli.main([*args, *EXECUTE, "--s3-upload", "--s3-prefix", "test-owner"]) == 0
     saved = json.loads(capsys.readouterr().out)["saved"][0]
-    assert saved["s3_key"].startswith("test-owner/media_cloud_articles/snapshots/")
+    assert saved["s3_key"] == "test-owner/media_cloud_articles/current/emdat-events/event-a.json"
     bucket.upload_file.assert_called_once_with(Path(saved["snapshot"]), saved["s3_key"])
     get_bucket.assert_called_once_with("test-bucket")
 
 
-def test_refresh_upload_keeps_previous_s3_snapshot(environment, monkeypatch, capsys):
-    args, _, _, _, _, bucket, _, _ = environment
+@pytest.mark.parametrize("other_machine", [False, True])
+def test_s3_refresh_is_reused_even_with_stale_local_cache(environment, monkeypatch, tmp_path, capsys, other_machine):
+    args, _, collect, model, _, bucket, _, _ = environment
+    model.side_effect = None
+    model.return_value = Mock(side_effect=[
+        ("same_event", "First assessment.", "Earthquake relief in Japan."),
+        ("different_event", "Revised assessment.", "Earthquake relief in Japan."),
+    ])
+    objects = {}
+    bucket.upload_file.side_effect = lambda path, key: objects.__setitem__(key, Path(path).read_bytes())
+    bucket.download_file.side_effect = lambda key, path: Path(path).write_bytes(objects[key])
+    bucket.objects.filter.side_effect = lambda *, Prefix: [
+        SimpleNamespace(key=key) for key in objects if key.startswith(Prefix)
+    ]
     monkeypatch.setenv("AWS_BUCKET", "test-bucket")
     monkeypatch.setattr(runner, "fetch_publisher_html", Mock(side_effect=[
         ("<html>test</html>", "https://example.com/one"), None,
     ] * 2))
-    flags = [*EXECUTE, "--s3-upload", "--s3-prefix", "test-owner"]
+    flags = [*EXECUTE[:-1], "--model", "Qwen/Qwen3.5-4B", "--s3-upload", "--s3-prefix", "test-owner"]
     assert cli.main([*args, *flags]) == 0
     first = json.loads(capsys.readouterr().out)["saved"][0]
 
-    assert cli.main([*args, *flags, "--refresh"]) == 0
+    refresh_args = list(args)
+    if other_machine:
+        refresh_args[refresh_args.index("--output-dir") + 1] = str(tmp_path / "other-machine")
+    assert cli.main([*refresh_args, *flags, "--refresh"]) == 0
     second = json.loads(capsys.readouterr().out)["saved"][0]
-    assert first["s3_key"] != second["s3_key"]
+    assert first["s3_key"] == second["s3_key"]
+    assert first["decisions"] == {"same_event": 1, "uncertain": 1}
+    assert second["decisions"] == {"different_event": 1, "uncertain": 1}
+    assert len(objects) == 1
+    assert bucket.upload_file.call_count == 2
+
+    assert cli.main([*args, *flags]) == 0
+    third = json.loads(capsys.readouterr().out)
+    assert third["saved"][0]["decisions"] == second["decisions"]
+    assert third["saved"][0]["reused_from"] == "s3"
+    assert third["requests_made"] == 0
+    assert collect.call_count == model.call_count == 2
     assert bucket.upload_file.call_count == 2
 
 

@@ -20,7 +20,7 @@ from monty_tool.data_cache import load_collection, raw_cache_path
 from monty_tool.event_context import EventContext
 from monty_tool.news.history import (
     MediaCloudRunSettings,
-    download_media_cloud_snapshot_for_run,
+    download_current_media_cloud_snapshot,
     find_local_media_cloud_snapshot,
     media_cloud_run_key,
 )
@@ -96,8 +96,8 @@ def build_parser() -> argparse.ArgumentParser:
     judge.add_argument("--defer-verification", action="store_true",
                        help="Preserve evidence as uncertain without loading Qwen.")
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/media-cloud"))
-    parser.add_argument("--refresh", action="store_true", help="Collect again even when an exact saved run exists.")
-    parser.add_argument("--s3-upload", action="store_true", help="Also upload each saved snapshot to S3.")
+    parser.add_argument("--refresh", action="store_true", help="Collect again and replace the event's current snapshot.")
+    parser.add_argument("--s3-upload", action="store_true", help="Use S3 current snapshots for reuse and upload new results.")
     parser.add_argument("--s3-prefix", help="Upload folder; otherwise uses explicit AWS_BUCKET_PREFIX.")
     return parser
 
@@ -205,20 +205,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         reused_s3_key: str | None = None
         try:
             if not args.refresh:
+                # S3 is authoritative in upload mode: a stale local cache must
+                # never overwrite a result refreshed from another machine.
+                if args.s3_upload:
+                    assert bucket is not None
+                    s3_current = download_current_media_cloud_snapshot(
+                        bucket, prefix=upload_prefix, output_dir=args.output_dir,
+                        job=job,
+                    )
+                    if s3_current is not None:
+                        _, reused_s3_key = s3_current
                 snapshot = find_local_media_cloud_snapshot(
                     args.output_dir, job=job, settings=settings, run_key=run_key,
                 )
                 if snapshot is not None:
-                    reused_from = "local"
-                elif args.s3_upload:
-                    assert bucket is not None
-                    s3_match = download_media_cloud_snapshot_for_run(
-                        bucket, prefix=upload_prefix, output_dir=args.output_dir,
-                        job=job, settings=settings, run_key=run_key,
-                    )
-                    if s3_match is not None:
-                        snapshot, reused_s3_key = s3_match
-                        reused_from = "s3"
+                    reused_from = "s3" if reused_s3_key is not None else "local"
             if snapshot is not None:
                 result = read_media_cloud_snapshot(snapshot)
             else:

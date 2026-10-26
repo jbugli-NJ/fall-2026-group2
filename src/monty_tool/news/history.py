@@ -3,12 +3,17 @@
 import json
 from hashlib import sha256
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TypedDict
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.boto3_utils.s3_utils import download_object
 from monty_tool.news.pipeline import MediaCloudCollectionJob
-from monty_tool.news.s3_storage import read_media_cloud_snapshot
+from monty_tool.news.s3_storage import (
+    current_snapshot_key,
+    current_snapshot_path,
+    read_media_cloud_snapshot,
+)
 
 
 class MediaCloudRunSettings(TypedDict):
@@ -61,38 +66,42 @@ def find_local_media_cloud_snapshot(
     settings: MediaCloudRunSettings,
     run_key: str,
 ) -> Path | None:
-    """Find a validated prior run in the current output directory."""
-    for path in sorted(output_dir.glob("news-*.json")):
-        if _matching_snapshot(path, job=job, settings=settings, run_key=run_key):
-            return path
+    """Reuse only the event's current result with identical run settings."""
+    path = current_snapshot_path(
+        output_dir, collection=job.event.collection, event_id=job.event.item_id,
+    )
+    if _matching_snapshot(path, job=job, settings=settings, run_key=run_key):
+        return path
     return None
 
 
-def download_media_cloud_snapshot_for_run(
+def download_current_media_cloud_snapshot(
     bucket: S3Bucket,
     *,
     prefix: str,
     output_dir: Path,
     job: MediaCloudCollectionJob,
-    settings: MediaCloudRunSettings,
-    run_key: str,
 ) -> tuple[Path, str] | None:
-    """Reuse an exact completed S3 run without a new Media Cloud request."""
-    folder = prefix.strip().strip("/")
-    if not folder:
-        raise ValueError("An explicit S3 folder prefix is required.")
-    key_prefix = f"{folder}/media_cloud_articles/snapshots/{run_key}-"
-    keys = [
-        obj.key for obj in bucket.objects.filter(Prefix=key_prefix)
-        if obj.key.startswith(key_prefix) and obj.key.endswith(".json")
-    ]
-    if not keys:
-        return None
-    key = max(keys)
+    """Refresh the local current file from S3; the caller checks run settings.
 
-    path = output_dir / "s3-reuse" / f"{run_key}.json"
+    Returning None means no current S3 object exists. A downloaded current file
+    supersedes older local settings, so the caller cannot revive a stale run.
+    """
+    key = current_snapshot_key(
+        prefix=prefix, collection=job.event.collection, event_id=job.event.item_id,
+    )
+    if not any(obj.key == key for obj in bucket.objects.filter(Prefix=key)):
+        return None
+
+    path = current_snapshot_path(
+        output_dir, collection=job.event.collection, event_id=job.event.item_id,
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
-    download_object(bucket, key, path)
-    if not _matching_snapshot(path, job=job, settings=settings, run_key=run_key):
-        raise ValueError(f"Invalid Media Cloud S3 snapshot: {key}")
+    with TemporaryDirectory(dir=path.parent) as temporary:
+        staged = Path(temporary) / "snapshot.json"
+        download_object(bucket, key, staged)
+        run = read_media_cloud_snapshot(staged)
+        if (run.job.event.item_id, run.job.event.collection) != (job.event.item_id, job.event.collection):
+            raise ValueError(f"Media Cloud snapshot event does not match its key: {key}")
+        staged.replace(path)
     return path, key

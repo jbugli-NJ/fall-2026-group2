@@ -264,31 +264,59 @@ def insert_go_records_into_graph_db(
 def insert_media_cloud_articles(
     driver: Driver,
     node_data: list[MediaCloudArticleInsertData],
+    *,
+    event_id: str,
+    snapshot_s3_uri: str,
 ) -> int:
-    """Link classified Media Cloud articles to existing events."""
-    if not node_data:
-        return 0
+    """Atomically replace one event's Media Cloud links from a current snapshot.
+
+    An empty result removes obsolete links too. Article nodes and relationships
+    belonging to other events or S3 sources are preserved.
+    """
+    root, separator, _ = snapshot_s3_uri.partition("/media_cloud_articles/current/")
+    if not event_id or not separator or not root.startswith("s3://"):
+        raise ValueError("An event ID and current Media Cloud S3 snapshot are required.")
+    source_prefix = f"{root}/media_cloud_articles/"
+    if any(
+        row["event_id"] != event_id
+        or row["snapshot_s3_uri"] != snapshot_s3_uri
+        or row["relationship_type"] not in {"VERIFIED_FOR", "CONTEXT_FOR"}
+        for row in node_data
+    ):
+        raise ValueError("Media Cloud rows must belong to the same event and snapshot.")
 
     def insert(tx: ManagedTransaction) -> int:
-        missing = tx.run(
+        event = tx.run(
             """
-            UNWIND $items AS item
-            OPTIONAL MATCH (event:Event {id: item.event_id})
-            WITH item, event
-            WHERE event IS NULL
-            RETURN DISTINCT item.event_id AS event_id
-            LIMIT 10
+            MATCH (event:Event {id: $event_id})
+            RETURN event.id AS event_id
             """,
-            items=node_data,
-        )
-        missing_ids = [record["event_id"] for record in missing]
-        if missing_ids:
+            event_id=event_id,
+        ).single()
+        if event is None:
             raise ValueError(
-                f"News results have no matching Event node: {missing_ids!r}"
+                f"News results have no matching Event node: {event_id!r}"
             )
 
-        result = tx.run(
+        # Remove only this source's relationships. Legacy links have no source
+        # property, so recognize them by their exclusively Media Cloud S3 URIs.
+        tx.run(
             """
+            MATCH (:NewsArticle)-[link:VERIFIED_FOR|CONTEXT_FOR]->(event:Event {id: $event_id})
+            WHERE link.source_prefix = $source_prefix
+               OR (link.source_prefix IS NULL
+                   AND size(coalesce(link.snapshot_s3_uris, [])) > 0
+                   AND all(uri IN link.snapshot_s3_uris WHERE uri STARTS WITH $source_prefix))
+            DELETE link
+            """,
+            event_id=event_id,
+            source_prefix=source_prefix,
+        ).consume()
+
+        processed = 0
+        for batch in batched(node_data, NETWORK_INSERT_BATCH_SIZE):
+            result = tx.run(
+                """
             UNWIND $items AS item
             MATCH (event:Event {id: item.event_id})
             MERGE (article:NewsArticle {url: item.url})
@@ -302,40 +330,28 @@ def insert_media_cloud_articles(
                 WHEN item.relationship_type = 'VERIFIED_FOR' THEN [1]
                 ELSE []
             END |
-                MERGE (article)-[verified:VERIFIED_FOR]->(event)
+                MERGE (article)-[verified:VERIFIED_FOR {source_prefix: $source_prefix}]->(event)
                 SET verified.decision_reason = item.decision_reason,
                     verified.evidence_excerpt = item.evidence_excerpt,
-                    verified.snapshot_s3_uris =
-                        CASE
-                            WHEN verified.snapshot_s3_uris IS NULL
-                            THEN [item.snapshot_s3_uri]
-                            WHEN item.snapshot_s3_uri IN verified.snapshot_s3_uris
-                            THEN verified.snapshot_s3_uris
-                            ELSE verified.snapshot_s3_uris + item.snapshot_s3_uri
-                        END
+                    verified.snapshot_s3_uris = [item.snapshot_s3_uri]
             )
 
             FOREACH (_ IN CASE
                 WHEN item.relationship_type = 'CONTEXT_FOR' THEN [1]
                 ELSE []
             END |
-                MERGE (article)-[context:CONTEXT_FOR]->(event)
+                MERGE (article)-[context:CONTEXT_FOR {source_prefix: $source_prefix}]->(event)
                 SET context.decision_reason = item.decision_reason,
                     context.evidence_excerpt = item.evidence_excerpt,
-                    context.snapshot_s3_uris =
-                        CASE
-                            WHEN context.snapshot_s3_uris IS NULL
-                            THEN [item.snapshot_s3_uri]
-                            WHEN item.snapshot_s3_uri IN context.snapshot_s3_uris
-                            THEN context.snapshot_s3_uris
-                            ELSE context.snapshot_s3_uris + item.snapshot_s3_uri
-                        END
+                    context.snapshot_s3_uris = [item.snapshot_s3_uri]
             )
             RETURN count(item) AS processed
-            """,
-            items=node_data,
-        )
-        return result.single(strict=True)["processed"]
+                """,
+                items=list(batch),
+                source_prefix=source_prefix,
+            )
+            processed += result.single(strict=True)["processed"]
+        return processed
 
     with driver.session(database="neo4j") as session:
         return session.execute_write(insert)

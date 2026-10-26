@@ -1,21 +1,18 @@
 """Load classified Media Cloud news into an existing local graph."""
 
-from itertools import batched
-
 from neo4j import Driver
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.news.s3_storage import iter_media_cloud_snapshots
 from monty_tool.network.insert import insert_media_cloud_articles
 from monty_tool.network.node_data import media_cloud_run_to_node_data
-from monty_tool.network.resources import NETWORK_INSERT_BATCH_SIZE
 from monty_tool.tools.resources import BUCKET_DATA_PREFIX
 
 
 def load_news_into_graph(
     bucket: S3Bucket, *, bucket_name: str, driver: Driver
 ) -> int:
-    """Insert classified articles without creating new Event nodes."""
+    """Reconcile each current snapshot with its existing Event node."""
     processed = 0
 
     for key, run in iter_media_cloud_snapshots(
@@ -25,7 +22,11 @@ def load_news_into_graph(
             run,
             snapshot_s3_uri=f"s3://{bucket_name}/{key}",
         )
-        for batch in batched(rows, NETWORK_INSERT_BATCH_SIZE):
-            processed += insert_media_cloud_articles(driver, list(batch))
+        # Pass even an empty result, so a refresh can retract every old link.
+        # All batches for this event must share the deletion's transaction.
+        processed += insert_media_cloud_articles(
+            driver, rows, event_id=run.job.event.item_id,
+            snapshot_s3_uri=f"s3://{bucket_name}/{key}",
+        )
 
     return processed

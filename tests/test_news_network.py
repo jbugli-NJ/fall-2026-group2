@@ -7,6 +7,7 @@ from neo4j import Driver
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.network import news as news_network
+from monty_tool.network import insert as network_insert
 from monty_tool.network.insert import insert_media_cloud_articles
 from monty_tool.network.schemas import MediaCloudArticleInsertData
 from monty_tool.news.runner import MediaCloudJobRun
@@ -27,7 +28,7 @@ def _article_row(
         "decision_reason": "The article discusses this event.",
         "evidence_excerpt": "An earthquake affected the region.",
         "snapshot_s3_uri": (
-            "s3://test-bucket/person/media_cloud_articles/snapshots/one.json"
+            "s3://test-bucket/person/media_cloud_articles/current/emdat-events/event-1.json"
         ),
     }
 
@@ -48,37 +49,83 @@ def test_insert_media_cloud_articles_links_existing_event(
     tx = Mock()
     result = Mock()
     result.single.return_value = {"processed": 1}
-    tx.run.side_effect = [[], result]
+    tx.run.side_effect = [Mock(single=Mock(return_value={"event_id": "event-1"})), Mock(), result]
     driver = _driver_for(tx)
     row = _article_row(relationship_type)
 
     processed = insert_media_cloud_articles(
-        cast(Driver, driver), [row]
+        cast(Driver, driver), [row], event_id="event-1", snapshot_s3_uri=row["snapshot_s3_uri"],
     )
 
     assert processed == 1
-    assert tx.run.call_count == 2
-    query = tx.run.call_args_list[1].args[0]
+    assert tx.run.call_count == 3
+    cleanup = tx.run.call_args_list[1]
+    assert cleanup.kwargs == {
+        "event_id": "event-1",
+        "source_prefix": "s3://test-bucket/person/media_cloud_articles/",
+    }
+    assert "DELETE link" in cleanup.args[0]
+    assert "link.source_prefix = $source_prefix" in cleanup.args[0]
+    assert "all(uri IN link.snapshot_s3_uris" in cleanup.args[0]
+    query = tx.run.call_args_list[2].args[0]
     assert "MERGE (article:NewsArticle {url: item.url})" in query
-    assert "MERGE (article)-[verified:VERIFIED_FOR]->(event)" in query
-    assert "MERGE (article)-[context:CONTEXT_FOR]->(event)" in query
+    assert "MERGE (article)-[verified:VERIFIED_FOR {source_prefix: $source_prefix}]->(event)" in query
+    assert "MERGE (article)-[context:CONTEXT_FOR {source_prefix: $source_prefix}]->(event)" in query
     assert "item.relationship_type = 'VERIFIED_FOR'" in query
     assert "item.relationship_type = 'CONTEXT_FOR'" in query
-    assert tx.run.call_args_list[1].kwargs["items"] == [row]
+    assert tx.run.call_args_list[2].kwargs["items"] == [row]
     driver.session.assert_called_once_with(database="neo4j")
 
 
 def test_insert_media_cloud_articles_rejects_missing_event() -> None:
     tx = Mock()
-    tx.run.return_value = [{"event_id": "event-1"}]
+    tx.run.return_value.single.return_value = None
     driver = _driver_for(tx)
 
     with pytest.raises(ValueError, match="no matching Event node"):
         insert_media_cloud_articles(
-            cast(Driver, driver), [_article_row()]
+            cast(Driver, driver), [_article_row()], event_id="event-1",
+            snapshot_s3_uri=_article_row()["snapshot_s3_uri"],
         )
 
     tx.run.assert_called_once()
+
+
+def test_empty_current_result_still_clears_old_links() -> None:
+    tx = Mock()
+    tx.run.return_value.single.return_value = {"event_id": "event-1"}
+    driver = _driver_for(tx)
+    assert insert_media_cloud_articles(
+        driver, [], event_id="event-1", snapshot_s3_uri=_article_row()["snapshot_s3_uri"],
+    ) == 0
+    assert tx.run.call_count == 2
+    assert "DELETE link" in tx.run.call_args_list[1].args[0]
+
+
+def test_replacement_batches_share_one_transaction_and_one_cleanup(monkeypatch) -> None:
+    monkeypatch.setattr(network_insert, "NETWORK_INSERT_BATCH_SIZE", 1)
+    tx = Mock()
+    tx.run.return_value.single.return_value = {"event_id": "event-1", "processed": 1}
+    driver = _driver_for(tx)
+    rows = [_article_row(), {**_article_row(), "url": "https://example.com/second"}]
+    assert insert_media_cloud_articles(
+        driver, rows, event_id="event-1", snapshot_s3_uri=rows[0]["snapshot_s3_uri"],
+    ) == 2
+    session = driver.session.return_value.__enter__.return_value
+    session.execute_write.assert_called_once()
+    assert sum("DELETE link" in call.args[0] for call in tx.run.call_args_list) == 1
+    assert [call.kwargs["items"] for call in tx.run.call_args_list[2:]] == [[rows[0]], [rows[1]]]
+
+
+def test_mixed_event_rows_rejected_before_database_changes() -> None:
+    driver = MagicMock()
+    row = _article_row()
+    row["event_id"] = "other-event"
+    with pytest.raises(ValueError, match="same event and snapshot"):
+        insert_media_cloud_articles(
+            driver, [row], event_id="event-1", snapshot_s3_uri=row["snapshot_s3_uri"],
+        )
+    driver.session.assert_not_called()
 
 
 def test_media_cloud_conversion_keeps_only_classified_articles() -> None:
@@ -128,24 +175,26 @@ def test_media_cloud_conversion_keeps_only_classified_articles() -> None:
     assert all(row["body_text"] for row in rows)
 
 
-def test_load_news_into_graph_passes_s3_uri_and_batches(monkeypatch) -> None:
+@pytest.mark.parametrize("empty", [False, True])
+def test_load_news_into_graph_passes_whole_event_including_empty_results(monkeypatch, empty) -> None:
     bucket = Mock()
     driver = Mock()
     run = Mock()
+    run.job.event.item_id = "event-1"
     prefix = news_network.BUCKET_DATA_PREFIX
     key = (
         f"{prefix.rstrip('/')}/"
-        "media_cloud_articles/snapshots/one.json"
+        "media_cloud_articles/current/emdat-events/event-1.json"
     )
 
     first_row = _article_row()
     second_row = _article_row("CONTEXT_FOR")
     second_row["url"] = "https://example.com/second"
-    rows = [first_row, second_row]
+    rows = [] if empty else [first_row, second_row]
 
     snapshots = Mock(return_value=iter([(key, run)]))
     convert = Mock(return_value=rows)
-    insert = Mock(side_effect=[1, 1])
+    insert = Mock(return_value=len(rows))
     monkeypatch.setattr(
         news_network, "iter_media_cloud_snapshots", snapshots
     )
@@ -155,9 +204,6 @@ def test_load_news_into_graph_passes_s3_uri_and_batches(monkeypatch) -> None:
     monkeypatch.setattr(
         news_network, "insert_media_cloud_articles", insert
     )
-    monkeypatch.setattr(
-        news_network, "NETWORK_INSERT_BATCH_SIZE", 1
-    )
 
     processed = news_network.load_news_into_graph(
         cast(S3Bucket, bucket),
@@ -165,11 +211,12 @@ def test_load_news_into_graph_passes_s3_uri_and_batches(monkeypatch) -> None:
         driver=cast(Driver, driver),
     )
 
-    assert processed == 2
+    assert processed == len(rows)
     snapshots.assert_called_once_with(bucket, prefix=prefix)
     convert.assert_called_once_with(
         run,
         snapshot_s3_uri=f"s3://test-bucket/{key}",
     )
-    assert insert.call_args_list[0].args == (driver, [first_row])
-    assert insert.call_args_list[1].args == (driver, [second_row])
+    insert.assert_called_once_with(
+        driver, rows, event_id="event-1", snapshot_s3_uri=f"s3://test-bucket/{key}",
+    )
