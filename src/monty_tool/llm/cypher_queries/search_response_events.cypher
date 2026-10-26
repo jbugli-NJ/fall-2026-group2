@@ -19,5 +19,6 @@ RETURN event.id AS event_id,
        event.num_affected AS people_affected,
        event.active_deployments AS active_deployments,
        collect(DISTINCT country.code) AS country_codes
-ORDER BY event.start_datetime DESC
-LIMIT 10
+ORDER BY event.start_datetime DESC, event.id ASC
+SKIP $offset
+LIMIT 11

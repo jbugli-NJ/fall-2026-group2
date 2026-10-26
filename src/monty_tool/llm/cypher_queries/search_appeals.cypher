@@ -19,5 +19,6 @@ RETURN appeal.id AS appeal_id,
        appeal.country_code AS country_code,
        appeal.country_name AS country_name,
        event.id AS event_id
-ORDER BY appeal.start_datetime DESC, appeal.id
-LIMIT 10
+ORDER BY appeal.start_datetime DESC, appeal.id ASC
+SKIP $offset
+LIMIT 11

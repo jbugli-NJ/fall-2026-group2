@@ -37,5 +37,6 @@ RETURN event.id AS event_id,
        } END AS weather,
        collect(DISTINCT country.code) AS country_codes,
        collect(DISTINCT hazard.code) AS hazard_codes
-ORDER BY event.start_datetime DESC
-LIMIT 10
+ORDER BY event.start_datetime DESC, event.id ASC
+SKIP $offset
+LIMIT 11

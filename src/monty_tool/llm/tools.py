@@ -58,6 +58,7 @@ class GraphSearchArguments(BaseModel):
     country_code: str | None = Field(default=None, min_length=3, max_length=3)
     from_date: date | None = None
     to_date: date | None = None
+    offset: int = Field(default=0, ge=0, strict=True)
 
     @field_validator("country_code", mode="before")
     @classmethod
@@ -224,6 +225,16 @@ class QueryTools:
                                 "type": "string",
                                 "description": "3-letter country code (e.g. CHN for China).",
                             },
+                            "offset": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "default": 0,
+                                "description": (
+                                    "Number of matching results to skip; defaults to 0. For the next page, repeat "
+                                    "the same filters with pagination.next_offset. A null next_offset means no more results. "
+                                    "Ordered by start date descending, then ID ascending."
+                                ),
+                            },
                             "hazard_code": {
                                 "type": "string",
                                 "description": (
@@ -320,6 +331,16 @@ class QueryTools:
                             "country_code": {
                                 "type": "string", "description": "3-letter country code (e.g. MWI for Malawi).",
                             },
+                            "offset": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "default": 0,
+                                "description": (
+                                    "Number of matching results to skip; defaults to 0. For the next page, repeat "
+                                    "the same filters with pagination.next_offset. A null next_offset means no more results. "
+                                    "Ordered by start date descending, then ID ascending."
+                                ),
+                            },
                             "disaster_type": {
                                 "type": "string", "description": "Case-insensitive substring of the recorded disaster type.",
                             },
@@ -352,6 +373,16 @@ class QueryTools:
                         "properties": {
                             "country_code": {
                                 "type": "string", "description": "3-letter country code (e.g. MWI for Malawi).",
+                            },
+                            "offset": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "default": 0,
+                                "description": (
+                                    "Number of matching results to skip; defaults to 0. For the next page, repeat "
+                                    "the same filters with pagination.next_offset. A null next_offset means no more results. "
+                                    "Ordered by start date descending, then ID ascending."
+                                ),
                             },
                             "disaster_type": {
                                 "type": "string", "description": "Case-insensitive substring of the recorded disaster type.",
@@ -432,11 +463,18 @@ class QueryTools:
         except Exception as exc:
             return {"status": "error", "message": f"Graph query failed: {exc}"}
 
-        rows = [_json_value(record.data()) for record in records]
-        return {
+        result: dict[str, Any] = {
             "status": "ok",
-            "rows": rows,
+            "rows": [_json_value(record.data()) for record in records],
         }
+        if isinstance(args, GraphSearchArguments):
+            result["rows"] = result["rows"][:10]
+            result["pagination"] = {
+                "offset": args.offset,
+                "limit": 10,
+                "next_offset": args.offset + 10 if len(records) > 10 else None,
+            }
+        return result
 
     def execute(
         self,
