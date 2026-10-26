@@ -10,7 +10,7 @@ from hashlib import sha256
 from importlib.resources import files
 from pathlib import Path
 import subprocess
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import numpy as np
 from pydantic import TypeAdapter
@@ -75,26 +75,28 @@ def test_benchmark_input_length():
     assert len(INPUTS) > 25
 
 
-@pytest.mark.parametrize('core_only', [False, True])
-def test_main_saves_results_and_metadata(benchmark_workspace: Path, core_only: bool):
+@pytest.mark.parametrize('use_tools', [True, False])
+def test_main_saves_results_and_metadata(benchmark_workspace: Path, use_tools: bool):
     """
     Save reports and comparison files under the selected input's directory.
     """
     args = ['--input-json', 'custom.json', '--seed', str(SEED)]
-    if core_only:
-        args.append('--no-enable-external')
     run_benchmark.main(args)
 
     output_dir = benchmark_workspace / 'benchmarks' / 'custom'
-    report, = (output_dir / 'reports').glob('*.md')
-    text = report.read_text(encoding='utf-8')
-    model = FrozenModel.QWEN3_5_4B.value + (' (core only)' if core_only else '')
+    reports = list(output_dir.joinpath('reports').glob('*.md'))
+    assert len(reports) == 2
+    model = FrozenModel.QWEN3_5_4B.value + ('' if use_tools else ' (no tools)')
+    text, = [report.read_text(encoding='utf-8') for report in reports
+             if report.read_text(encoding='utf-8').startswith(f'# Benchmark: {model}\n')]
     assert text.startswith(f'# Benchmark: {model}\n')
     assert FIRST_INPUT.research_question in text
     assert f'Random seed: {SEED}' in text
     assert f'Input SHA-256: {sha256(INPUT_BYTES).hexdigest()}' in text
     assert f'Git commit: {GIT_COMMIT}' in text
-    row, = read_summary(output_dir)
+    rows = read_summary(output_dir)
+    assert len(rows) == 2
+    row, = [row for row in rows if row['model'] == model]
     assert row['model'] == model
     assert row['questions_completed'] == '1'
     assert row['average_score'] == '1.0'
@@ -123,13 +125,16 @@ def test_main_seed_selection(
     run_benchmark.main(args)
 
     output_dir = benchmark_workspace / 'benchmarks' / '20261006_demo'
-    assert seeds == expected_seeds
-    assert [row['seed'] for row in read_summary(output_dir)] == [str(seed) for seed in expected_seeds]
-    assert len(list((output_dir / 'reports').glob('*.md'))) == len(expected_seeds)
+    assert seeds == [expected_seeds[0], *(seed for seed in expected_seeds for _ in (True, False))]
+    assistant_factory = run_benchmark.QueryAssistant
+    assert isinstance(assistant_factory, Mock)
+    assistant_factory.assert_called_once_with(model_id=FrozenModel.QWEN3_5_4B)
+    assert [row['seed'] for row in read_summary(output_dir)] == [str(seed) for seed in expected_seeds for _ in (True, False)]
+    assert len(list((output_dir / 'reports').glob('*.md'))) == 2 * len(expected_seeds)
 
 
-@pytest.mark.parametrize('core_only', [False, True])
-def test_main_uses_bedrock(benchmark_workspace: Path, monkeypatch: pytest.MonkeyPatch, core_only: bool):
+@pytest.mark.parametrize('use_tools', [True, False])
+def test_main_uses_bedrock(benchmark_workspace: Path, monkeypatch: pytest.MonkeyPatch, use_tools: bool):
     """
     Select the Bedrock assistant and record its actual model ID in the results.
     """
@@ -138,20 +143,24 @@ def test_main_uses_bedrock(benchmark_workspace: Path, monkeypatch: pytest.Monkey
     bedrock = Mock(return_value=assistant)
     monkeypatch.setattr(run_benchmark, 'BedrockQueryAssistant', bedrock)
     args = ['--model', 'bedrock', '--seed', str(SEED)]
-    if core_only:
-        args.append('--no-enable-external')
 
     run_benchmark.main(args)
 
-    bedrock.assert_called_once_with(enable_external=not core_only)
-    assistant.ask.assert_called_once_with(FIRST_INPUT.research_question)
+    bedrock.assert_called_once_with()
+    assert assistant.ask.call_args_list == [
+        call(FIRST_INPUT.research_question, use_tools=True),
+        call(FIRST_INPUT.research_question, use_tools=False),
+    ]
     output_dir = benchmark_workspace / 'benchmarks' / '20261006_demo'
-    row, = read_summary(output_dir)
-    model_id = run_benchmark.DEFAULT_BEDROCK_MODEL_ID + (' (core only)' if core_only else '')
+    rows = read_summary(output_dir)
+    assert len(rows) == 2
+    model_id = run_benchmark.DEFAULT_BEDROCK_MODEL_ID + ('' if use_tools else ' (no tools)')
+    row, = [row for row in rows if row['model'] == model_id]
     assert row['model'] == model_id
     assert row['revision'] == 'not applicable'
     assert row['average_score'] == '1.0'
-    report, = (output_dir / 'reports').glob('bedrock_*.md')
+    report, = [report for report in output_dir.joinpath('reports').glob('bedrock_*.md')
+               if report.read_text().startswith(f'# Benchmark: {model_id}\n')]
     assert report.read_text().startswith(f'# Benchmark: {model_id}\n')
 
 
@@ -161,14 +170,14 @@ def test_main_preserves_reports_on_rerun(benchmark_workspace: Path):
     """
     run_benchmark.main(['--seed', str(SEED)])
     output_dir = benchmark_workspace / 'benchmarks' / '20261006_demo'
-    original_report, = (output_dir / 'reports').glob('*.md')
-    original_text = original_report.read_text()
+    original_reports = {report: report.read_text() for report in output_dir.joinpath('reports').glob('*.md')}
+    assert len(original_reports) == 2
 
     run_benchmark.main(['--seed', str(SEED)])
 
-    assert len(list((output_dir / 'reports').glob('*.md'))) == 2
-    assert original_report.read_text() == original_text
-    assert len(read_summary(output_dir)) == 2
+    assert len(list(output_dir.joinpath('reports').glob('*.md'))) == 4
+    assert all(report.read_text() == text for report, text in original_reports.items())
+    assert len(read_summary(output_dir)) == 4
 
 
 def test_summary_plot_groups_model_configurations():
@@ -178,7 +187,7 @@ def test_summary_plot_groups_model_configurations():
     model = 'Qwen/Qwen3.5-4B'
     rows = [
         {'model': model, 'total_seconds': '10', 'average_score': '0.5'},
-        {'model': model + ' (core only)', 'total_seconds': '20', 'average_score': '0.3'},
+        {'model': model + ' (no tools)', 'total_seconds': '20', 'average_score': '0.3'},
         {'model': model, 'total_seconds': '12', 'average_score': '0.6'},
     ]
 
@@ -188,10 +197,10 @@ def test_summary_plot_groups_model_configurations():
     assert legend is not None
     assert legend.get_title().get_text() == 'Model configuration'
     assert [label.get_text() for label in legend.get_texts()] == [
-        model, model + ' (core only)',
+        model, model + ' (no tools)',
     ]
-    full, core_only = figure.axes[0].collections
-    assert not np.array_equal(full.get_facecolor(), core_only.get_facecolor())
+    full, no_tools = figure.axes[0].collections
+    assert not np.array_equal(full.get_facecolor(), no_tools.get_facecolor())
     assert not figure.axes[0].texts
 
 
