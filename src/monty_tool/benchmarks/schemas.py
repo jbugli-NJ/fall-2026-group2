@@ -30,6 +30,7 @@ class BenchmarkInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     research_question: str = Field(min_length=1)
+    choice_count: int | None = Field(default=None, ge=1, strict=True)
     full_answer_substrings: list[str] = Field(min_length=1)
     partial_answer_substrings: list[str] = Field(default_factory=list)
     source_nodes: list[BenchmarkSourceNode] = Field(min_length=1)
