@@ -75,16 +75,35 @@ def test_graph_search_arguments_validates_dates():
         )
 
 
-@pytest.mark.parametrize('arguments', [
-    {},
-    {'from_date': '2026-09-20', 'to_date': '2026-09-20'},
-    {'from_date': '2026-09-19', 'to_date': '2026-09-20'},
+@pytest.mark.parametrize('name', [
+    'search_disaster_events', 'search_response_events', 'search_appeals',
 ])
-def test_graph_search_accepts_complete_or_absent_date_ranges(arguments: dict[str, Any]):
+@pytest.mark.parametrize(('arguments', 'from_date', 'to_date'), [
+    ({}, None, None),
+    ({'from_date': '2026-09-20'}, date(2026, 9, 20), None),
+    ({'to_date': '2026-09-20'}, None, date(2026, 9, 20)),
+    ({'from_date': '2026-09-20', 'to_date': '2026-09-20'}, date(2026, 9, 20), date(2026, 9, 20)),
+    ({'from_date': '2026-09-19', 'to_date': '2026-09-20'}, date(2026, 9, 19), date(2026, 9, 20)),
+])
+def test_graph_search_accepts_optional_date_bounds(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    arguments: dict[str, Any],
+    from_date: date | None,
+    to_date: date | None,
+):
     """
-    Allow undated searches, exact days, and inclusive date ranges.
+    Pass optional date bounds to searches that cap their results.
     """
-    tools.GraphSearchArguments.model_validate(arguments)
+    driver = Mock()
+    driver.execute_query.return_value = ([], None, None)
+    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: nullcontext(driver))
+
+    assert tools.QueryTools().execute(name, arguments) == {'status': 'ok', 'rows': []}
+    query = driver.execute_query.call_args
+    assert query.kwargs['parameters_']['from_date'] == from_date
+    assert query.kwargs['parameters_']['to_date'] == to_date
+    assert query.args[0].strip().endswith('LIMIT 10')
 
 
 @pytest.mark.parametrize(
@@ -185,15 +204,10 @@ def test_query_tools_routes_graph_tools(
     ('name', 'arguments'),
     [
         ( 'search_disaster_events', {'country_code': 'JP'}),
-        ('search_disaster_events', {'from_date': '2026-09-20'}),
-        ('search_disaster_events', {'to_date': '2026-09-20'}),
+        ('search_disaster_events', {'from_date': '2026-09-20', 'to_date': '2026-09-19'}),
         ('get_disaster_context', {}),
         ('find_related_disaster_events', {'event_id': 'event-1', 'relation_kind': 'nonexistent'}),
         ('search_response_events', {'from_date': '2026-09-20', 'to_date': '2026-09-19'}),
-        ('search_response_events', {'from_date': '2026-09-20'}),
-        ('search_response_events', {'to_date': '2026-09-20'}),
-        ('search_appeals', {'from_date': '2015-09-17'}),
-        ('search_appeals', {'to_date': '2015-09-17'}),
         ('search_appeals', {'from_date': '2015-09-18', 'to_date': '2015-09-17'}),
         ('search_appeals', {'event_id': 'event-1'}),
         ('get_response_context', {'event_id': ''}),
