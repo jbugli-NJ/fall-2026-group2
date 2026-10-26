@@ -9,11 +9,12 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from importlib.resources import files
 from pathlib import Path
+import re
 import subprocess
 from unittest.mock import Mock, call
 
 import numpy as np
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 import pytest
 
 from monty_tool.benchmarks.schemas import BenchmarkInput, BenchmarkOutput
@@ -180,7 +181,8 @@ def test_main_preserves_reports_on_rerun(benchmark_workspace: Path):
     assert len(read_summary(output_dir)) == 4
 
 
-def test_summary_plot_groups_model_configurations():
+@pytest.mark.parametrize('chance_score', [0.0, 0.25])
+def test_summary_plot_groups_model_configurations(chance_score: float):
     """
     Repeated runs share a color, with one legend entry per configuration.
     """
@@ -191,14 +193,15 @@ def test_summary_plot_groups_model_configurations():
         {'model': model, 'total_seconds': '12', 'average_score': '0.6'},
     ]
 
-    figure = run_benchmark.build_summary_plot(rows)
+    figure = run_benchmark.build_summary_plot(rows, chance_score=chance_score)
 
     legend = figure.axes[0].get_legend()
     assert legend is not None
     assert legend.get_title().get_text() == 'Model configuration'
     assert [label.get_text() for label in legend.get_texts()] == [
         model, model + ' (no tools)',
-    ]
+    ] + ([f'Random chance ({chance_score:.2%})'] if chance_score > 0 else [])
+    assert len(figure.axes[0].lines) == (1 if chance_score > 0 else 0)
     full, no_tools = figure.axes[0].collections
     assert not np.array_equal(full.get_facecolor(), no_tools.get_facecolor())
     assert not figure.axes[0].texts
@@ -383,7 +386,7 @@ def test_summary_plot_filters_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     build_plot = Mock()
     monkeypatch.setattr(run_benchmark, 'build_summary_plot', build_plot)
 
-    assert run_benchmark.save_summary_plot(path, 3) == path.with_suffix('.svg')
+    assert run_benchmark.save_summary_plot(path, INPUTS[:3]) == path.with_suffix('.svg')
 
     build_plot.assert_called_once()
     plotted_rows = build_plot.call_args.args[0]
@@ -392,3 +395,42 @@ def test_summary_plot_filters_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     ]
     assert [float(row['total_seconds']) for row in plotted_rows] == [1.0, 2.0, 3.0]
     build_plot.return_value.savefig.assert_called_once_with(path.with_suffix('.svg'))
+
+
+@pytest.mark.parametrize('choice_count', [0, -1, 2.5, True, '2'])
+def test_choice_count_rejects_invalid_counts(choice_count: object):
+    """
+    Require positive integer counts when choices are specified.
+    """
+    with pytest.raises(ValidationError):
+        BenchmarkInput.model_validate({**FIRST_INPUT.model_dump(), 'choice_count': choice_count})
+
+
+@pytest.mark.parametrize(('counts', 'expected'), [
+    ([], 0.0),
+    ([None, None], 0.0),
+    ([1], 1.0),
+    ([2, 2], 0.5),
+    ([2, 3, None], (0.5 + 1 / 3) / 3),
+])
+def test_random_chance_score(counts: list[int | None], expected: float):
+    """
+    Include questions without choices in the denominator with zero expected credit.
+    """
+    benchmarks = [FIRST_INPUT.model_copy(update={'choice_count': count}) for count in counts]
+    assert run_benchmark.random_chance_score(benchmarks) == pytest.approx(expected)
+
+
+def test_weather_random_chance_score():
+    """
+    Match choice counts to the listed dates and compute the full weather baseline.
+    """
+    benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(
+        files('monty_tool.benchmarks.inputs')
+        .joinpath('20261008_historical_weather.json')
+        .read_text(encoding='utf-8')
+    )
+    for benchmark in benchmarks:
+        dates = re.findall(r'\d{4}-\d{2}-\d{2}', benchmark.research_question)
+        assert benchmark.choice_count == len(dates)
+    assert run_benchmark.random_chance_score(benchmarks) == pytest.approx((19 / 2 + 1 / 3) / 20)

@@ -219,7 +219,23 @@ def append_summary(
         writer.writerow(row)
 
 
-def build_summary_plot(rows: list[dict[str, str]]) -> Figure:
+def random_chance_score(benchmarks: list[BenchmarkInput]) -> float:
+    """
+    Average uniform guessing credit, assigning zero to questions without choices.
+    """
+    if not benchmarks:
+        return 0.0
+    return sum(
+        1 / benchmark.choice_count if benchmark.choice_count is not None else 0.0
+        for benchmark in benchmarks
+    ) / len(benchmarks)
+
+
+def build_summary_plot(
+    rows: list[dict[str, str]],
+    *,
+    chance_score: float = 0.0,
+    ) -> Figure:
     """
     Build a scatterplot displaying score svs. runtime colored by model.
     """
@@ -232,7 +248,12 @@ def build_summary_plot(rows: list[dict[str, str]]) -> Figure:
             [float(row['average_score']) for row in runs],
             label=model,
         )
-    if rows:
+    if chance_score > 0:
+        axes.axhline(
+            chance_score, color='gray', linestyle='--',
+            label=f'Random chance ({chance_score:.2%})',
+        )
+    if rows or chance_score > 0:
         axes.legend(title='Model configuration', loc='upper left', bbox_to_anchor=(1.02, 1))
     axes.set_title('Fact retrieval benchmark')
     axes.set_xlabel('Total runtime (seconds)')
@@ -244,10 +265,11 @@ def build_summary_plot(rows: list[dict[str, str]]) -> Figure:
     return figure
 
 
-def save_summary_plot(summary_path: Path, total_questions: int) -> Path:
+def save_summary_plot(summary_path: Path, benchmarks: list[BenchmarkInput]) -> Path:
     """
     Read the comparison CSV and save its figure alongside it.
     """
+    total_questions = len(benchmarks)
     current_revisions = {
         model_id + suffix: revision
         for model_id, revision in [
@@ -263,7 +285,7 @@ def save_summary_plot(summary_path: Path, total_questions: int) -> Path:
             and int(row['total_questions']) == total_questions
             and int(row['questions_completed']) == total_questions
         ]
-    figure = build_summary_plot(rows)
+    figure = build_summary_plot(rows, chance_score=random_chance_score(benchmarks))
     plot_path = summary_path.with_suffix('.svg')
     figure.savefig(plot_path)
     return plot_path
@@ -345,10 +367,8 @@ def main(argv: list[str] | None = None) -> None:
     logger.info(f"Detected input file: {input_file.name}")
     input_bytes = input_file.read_bytes()
     input_sha256 = sha256(input_bytes).hexdigest()
-    benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(input_bytes)
-    total_questions = len(benchmarks)
-    if args.limit is not None:
-        benchmarks = benchmarks[:args.limit]
+    all_benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(input_bytes)
+    benchmarks = all_benchmarks if args.limit is None else all_benchmarks[:args.limit]
     git_commit = get_git_commit()
     output_dir = Path('benchmarks').joinpath(Path(input_file.name).stem)
     seeds = BENCHMARK_SEEDS if args.seed is None else (args.seed,)
@@ -367,7 +387,7 @@ def main(argv: list[str] | None = None) -> None:
                 use_tools=use_tools,
                 seed=seed,
             )
-    plot_path = save_summary_plot(output_dir.joinpath('summary.csv'), total_questions)
+    plot_path = save_summary_plot(output_dir.joinpath('summary.csv'), all_benchmarks)
     logger.info(f'Saved benchmark plot: {plot_path}')
 
 
