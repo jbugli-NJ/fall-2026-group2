@@ -24,7 +24,6 @@ from monty_tool.utils.versions import FrozenModel
 def _query_assistant(
     monkeypatch: pytest.MonkeyPatch,
     model_id: FrozenModel = FrozenModel.QWEN3_1_7B,
-    enable_external: bool = True,
 ) -> client.QueryAssistant:
     """
     Creates a QueryAssistant without loading a tokenizer or model.
@@ -44,7 +43,7 @@ def _query_assistant(
         'from_pretrained',
         Mock(return_value=Mock(config=config.get_text_config())),
     )
-    return client.QueryAssistant(model_id=model_id, enable_external=enable_external)
+    return client.QueryAssistant(model_id=model_id)
 
 
 def _parsed(text: str, model_id: FrozenModel = FrozenModel.QWEN3_1_7B) -> dict[str, Any]:
@@ -79,18 +78,6 @@ def _bedrock_response(content: list[dict[str, Any]], stop_reason: str = 'end_tur
 
 
 # Tests
-
-def test_core_only_assistant_prompt(monkeypatch: pytest.MonkeyPatch):
-    """
-    Pass the toggle to tools and omit news instructions from the prompt.
-    """
-    assistant = _query_assistant(monkeypatch, enable_external=False)
-    generate = Mock(return_value={'content': 'Answer'})
-    monkeypatch.setattr(assistant, '_generate', generate)
-    assert assistant.ask('Question')['answer'] == 'Answer'
-    assert assistant.tools.enable_external is False
-    assert 'news' not in generate.call_args.args[0][0]['content'].lower()
-
 
 @pytest.mark.parametrize('requests_tool', [False, True])
 def test_query_assistant_no_tools(monkeypatch: pytest.MonkeyPatch, requests_tool: bool):

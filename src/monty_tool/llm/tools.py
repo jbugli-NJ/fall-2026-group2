@@ -28,22 +28,6 @@ logger = logging.getLogger(__name__)
 
 _OMIT_VALUE = object()
 _CYPHER_QUERY_PACKAGE = 'monty_tool.llm.cypher_queries'
-_WEATHER_SEARCH_ARGUMENTS = {
-    'min_elevation', 'max_elevation',
-    'min_mean_temperature', 'max_mean_temperature',
-    'min_precipitation_total', 'max_precipitation_total',
-}
-
-
-def _without_weather(value: Any) -> Any:
-    """
-    Remove weather fields from graph rows, including nested impact records.
-    """
-    if isinstance(value, dict):
-        return {key: _without_weather(item) for key, item in value.items() if key != 'weather'}
-    if isinstance(value, list):
-        return [_without_weather(item) for item in value]
-    return value
 
 type CypherTemplateFile = Literal[
     'search_disaster_events.cypher',
@@ -220,12 +204,11 @@ class QueryTools:
     Graph and news tools available to QueryAssistant.
     """
 
-    def __init__(self, max_tool_calls: int = 10, *, enable_external: bool = True):
+    def __init__(self, max_tool_calls: int = 10):
         if max_tool_calls < 1:
             raise ValueError("max_tool_calls must be at least 1.")
 
         self.max_tool_calls = max_tool_calls
-        self.enable_external = enable_external
         self.tool_call_count = 0
         self.definitions = [
             {
@@ -429,26 +412,6 @@ class QueryTools:
             },
         ]
 
-        if not enable_external:
-            self.definitions = [
-                definition for definition in self.definitions
-                if definition['function']['name'] != 'get_event_news'
-            ]
-            for definition in self.definitions:
-                function = definition['function']
-                if function['name'] == 'search_disaster_events':
-                    for name in _WEATHER_SEARCH_ARGUMENTS:
-                        function['parameters']['properties'].pop(name)
-                    function['description'] = (
-                        'Find up to 10 newest matching disaster events. Filters are optional; '
-                        'supply both dates or neither. Dates filter event starts; '
-                        'use get_disaster_context for impacts.'
-                    )
-                elif function['name'] == 'get_disaster_context':
-                    function['description'] = (
-                        'Fetch event details and impacts for an event_id from search_disaster_events.'
-                    )
-
     def _run_graph_query(
         self,
         arguments: dict[str, Any],
@@ -475,8 +438,6 @@ class QueryTools:
             return {"status": "error", "message": f"Graph query failed: {exc}"}
 
         rows = [_json_value(record.data()) for record in records]
-        if not self.enable_external:
-            rows = _without_weather(rows)
         return {
             "status": "ok",
             "rows": rows,
@@ -500,11 +461,6 @@ class QueryTools:
             }
 
         self.tool_call_count += 1
-        if not self.enable_external:
-            if name == 'get_event_news':
-                return {'status': 'error', 'message': 'This tool is unavailable in core-only mode.'}
-            if name == 'search_disaster_events' and _WEATHER_SEARCH_ARGUMENTS.intersection(arguments):
-                return {'status': 'error', 'message': 'Weather filters are unavailable in core-only mode.'}
         try:
             if name == "search_disaster_events":
                 return self._run_graph_query(

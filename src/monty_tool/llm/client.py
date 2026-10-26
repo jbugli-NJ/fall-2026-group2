@@ -36,14 +36,12 @@ class QueryAssistant:
     def __init__(
         self,
         model_id: FrozenModel = FrozenModel.QWEN3_5_4B,
-        *,
-        enable_external: bool = True,
         ):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         from transformers.cli.serving.utils import get_response_template
 
-        self.tools = QueryTools(enable_external=enable_external)
+        self.tools = QueryTools()
         self.device = "cuda" if torch.cuda.is_available() else (
             "mps" if torch.backends.mps.is_available() else "cpu"
         )
@@ -121,14 +119,11 @@ class QueryAssistant:
                 "tools to find events, then use returned event IDs for details "
                 "or related records. Use response tools for IFRC events and "
                 "appeals. "
-                + (
-                    "get_disaster_context returns disaster info, including weather data. "
-                    "Use get_event_news only when the question requires information "
-                    "from news articles. "
-                    "Distinguish disaster event facts from news article candidates. "
-                    if self.tools.enable_external else ""
-                )
-                + "Base your answer on tool results. Answer in the user's language."
+                "get_disaster_context returns disaster info, including weather data. "
+                "Use get_event_news only when the question requires information "
+                "from news articles. "
+                "Distinguish disaster event facts from news article candidates. "
+                "Base your answer on tool results. Answer in the user's language."
             )
         else:
             system_prompt = (
@@ -224,9 +219,8 @@ class BedrockQueryAssistant:
         model_id: str = DEFAULT_BEDROCK_MODEL_ID,
         *,
         region: str | None = None,
-        enable_external: bool = True,
         ):
-        self.tools = QueryTools(max_tool_calls=25, enable_external=enable_external)
+        self.tools = QueryTools(max_tool_calls=25)
         self.model_id = model_id
         region = (
             region
