@@ -38,9 +38,16 @@ Other tools include:
 AWS SSO credentials can be used to access Bedrock automatically.
 Sonnet 4.5 (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`) is the whitelisted model ID.
 
-### Fact retrieval benchmarks
+### Benchmarking
 
+```bash
+uv run run-fact-benchmark --input-json 20261008_historical_weather.json
+```
+
+A benchmarking pipeline is available to test models against stored questions using network data.
 By default, each benchmark invocation evaluates all stored benchmark seeds.
+Each seed runs the selected questions twice, enabling and disabling query tools.
+`--model` selects the model and `--limit` restricts both runs to the first N questions.
 Use `--seed` to evaluate just one seed, for example:
 
 ```bash
@@ -48,14 +55,16 @@ uv run run-fact-benchmark --seed 2028 --input-json 20261008_news_synthesis.json
 ```
 
 Use `--model bedrock` to evaluate the Bedrock assistant's default Sonnet 4.5 model with AWS credentials instead of a local model.
-`--no-enable-external` also applies to Bedrock runs.
 Reports and summaries record the Bedrock model ID; its revision is recorded as `not applicable`.
 
 Results are saved under `benchmarks/<input name>/`.
-Each seed run writes a Markdown report under `reports/`, named `<model>_<timestamp>.md`.
-CSV summaries and plots stay in the input's results directory and record every seed run.
+Each seed run writes separate Markdown reports under `reports/`, named `<model>_<timestamp>.md`
+and `<model>_no_tools_<timestamp>.md`.
+CSV summaries and plots stay in the input's results directory as `summary.csv` and `summary.svg`
+and record every seed run.
+The baseline is labeled `(no tools)` in reports, summaries, and plots.
 
-Markdown reports and CSV summaries store a hash of the input file's bytes.the full SHA-256 hash of the input file's
+Markdown reports and CSV summaries store the full SHA-256 hash of the input file's
 raw bytes, including whitespace. The hash covers the entire file even when runs are limited.
 
 ### Neo4j
