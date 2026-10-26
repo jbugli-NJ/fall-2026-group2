@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 #   modelled - derived from a model (ShakeMap, CEMS flood depth)
 #   outline  - a source's own hazard polygon (GDACS fire or flood)
 #   track    - a storm path, not an area (IBTrACS)
-#   regional - wider than REGIONAL_KM; context, not an impact area
+#   regional - an outline wider than REGIONAL_KM; context, not an impact area
 Detail = Literal['mapped', 'modelled', 'outline', 'track', 'regional']
 
 # Footprints wider than this cover a region rather than an affected area;
@@ -104,9 +104,11 @@ def extent_km(geojson: dict[str, Any]) -> float | None:
 
 def grade_detail(detail: Detail, size_km: float | None) -> Detail:
     """
-    Downgrade a footprint to 'regional' when it is too wide to be an
-    impact area, whatever its source claims for it.
+    Downgrade an 'outline' footprint to 'regional' when it is too wide to
+    be an impact area. Mapped and modelled footprints keep their grade at
+    any size: a large quake's ShakeMap is wide but graded throughout,
+    whereas a wide outline is one undifferentiated blob.
     """
-    if size_km is not None and size_km > REGIONAL_KM and detail != 'track':
+    if detail == 'outline' and size_km is not None and size_km > REGIONAL_KM:
         return 'regional'
     return detail
