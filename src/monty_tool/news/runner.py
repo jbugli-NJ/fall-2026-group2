@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 from monty_tool.news.body import fetch_publisher_html, extract_publisher_body
@@ -13,30 +13,13 @@ from monty_tool.news.collector import (
 from monty_tool.news.pipeline import (
     MediaCloudCollectionJob,
 )
-from monty_tool.news.schemas import MediaCloudStory
 
 from monty_tool.news.verification import (
     EventJudge,
     EventMatchDecision,
+    MediaCloudCandidateEvidence,
     decide_media_cloud_candidate,
 )
-
-class MediaCloudCandidateEvidence(BaseModel):
-    """Keep every candidate, even when its publisher body is unavailable."""
-
-    event_id: str
-    event_collection: str
-    story: MediaCloudStory
-    body_status: Literal[
-        "missing_url",
-        "not_attempted",
-        "html_unavailable",
-        "body_unavailable",
-        "body_available",
-    ]
-    final_url: str | None = None
-    # Used in memory for verification; excluded from saved JSON.
-    body_text: str | None = Field(default=None, exclude=True, repr=False)
 
 
 def gather_media_cloud_evidence(

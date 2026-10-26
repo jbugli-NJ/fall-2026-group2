@@ -18,9 +18,6 @@ from monty_tool.news.schemas import MediaCloudStory
 
 if TYPE_CHECKING:
     from monty_tool.llm.client import QueryAssistant
-    from monty_tool.news.runner import MediaCloudCandidateEvidence
-
-
 
 MatchStatus = Literal[
     "same_event", "related_context", "uncertain", "different_event"
@@ -39,6 +36,23 @@ class EventMatchDecision(BaseModel):
     status: MatchStatus
     reason: str = Field(min_length=1)
     evidence_excerpt: str | None = None
+
+class MediaCloudCandidateEvidence(BaseModel):
+    """Keep every candidate, even when its publisher body is unavailable."""
+
+    event_id: str
+    event_collection: str
+    story: MediaCloudStory
+    body_status: Literal[
+        "missing_url",
+        "not_attempted",
+        "html_unavailable",
+        "body_unavailable",
+        "body_available",
+    ]
+    final_url: str | None = None
+    # Used in memory for verification; excluded from saved JSON.
+    body_text: str | None = Field(default=None, exclude=True, repr=False)
 
 class _ModelDecision(BaseModel):
     status: MatchStatus
