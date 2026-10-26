@@ -55,6 +55,26 @@ Once running, this should be accessible via [Neo4j browser](http://localhost:747
 The test instance is automatically set up with user `neo4j` and password `password`.
 The browser UI can be used for exploration and basic queries.
 
+### Demo app
+
+The Streamlit demo in [`demo/`](demo/) answers questions with the assistant and shows
+each graph query it ran, with its arguments and returned rows, and the record IDs
+behind the answer. Run it from the repository root so it picks up
+`.streamlit/config.toml`:
+
+```bash
+# Bedrock (Sonnet 4.5) against the local Neo4j graph
+uv run streamlit run demo/app.py
+
+# The local Qwen3.5-4B model instead of Bedrock
+MONTY_UI_LOCAL=1 uv run streamlit run demo/app.py
+
+# Replay the saved example in demo/fixtures.json; no graph or model needed
+MONTY_UI_REPLAY=1 uv run streamlit run demo/app.py
+```
+
+When Neo4j is not reachable on `localhost:7687`, the app falls back to the replay.
+
 ### nbstripout
 
 This project uses `nbstripout` in development dependencies, enforcing it in `.gitattributes` so that notebook outputs are not committed.

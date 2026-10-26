@@ -1,10 +1,9 @@
 """
-Framework-agnostic rendering for the UI spikes.
+Framework-agnostic rendering of tool results and provenance for the demo.
 
-Kept separate from any front end because the question issue #44 asks is
-which front end to use: the way tool results and provenance are
-presented has to stay identical across the options being compared, or
-the comparison is between two renderers rather than two frameworks.
+Kept separate from the Streamlit app since issue #44, when it let the
+candidate front ends be compared with identical rendering; it also keeps
+the formatting testable without a running UI.
 """
 
 # Imports

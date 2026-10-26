@@ -1,12 +1,12 @@
 """
-Spike: a Streamlit front end for QueryAssistant, for issue #44.
+Demo: a Streamlit front end for QueryAssistant, first built for issue #44.
 
 Graph queries are rendered with their arguments and returned rows.
 The record IDs behind the answer are listed underneath.
 
-    uv run streamlit run spikes/streamlit/app.py
-    MONTY_UI_LOCAL=1 uv run streamlit run spikes/streamlit/app.py
-    MONTY_UI_REPLAY=1 uv run streamlit run spikes/streamlit/app.py
+    uv run streamlit run demo/app.py
+    MONTY_UI_LOCAL=1 uv run streamlit run demo/app.py
+    MONTY_UI_REPLAY=1 uv run streamlit run demo/app.py
 """
 
 # Imports
@@ -23,7 +23,7 @@ import streamlit as st
 from monty_tool.llm.protocols import QueryAssistantProtocol
 from monty_tool.utils.versions import FrozenModel
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from render import id_kinds, provenance, render_rows  # noqa: E402
 
 
