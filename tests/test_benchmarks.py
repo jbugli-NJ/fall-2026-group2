@@ -67,7 +67,7 @@ def benchmark_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     monkeypatch.setattr(run_benchmark, 'set_seed', lambda seed: None)
     assistant = Mock(spec=run_benchmark.QueryAssistant)
     assistant.ask.return_value = {
-        'answer': f'<{TEST_INPUT.full_answer_substrings[0]}>',
+        'answer': f'<answer>{TEST_INPUT.full_answer_substrings[0]}</answer>',
         'tool_results': [],
     }
     monkeypatch.setattr(run_benchmark, 'QueryAssistant', Mock(return_value=assistant))
@@ -169,7 +169,10 @@ def test_main_uses_bedrock(benchmark_workspace: Path, monkeypatch: pytest.Monkey
     Select the Bedrock assistant and record its actual model ID in the results.
     """
     assistant = Mock(spec=run_benchmark.BedrockQueryAssistant)
-    assistant.ask.return_value = {'answer': f'<{TEST_INPUT.full_answer_substrings[0]}>', 'tool_results': []}
+    assistant.ask.return_value = {
+        'answer': f'<answer>{TEST_INPUT.full_answer_substrings[0]}</answer>',
+        'tool_results': [],
+    }
     bedrock = Mock(return_value=assistant)
     monkeypatch.setattr(run_benchmark, 'BedrockQueryAssistant', bedrock)
     args = ['--model', 'bedrock', '--seed', str(SEED)]
@@ -284,10 +287,10 @@ def test_scoring():
         ('exact 1700', .5), ('exact 1700.9', .5), ('exact 1,700.9', .5),
         ('exact 11700.9', 0), ('unknown', 0),
         ]:
-        assert run_benchmark.score_answer(benchmark, answer) == score
+        assert run_benchmark.score_answer(benchmark, f'<answer>{answer}</answer>') == score
 
 
-@pytest.mark.parametrize(('expected', 'answer', 'matches'), [
+@pytest.mark.parametrize(('answer_substring', 'answer', 'should_match'), [
     ('cat', 'A CAT, indeed.', True),
     ('cat', 'concatenate cats cat_1', False),
     ('1700.3', 'The answer is **1700.3**.', True),
@@ -310,15 +313,41 @@ def test_scoring():
     ('1234567', '12,34,567', True),
 ])
 @pytest.mark.parametrize('credit', [1.0, 0.5])
-def test_bounded_scoring(expected: str, answer: str, matches: bool, credit: float):
+def test_bounded_scoring(answer_substring: str, answer: str, should_match: bool, credit: float):
     """
     Check word boundaries and comma variants for both credit levels.
     """
     benchmark = TEST_INPUT.model_copy(update={
-        'full_answer_substrings': [expected] if credit == 1.0 else ['unmatched'],
-        'partial_answer_substrings': [expected] if credit == 0.5 else [],
+        'full_answer_substrings': [answer_substring] if credit == 1.0 else ['unmatched'],
+        'partial_answer_substrings': [answer_substring] if credit == 0.5 else [],
     })
-    assert run_benchmark.score_answer(benchmark, answer) == (credit if matches else 0.0)
+    score = run_benchmark.score_answer(benchmark, f'<answer>{answer}</answer>')
+    expected_score = credit if should_match else 0.0
+    assert score == expected_score
+
+
+@pytest.mark.parametrize(('answer', 'expected'), [
+    ('3000', 0.0),
+    ('<answer>3000', 0.0),
+    ('<answer>3000</answer><answer>42</answer>', 0.0),
+    ('<answer>42</answer><answer>3000</answer>', 1.0),
+    ('<answer>3000</answer><answer>1000</answer>', 0.5),
+    ('3000 <answer>42</answer> 3000', 0.0),
+    ('<answer>3000</answer><answer></answer>', 0.0),
+    ('<answer>3000</answer><answer>42', 1.0),
+    ('<ANSWER>3,000</ANSWER>', 1.0),
+    ('<answer>3000</answer>\nExplanation: 42', 1.0),
+    ('<answer>3000</answer>\n<answer>42\n1000</answer>', 0.0),
+])
+def test_scoring_uses_last_answer_tag(answer: str, expected: float):
+    """
+    Ignore earlier answers and text outside the last complete tag.
+    """
+    question = TEST_INPUT.model_copy(update={
+        'full_answer_substrings': ['answer>3000</answer'],
+        'partial_answer_substrings': ['answer>1000</answer'],
+    })
+    assert run_benchmark.score_answer(question, answer) == expected
 
 
 def test_output():

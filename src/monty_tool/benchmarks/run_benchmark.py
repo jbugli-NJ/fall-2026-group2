@@ -97,9 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def score_answer(benchmark: BenchmarkInput, answer: str) -> float:
     """
-    Match literal answers at word boundaries, ignoring commas and case.
+    Score the last complete answer tag, ignoring commas and case.
     """
-    answer = answer.lower().replace(',', '')
+    matches = re.findall(r'<answer>.*?</answer>', answer, flags=re.IGNORECASE | re.DOTALL)
+    if not matches:
+        return 0.0
+    answer = matches[-1].lower().replace(',', '')
     if any(
         re.search(rf"\b{re.escape(value.lower().replace(',', ''))}\b", answer)
         for value in benchmark.full_answer_substrings
