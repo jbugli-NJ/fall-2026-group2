@@ -1,77 +1,89 @@
 """Offline tests for publisher HTML fetching and body extraction."""
 
 from unittest.mock import Mock
-
 import pytest
-from requests.exceptions import Timeout
-
 from monty_tool.news import body
 
 
+@pytest.fixture(autouse=True)
+def clear_proxy_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in body._PROXY_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+
 def mock_response(
-    status_code: int = 200,
+    status: int = 200,
     *,
     headers: dict[str, str] | None = None,
-    chunks: list[bytes] | None = None,
+    html: str = "<html>article</html>",
+    final_url: str = "https://example.com/story",
+    data: bytes | None = None,
 ) -> Mock:
     response = Mock()
-    response.status_code = status_code
-    response.headers = headers if headers is not None else {"Content-Type": "text/html"}
-    response.encoding = "utf-8"
-    response.iter_content.return_value = (
-        chunks if chunks is not None else [b"<html>article</html>"]
+    response.status = status
+    response.headers = (
+        headers if headers is not None else {"content-type": "text/html"}
     )
+    response.html = html
+    response.data = data if data is not None else html.encode()
+    response.url = final_url
     return response
 
 
 def test_fetches_publisher_html(monkeypatch: pytest.MonkeyPatch) -> None:
-    response = mock_response()
-    get = Mock(return_value=response)
+    fetch = Mock(return_value=mock_response())
     monkeypatch.setattr(body, "_is_public_web_url", lambda url: True)
-    monkeypatch.setattr(body.requests, "get", get)
+    monkeypatch.setattr(body, "fetch_response", fetch)
 
-    result = body.fetch_publisher_html("https://example.com/story")
-
-    assert result == ("<html>article</html>", "https://example.com/story")
-    assert get.call_args.kwargs["timeout"] == (3, 10)
-    assert get.call_args.kwargs["stream"] is True
-    assert get.call_args.kwargs["allow_redirects"] is False
-    response.close.assert_called_once()
+    assert body.fetch_publisher_html("https://example.com/story") == (
+        "<html>article</html>",
+        "https://example.com/story",
+    )
+    assert fetch.call_args.kwargs["decode"] is True
+    config = fetch.call_args.kwargs["config"]
+    assert config.getint("DEFAULT", "MAX_FILE_SIZE") == body._MAX_HTML_BYTES
+    assert config.getboolean("DEFAULT", "SSRF_PROTECTION")
+    assert not config.getboolean("DEFAULT", "INSECURE_SSL_FALLBACK")
 
 
 def test_private_url_is_not_requested(monkeypatch: pytest.MonkeyPatch) -> None:
-    get = Mock()
-    monkeypatch.setattr(body.requests, "get", get)
+    fetch = Mock()
+    monkeypatch.setattr(body, "fetch_response", fetch)
 
     assert body.fetch_publisher_html("http://127.0.0.1/latest/meta-data/") is None
-    get.assert_not_called()
+    fetch.assert_not_called()
 
 
-def test_private_redirect_is_not_requested(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    response = mock_response(
-        302, headers={"Location": "http://127.0.0.1/latest/meta-data/"}
-    )
-    get = Mock(return_value=response)
+def test_private_final_url_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    fetch = Mock(return_value=mock_response(
+        final_url="http://127.0.0.1/latest/meta-data/"
+    ))
     monkeypatch.setattr(
         body,
         "_is_public_web_url",
         lambda url: not url.startswith("http://127.0.0.1/"),
     )
-    monkeypatch.setattr(body.requests, "get", get)
+    monkeypatch.setattr(body, "fetch_response", fetch)
 
     assert body.fetch_publisher_html("https://example.com/story") is None
-    assert get.call_count == 1
-    response.close.assert_called_once()
+
+
+def test_proxy_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    fetch = Mock()
+    monkeypatch.setattr(body, "_is_public_web_url", lambda url: True)
+    monkeypatch.setattr(body, "fetch_response", fetch)
+    monkeypatch.setenv("https_proxy", "http://proxy.example")
+
+    assert body.fetch_publisher_html("https://example.com/story") is None
+    fetch.assert_not_called()
 
 
 def test_non_html_response_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    response = mock_response(headers={"Content-Type": "application/pdf"})
+    response = mock_response(headers={"content-type": "application/pdf"})
     monkeypatch.setattr(body, "_is_public_web_url", lambda url: True)
-    monkeypatch.setattr(body.requests, "get", Mock(return_value=response))
+    monkeypatch.setattr(body, "fetch_response", Mock(return_value=response))
 
     assert body.fetch_publisher_html("https://example.com/story") is None
 
@@ -79,19 +91,27 @@ def test_non_html_response_is_unavailable(
 def test_oversized_response_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    response = mock_response(
-        chunks=[b"x" * (body._MAX_HTML_BYTES + 1)]
-    )
+    response = mock_response(data=b"x" * (body._MAX_HTML_BYTES + 1))
     monkeypatch.setattr(body, "_is_public_web_url", lambda url: True)
-    monkeypatch.setattr(body.requests, "get", Mock(return_value=response))
+    monkeypatch.setattr(body, "fetch_response", Mock(return_value=response))
 
     assert body.fetch_publisher_html("https://example.com/story") is None
-    response.close.assert_called_once()
 
 
-def test_timeout_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_failed_download_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(body, "_is_public_web_url", lambda url: True)
-    monkeypatch.setattr(body.requests, "get", Mock(side_effect=Timeout))
+    monkeypatch.setattr(body, "fetch_response", Mock(return_value=None))
+
+    assert body.fetch_publisher_html("https://example.com/story") is None
+
+
+def test_download_exception_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(body, "_is_public_web_url", lambda url: True)
+    monkeypatch.setattr(body, "fetch_response", Mock(side_effect=OSError))
 
     assert body.fetch_publisher_html("https://example.com/story") is None
 

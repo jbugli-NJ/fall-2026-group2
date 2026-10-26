@@ -1,16 +1,28 @@
 """Download publisher HTML and extract article text; do not verify Events."""
 
+import os
 from ipaddress import ip_address
 from socket import SOCK_STREAM, getaddrinfo
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
-import requests
-from requests.exceptions import RequestException
-from trafilatura import extract
+from trafilatura import extract, fetch_response
+from trafilatura.settings import use_config
 
 _MAX_HTML_BYTES = 2_000_000
-_MAX_REDIRECTS = 3
-_REDIRECT_CODES = {301, 302, 303, 307, 308}
+
+_DOWNLOAD_CONFIG = use_config()
+_DOWNLOAD_CONFIG["DEFAULT"].update({
+    "DOWNLOAD_TIMEOUT": "10",
+    "MAX_FILE_SIZE": str(_MAX_HTML_BYTES),
+    "MAX_REDIRECTS": "3",
+    "SSRF_PROTECTION": "on",
+    "INSECURE_SSL_FALLBACK": "off",
+})
+
+_PROXY_VARS = (
+    "http_proxy", "https_proxy", "HTTP_PROXY",
+    "HTTPS_PROXY", "all_proxy", "ALL_PROXY",
+)
 
 
 def _is_public_web_url(url: str) -> bool:
@@ -40,67 +52,38 @@ def _is_public_web_url(url: str) -> bool:
 
 def fetch_publisher_html(url: str) -> tuple[str, str] | None:
     """Return (HTML, final URL), or None when the page cannot be read."""
-    current_url = url.strip()
+    requested_url = url.strip()
+    if not _is_public_web_url(requested_url):
+        return None
 
-    for _ in range(_MAX_REDIRECTS + 1):
-        if not _is_public_web_url(current_url):
-            return None
+    # Trafilatura's private-address protection is disabled with a proxy.
+    if any(os.environ.get(name) for name in _PROXY_VARS):
+        return None
 
-        try:
-            response = requests.get(
-                current_url,
-                headers={"User-Agent": "MontyToolNewsResearch/1.0"},
-                timeout=(3, 10),
-                stream=True,
-                allow_redirects=False,
-            )
-            try:
-                if response.status_code in _REDIRECT_CODES:
-                    location = response.headers.get("Location")
-                    if not location:
-                        return None
-                    current_url = urljoin(current_url, location)
-                    continue
+    try:
+        response = fetch_response(
+            requested_url, decode=True, config=_DOWNLOAD_CONFIG
+        )
+    except Exception:
+        return None
+    if response is None or response.status != 200 or not response.html:
+        return None
+    if not _is_public_web_url(response.url):
+        return None
 
-                if response.status_code != 200:
-                    return None
+    content_type = (
+        (response.headers or {})
+        .get("content-type", "")
+        .split(";", 1)[0]
+        .strip()
+        .lower()
+    )
+    if content_type not in {"text/html", "application/xhtml+xml"}:
+        return None
+    if len(response.data) > _MAX_HTML_BYTES:
+        return None
 
-                content_type = (
-                    response.headers.get("Content-Type", "")
-                    .split(";", 1)[0]
-                    .strip()
-                    .lower()
-                )
-                if content_type not in {"text/html", "application/xhtml+xml"}:
-                    return None
-
-                content_length = response.headers.get("Content-Length")
-                if (
-                    content_length is not None
-                    and int(content_length) > _MAX_HTML_BYTES
-                ):
-                    return None
-
-                data = bytearray()
-                for chunk in response.iter_content(chunk_size=65_536):
-                    data.extend(chunk)
-                    if len(data) > _MAX_HTML_BYTES:
-                        return None
-
-                if not data:
-                    return None
-
-                try:
-                    html = data.decode(response.encoding or "utf-8", errors="replace")
-                except LookupError:
-                    html = data.decode("utf-8", errors="replace")
-                return html, current_url
-            finally:
-                response.close()
-        except (RequestException, OSError, ValueError):
-            return None
-
-    return None
+    return response.html, response.url
 
 
 def extract_publisher_body(html: str, *, url: str) -> str | None:
