@@ -8,6 +8,7 @@ import csv
 from datetime import datetime, timezone
 from hashlib import sha256
 from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 import re
 import subprocess
@@ -40,6 +41,13 @@ TEST_INPUT = BenchmarkInput(
 
 INPUT_BYTES = TypeAdapter(list[BenchmarkInput]).dump_json([TEST_INPUT]) + b'\r\n'
 GIT_COMMIT = 'a' * 40
+INPUT_FILES: list[Traversable] = sorted(
+    (
+        path for path in files('monty_tool.benchmarks.inputs').iterdir()
+        if path.is_file() and path.name.endswith('.json')
+    ),
+    key=lambda path: path.name,
+)
 
 
 # Fixtures and helpers
@@ -78,17 +86,10 @@ def read_summary(output_dir: Path) -> list[dict[str, str]]:
 
 @pytest.mark.parametrize(
     'input_file',
-    sorted(
-        (
-            path
-            for path in files('monty_tool.benchmarks.inputs').iterdir()
-            if path.name.endswith('.json')
-        ),
-        key=lambda path: path.name,
-    ),
-    ids=lambda path: path.name,
+    INPUT_FILES,
+    ids=[path.name for path in INPUT_FILES],
 )
-def test_benchmark_input_file_is_valid(input_file):
+def test_benchmark_input_file_is_valid(input_file: Traversable):
     """
     Check that all listed benchmark input files are valid.
     """
@@ -407,14 +408,18 @@ def test_summary_plot_filters_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         writer = csv.writer(file)
         writer.writerow([
             'model', 'revision', 'questions_completed', 'total_questions',
-            'total_seconds', 'average_score',
+            'total_seconds', 'average_score', 'input_sha256',
         ])
         for index, row in enumerate(rows):
-            writer.writerow([*row, index + 1, 0.5])
+            writer.writerow([*row, index + 1, 0.5, sha256(INPUT_BYTES).hexdigest()])
+        writer.writerow([model.value, model.revision, 3, 3, 100, 1, 'outdated-input-hash'])
+        writer.writerow([model.value, model.revision, 3, 3, 100, 1, ''])
     build_plot = Mock()
     monkeypatch.setattr(run_benchmark, 'build_summary_plot', build_plot)
 
-    assert run_benchmark.save_summary_plot(path, [TEST_INPUT] * 3) == path.with_suffix('.svg')
+    assert run_benchmark.save_summary_plot(
+        path, [TEST_INPUT] * 3, input_sha256=sha256(INPUT_BYTES).hexdigest(),
+    ) == path.with_suffix('.svg')
 
     build_plot.assert_called_once()
     plotted_rows = build_plot.call_args.args[0]

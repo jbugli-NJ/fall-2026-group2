@@ -265,7 +265,12 @@ def build_summary_plot(
     return figure
 
 
-def save_summary_plot(summary_path: Path, benchmarks: list[BenchmarkInput]) -> Path:
+def save_summary_plot(
+    summary_path: Path,
+    benchmarks: list[BenchmarkInput],
+    *,
+    input_sha256: str,
+    ) -> Path:
     """
     Read the comparison CSV and save its figure alongside it.
     """
@@ -281,7 +286,8 @@ def save_summary_plot(summary_path: Path, benchmarks: list[BenchmarkInput]) -> P
     with summary_path.open(encoding='utf-8', newline='') as file:
         rows = [
             row for row in csv.DictReader(file)
-            if row['revision'] == current_revisions.get(row['model'])
+            if row['input_sha256'] == input_sha256
+            and row['revision'] == current_revisions.get(row['model'])
             and int(row['total_questions']) == total_questions
             and int(row['questions_completed']) == total_questions
         ]
@@ -387,7 +393,9 @@ def main(argv: list[str] | None = None) -> None:
                 use_tools=use_tools,
                 seed=seed,
             )
-    plot_path = save_summary_plot(output_dir.joinpath('summary.csv'), all_benchmarks)
+    plot_path = save_summary_plot(
+        output_dir.joinpath('summary.csv'), all_benchmarks, input_sha256=input_sha256,
+    )
     logger.info(f'Saved benchmark plot: {plot_path}')
 
 
