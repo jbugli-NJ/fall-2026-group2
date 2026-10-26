@@ -1,7 +1,7 @@
-
 # Exploring Applications for the Montandon Global Crisis Data Bank
 
 ## Contributors
+
 - Jeongmin An (zds6799@gmail.com)
 - Jehan Bugli (jehan.bugli@gwmail.gwu.edu)
 - Aidan Carlisle (aidan.carlisle@gwmail.gwu.edu)
@@ -22,7 +22,7 @@ including added custom fields and aggregating information from multiple sources.
 
 Data bank access requires an IFRC GO account and authorization token for API access; contact IFRC for assistance.
 
-## Development
+## Development setup
 
 ### System dependencies
 
@@ -30,42 +30,33 @@ While standard Python/pip commands can be used, this project is built using [Ast
 See linked documentation for installation and basic use.
 
 Other tools include:
+
 - [The AWS CLI](https://aws.amazon.com/cli/) to authenticate S3 bucket access
 - `python3.14-dev` (may be required for Ubuntu as a PyTorch dependency)
+
+### nbstripout
+
+This project uses `nbstripout` in development dependencies, enforcing it in `.gitattributes` so that notebook outputs are not committed.
+Set this up locally with `uv run nbstripout --install` to activate the output filter after syncing.
+
+### AWS and S3 settings
+
+Data tools use a shared S3 bucket and prefix. Configure these before running them:
+
+1. Set `AWS_BUCKET` in the environment to point at the target bucket (likely `dats-capstone`)
+2. Set `AWS_BUCKET_PREFIX` to your S3 folder prefix, such as `my.name@example.com/` or `team/weather-test/`
+3. Make sure AWS credentials are available to the CLI and boto3
+
+S3 folders are object key prefixes. Surrounding whitespace and slashes are trimmed,
+and one trailing slash is added; nested paths are supported. If `AWS_BUCKET_PREFIX`
+is unset, blank, or only slashes, the tools log a warning and fall back to
+`aidan.carlisle@gwu.edu/`. Set it before launching a tool because paths are resolved
+when the shared resources module loads. `AWS_BUCKET` still defaults to `dats-capstone`.
 
 ### Bedrock authentication
 
 AWS SSO credentials can be used to access Bedrock automatically.
 Sonnet 4.5 (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`) is the whitelisted model ID.
-
-### Benchmarking
-
-```bash
-uv run run-fact-benchmark --input-json 20261008_historical_weather.json
-```
-
-A benchmarking pipeline is available to test models against stored questions using network data.
-By default, each benchmark invocation evaluates all stored benchmark seeds.
-Each seed runs the selected questions twice, enabling and disabling query tools.
-`--model` selects the model and `--limit` restricts both runs to the first N questions.
-Use `--seed` to evaluate just one seed, for example:
-
-```bash
-uv run run-fact-benchmark --seed 2028 --input-json 20261008_news_synthesis.json
-```
-
-Use `--model bedrock` to evaluate the Bedrock assistant's default Sonnet 4.5 model with AWS credentials instead of a local model.
-Reports and summaries record the Bedrock model ID; its revision is recorded as `not applicable`.
-
-Results are saved under `benchmarks/<input name>/`.
-Each seed run writes separate Markdown reports under `reports/`, named `<model>_<timestamp>.md`
-and `<model>_no_tools_<timestamp>.md`.
-CSV summaries and plots stay in the input's results directory as `summary.csv` and `summary.svg`
-and record every seed run.
-The baseline is labeled `(no tools)` in reports, summaries, and plots.
-
-Markdown reports and CSV summaries store the full SHA-256 hash of the input file's
-raw bytes, including whitespace. The hash covers the entire file even when runs are limited.
 
 ### Neo4j
 
@@ -84,62 +75,7 @@ Once running, this should be accessible via [Neo4j browser](http://localhost:747
 The test instance is automatically set up with user `neo4j` and password `password`.
 The browser UI can be used for exploration and basic queries.
 
-### Demo app
-
-The Streamlit demo in [`demo/`](demo/) answers questions with the assistant and shows
-each graph query it ran, with its arguments and returned rows, and the record IDs
-behind the answer. Run it from the repository root so it picks up
-`.streamlit/config.toml`:
-
-```bash
-# Bedrock (Sonnet 4.5) against the local Neo4j graph
-uv run streamlit run demo/app.py
-
-# The local Qwen3.5-4B model instead of Bedrock
-MONTY_UI_LOCAL=1 uv run streamlit run demo/app.py
-
-# Replay the saved example in demo/fixtures.json; no graph or model needed
-MONTY_UI_REPLAY=1 uv run streamlit run demo/app.py
-```
-
-When Neo4j is not reachable on `localhost:7687`, the app falls back to the replay.
-
-### nbstripout
-
-This project uses `nbstripout` in development dependencies, enforcing it in `.gitattributes` so that notebook outputs are not committed.
-Set this up locally with `uv run nbstripout --install` to activate the output filter after syncing.
-
-### Building a local network from S3 data
-
-Tools are available to populate the local Neo4j instance with saved data in an S3 bucket.
-Configure the tools before running them:
-1. Set `AWS_BUCKET` in the environment to point at the target bucket (likely `dats-capstone`)
-2. Set `AWS_BUCKET_PREFIX` to your S3 folder prefix, such as `my.name@example.com/` or `team/weather-test/`
-3. Make sure AWS credentials are available to the CLI and boto3
-
-S3 folders are object key prefixes. Surrounding whitespace and slashes are trimmed,
-and one trailing slash is added; nested paths are supported. If `AWS_BUCKET_PREFIX`
-is unset, blank, or only slashes, the tools log a warning and fall back to
-`aidan.carlisle@gwu.edu/`. Set it before launching a tool because paths are resolved
-when the shared resources module loads. `AWS_BUCKET` still defaults to `dats-capstone`.
-
-`update_network_node_data` reads the source files under `<prefix>/raw/` and `<prefix>/go/`. It validates the records, generates Montandon embeddings, and writes the resulting node data under `<prefix>/node_data/`.
-
-```bash
-export AWS_BUCKET="my-bucket"
-AWS_BUCKET_PREFIX="team/weather-test" uv run update-network-node-data
-```
-
-`setup_network` downloads that node data and rebuilds the local Neo4j graph.
-Use carefully because this clears the existing local graph before loading new data.
-This must be run after the initial Docker compose step to set up the Neo4j instance.
-
-```bash
-AWS_BUCKET_PREFIX="team/weather-test" uv run setup-network
-```
-
-Use the same bucket and prefix when generating and loading node data. For example,
-set `export AWS_BUCKET_PREFIX="team/weather-test"` before running both commands.
+## Data workflows
 
 ### Updating raw Montandon data
 
@@ -198,3 +134,77 @@ export AWS_BUCKET="my-bucket"
 export AWS_BUCKET_PREFIX="my.name@example.com/"
 uv run update-nasa-power-data
 ```
+
+### Building a local network from S3 data
+
+Tools are available to populate the local Neo4j instance with saved data in an S3 bucket.
+Complete the [Neo4j setup](#neo4j) and use the [AWS and S3 settings](#aws-and-s3-settings).
+
+`update_network_node_data` reads the source files under `<prefix>/raw/` and `<prefix>/go/`. It validates the records, generates Montandon embeddings, and writes the resulting node data under `<prefix>/node_data/`.
+
+```bash
+export AWS_BUCKET="my-bucket"
+AWS_BUCKET_PREFIX="team/weather-test" uv run update-network-node-data
+```
+
+`setup_network` downloads that node data and rebuilds the local Neo4j graph.
+Use carefully because this clears the existing local graph before loading new data.
+This must be run after the initial Docker compose step to set up the Neo4j instance.
+
+```bash
+AWS_BUCKET_PREFIX="team/weather-test" uv run setup-network
+```
+
+Use the same bucket and prefix when generating and loading node data. For example,
+set `export AWS_BUCKET_PREFIX="team/weather-test"` before running both commands.
+
+## Demo app
+
+The Streamlit demo in [`demo/`](demo/) answers questions with the assistant and shows
+each graph query it ran, with its arguments and returned rows, and the record IDs
+behind the answer. Run it from the repository root so it picks up
+`.streamlit/config.toml`:
+
+```bash
+# Bedrock (Sonnet 4.5) against the local Neo4j graph
+uv run streamlit run demo/app.py
+
+# The local Qwen3.5-4B model instead of Bedrock
+MONTY_UI_LOCAL=1 uv run streamlit run demo/app.py
+
+# Replay the saved example in demo/fixtures.json; no graph or model needed
+MONTY_UI_REPLAY=1 uv run streamlit run demo/app.py
+```
+
+When Neo4j is not reachable on `localhost:7687`, the app falls back to the replay.
+
+## Benchmarking
+
+```bash
+uv run run-fact-benchmark --input-json 20261008_historical_weather.json
+```
+
+A benchmarking pipeline is available to test models against stored questions using network data.
+By default, each benchmark invocation evaluates all stored benchmark seeds.
+Each seed runs the selected questions twice, enabling and disabling query tools.
+`--model` selects the model and `--limit` restricts both runs to the first N questions.
+Use `--seed` to evaluate just one seed, for example:
+
+```bash
+uv run run-fact-benchmark --seed 2028 --input-json 20261008_news_synthesis.json
+```
+
+Use `--model bedrock` to evaluate the Bedrock assistant's default Sonnet 4.5 model with AWS credentials instead of a local model.
+Reports and summaries record the Bedrock model ID; its revision is recorded as `not applicable`.
+
+Results are saved under `benchmarks/<input name>/`.
+Each seed run writes separate Markdown reports under `reports/`, named `<model>_<timestamp>.md`
+and `<model>_no_tools_<timestamp>.md`.
+CSV summaries and plots stay in the input's results directory as `summary.csv` and `summary.svg`.
+The CSV records every seed run. The plot includes only completed runs matching the
+current input hash, current model revisions, and full question count; runs restricted
+with `--limit` are excluded unless they cover the full question set.
+The baseline is labeled `(no tools)` in reports, summaries, and plots.
+
+Markdown reports and CSV summaries store the full SHA-256 hash of the input file's
+raw bytes, including whitespace. The hash covers the entire file even when runs are limited.
