@@ -382,5 +382,385 @@
       }
     ],
     "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1003151', 'gdacs-event-1003162'] AND e.weather_max_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_max_temperature AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in Italy\" event starting on 2022-08-07 and 2022-08-16 had the highest total observed precipitation? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2022-08-16</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101580"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101599"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1101580', 'gdacs-event-1101599'] AND e.weather_observed_precipitation_total IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_observed_precipitation_total AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in Colombia\" event starting on 2023-05-16 and 2023-05-22 had the highest mean temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2023-05-16</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1102018"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1102048"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1102018', 'gdacs-event-1102048'] AND e.weather_mean_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_mean_temperature AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in Oman\" event starting on 2023-04-08 and 2023-04-23 had the lowest minimum temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2023-04-08</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101929"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101962"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1101929', 'gdacs-event-1101962'] AND e.weather_min_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_min_temperature AS value ORDER BY value ASC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in Vietnam\" event starting on 2023-09-25 and 2023-09-11 had the highest maximum temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2023-09-11</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1102239"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1102217"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1102239', 'gdacs-event-1102217'] AND e.weather_max_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_max_temperature AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Cuba\" event starting on 2023-02-18 and 2023-02-27 had the highest maximum temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2023-02-27</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1012404"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1012635"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1012404', 'gdacs-event-1012635'] AND e.weather_max_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_max_temperature AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in Mexico\" event starting on 2022-06-26 and 2022-06-20 had the highest daily mean wind speed? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2022-06-26</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101493"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101494"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1101493', 'gdacs-event-1101494'] AND e.weather_max_daily_mean_wind_speed IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_max_daily_mean_wind_speed AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Spain\" event starting on 2023-03-23 and 2023-03-29 had the highest total observed precipitation? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2023-03-29</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1013034"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1013157"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1013034', 'gdacs-event-1013157'] AND e.weather_observed_precipitation_total IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_observed_precipitation_total AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in Australia\" event starting on 2022-04-03 and 2022-04-26 had the highest maximum temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2022-04-26</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101346"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101381"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1101346', 'gdacs-event-1101381'] AND e.weather_max_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_max_temperature AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Canada\" event starting on 2021-09-28 and 2021-09-27 had the lowest minimum temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2021-09-28</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1002618"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1002598"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1002618', 'gdacs-event-1002598'] AND e.weather_min_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_min_temperature AS value ORDER BY value ASC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in Thailand\" event starting on 2022-10-02 and 2022-10-16 had the lowest minimum temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2022-10-02</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101686"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101718"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1101686', 'gdacs-event-1101718'] AND e.weather_min_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_min_temperature AS value ORDER BY value ASC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in United States\" event starting on 2021-12-04 and 2021-12-22 had the highest mean temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2021-12-04</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101203"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101225"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1101203', 'gdacs-event-1101225'] AND e.weather_mean_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_mean_temperature AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Paraguay\" event starting on 2023-03-22 and 2023-03-04 had the lowest minimum temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2023-03-22</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1013127"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1012752"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1013127', 'gdacs-event-1012752'] AND e.weather_min_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_min_temperature AS value ORDER BY value ASC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in India\" event starting on 2021-12-30 and 2021-12-04 had the highest daily rainfall? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2021-12-04</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101234"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1101202"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1101234', 'gdacs-event-1101202'] AND e.weather_peak_daily_precipitation IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_peak_daily_precipitation AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Kenya\" event starting on 2022-03-19 and 2022-03-08 had the highest daily rainfall? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2022-03-08</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1004916"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1004995"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1004916', 'gdacs-event-1004995'] AND e.weather_peak_daily_precipitation IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_peak_daily_precipitation AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Cameroon\" event starting on 2022-10-28 and 2022-10-29 had the highest mean temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2022-10-28</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1009858"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1009847"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1009858', 'gdacs-event-1009847'] AND e.weather_mean_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_mean_temperature AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Senegal\" event starting on 2021-11-23 and 2021-11-06 had the highest maximum temperature? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2021-11-06</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1003525"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1003132"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1003525', 'gdacs-event-1003132'] AND e.weather_max_temperature IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_max_temperature AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Nepal\" event starting on 2022-03-21 and 2022-03-18 had the highest total observed precipitation? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2022-03-18</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1004987"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1005013"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1004987', 'gdacs-event-1005013'] AND e.weather_observed_precipitation_total IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_observed_precipitation_total AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Burundi\" event starting on 2022-06-13 and 2022-06-16 had the highest daily mean wind speed? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2022-06-13</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1006646"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1006361"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1006646', 'gdacs-event-1006361'] AND e.weather_max_daily_mean_wind_speed IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_max_daily_mean_wind_speed AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Forest fires in Chad\" event starting on 2023-03-08 and 2023-03-03 had the highest daily mean wind speed? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2023-03-08</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1012687"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1012509"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1012687', 'gdacs-event-1012509'] AND e.weather_max_daily_mean_wind_speed IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_max_daily_mean_wind_speed AS value ORDER BY value DESC, event_id ASC LIMIT 1"
+  },
+  {
+    "research_question": "Which GDACS \"Flood in Brazil\" event starting on 2023-09-21 and 2023-09-03 had the highest daily rainfall? Compare each event at its recorded location, from 7 days before its start through 1 day after its end. If weather data is unavailable, give your best guess. Return one listed start date as <answer>YYYY-MM-DD</answer>; no explanation or clarification.",
+    "choice_count": 2,
+    "full_answer_substrings": [
+      "answer>2023-09-03</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1102243"
+      },
+      {
+        "label": "Event",
+        "id": "gdacs-event-1102207"
+      }
+    ],
+    "verification_query": "MATCH (e:Event) WHERE e.id IN ['gdacs-event-1102243', 'gdacs-event-1102207'] AND e.weather_peak_daily_precipitation IS NOT NULL RETURN toString(date(e.start_datetime)) AS answer, e.id AS event_id, e.weather_peak_daily_precipitation AS value ORDER BY value DESC, event_id ASC LIMIT 1"
   }
 ]

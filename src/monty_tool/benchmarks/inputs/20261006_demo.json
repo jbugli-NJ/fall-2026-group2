@@ -507,5 +507,369 @@
       }
     ],
     "verification_query": "MATCH (a:GOAppeal)-[:FOR_EVENT]->(e:GOEvent {id: 'go-event-7818'}) RETURN a.amount_funded AS answer"
+  },
+  {
+    "research_question": "What affected-population count did IFRC GO record for \"Colombia - Earthquake 2026\" beginning on 2026-08-10? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>466644</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOEvent",
+        "id": "go-event-8055"
+      }
+    ],
+    "verification_query": "MATCH (n:GOEvent {id: 'go-event-8055'}) RETURN n.num_affected AS answer"
+  },
+  {
+    "research_question": "What affected-population count did IFRC GO record for \"Mozambique : Floods - 01-2026\" beginning on 2026-01-07? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>691530</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOEvent",
+        "id": "go-event-7759"
+      }
+    ],
+    "verification_query": "MATCH (n:GOEvent {id: 'go-event-7759'}) RETURN n.num_affected AS answer"
+  },
+  {
+    "research_question": "What affected-population count did IFRC GO record for \"Cape Verde - Floods 2025\" beginning on 2025-08-11? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>119000</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOEvent",
+        "id": "go-event-7621"
+      }
+    ],
+    "verification_query": "MATCH (n:GOEvent {id: 'go-event-7621'}) RETURN n.num_affected AS answer"
+  },
+  {
+    "research_question": "What affected-population count did IFRC GO record for \"Myanmar Earthquake March 2025\" beginning on 2025-03-28? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>15200000</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOEvent",
+        "id": "go-event-7464"
+      }
+    ],
+    "verification_query": "MATCH (n:GOEvent {id: 'go-event-7464'}) RETURN n.num_affected AS answer"
+  },
+  {
+    "research_question": "What affected-population count did IFRC GO record for \"Vanuatu Earthquake (December 2024)\" beginning on 2024-12-17? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>80000</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOEvent",
+        "id": "go-event-7264"
+      }
+    ],
+    "verification_query": "MATCH (n:GOEvent {id: 'go-event-7264'}) RETURN n.num_affected AS answer"
+  },
+  {
+    "research_question": "What affected-population count did IFRC GO record for \"Afghanistan Flash Floods – April 2024\" beginning on 2024-04-11? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>194978</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOEvent",
+        "id": "go-event-6940"
+      }
+    ],
+    "verification_query": "MATCH (n:GOEvent {id: 'go-event-6940'}) RETURN n.num_affected AS answer"
+  },
+  {
+    "research_question": "How many beneficiaries were recorded for the IFRC appeal \"Liberia - Floods\" launched on 2026-09-02? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>6125</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOAppeal",
+        "id": "go-appeal-4618"
+      }
+    ],
+    "verification_query": "MATCH (n:GOAppeal {id: 'go-appeal-4618'}) RETURN n.num_beneficiaries AS answer"
+  },
+  {
+    "research_question": "How many beneficiaries were recorded for the IFRC appeal \"Guinea-Bissau - Windstorm\" launched on 2026-08-19? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>3024</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOAppeal",
+        "id": "go-appeal-4609"
+      }
+    ],
+    "verification_query": "MATCH (n:GOAppeal {id: 'go-appeal-4609'}) RETURN n.num_beneficiaries AS answer"
+  },
+  {
+    "research_question": "How many beneficiaries were recorded for the IFRC appeal \"Kyrgyzstan - Flash floods\" launched on 2026-07-22? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>1611</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOAppeal",
+        "id": "go-appeal-4466"
+      }
+    ],
+    "verification_query": "MATCH (n:GOAppeal {id: 'go-appeal-4466'}) RETURN n.num_beneficiaries AS answer"
+  },
+  {
+    "research_question": "How much funding was recorded as received for the IFRC appeal \"Venezuela-Earthquake\" launched on 2026-06-25? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>9874372</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOAppeal",
+        "id": "go-appeal-4452"
+      }
+    ],
+    "verification_query": "MATCH (n:GOAppeal {id: 'go-appeal-4452'}) RETURN n.amount_funded AS answer"
+  },
+  {
+    "research_question": "How much funding was recorded as received for the IFRC appeal \"Mozambique - Floods\" launched on 2026-01-26? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>2651997</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOAppeal",
+        "id": "go-appeal-4161"
+      }
+    ],
+    "verification_query": "MATCH (n:GOAppeal {id: 'go-appeal-4161'}) RETURN n.amount_funded AS answer"
+  },
+  {
+    "research_question": "How much funding was requested for the IFRC appeal \"Philippines - Cebu Earthquake\" launched on 2025-10-02? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>15500000</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "GOAppeal",
+        "id": "go-appeal-4115"
+      }
+    ],
+    "verification_query": "MATCH (n:GOAppeal {id: 'go-appeal-4115'}) RETURN n.amount_requested AS answer"
+  },
+  {
+    "research_question": "How many deaths did EM-DAT record for \"Road in Zimbabwe\" beginning on 2026-08-28? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>27</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0571-ZWE-total_deaths"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0571-ZWE-total_deaths'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "How many deaths did EM-DAT record for \"Lightning/Thunderstorms in India\" beginning on 2026-05-13? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>122</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0330-IND-total_deaths"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0330-IND-total_deaths'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "How many deaths did EM-DAT record for \"Ground movement in Philippines\" beginning on 2026-06-07? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>108</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0348-PHL-total_deaths"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0348-PHL-total_deaths'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "How many people did EM-DAT report injured for \"Tornado in France\" beginning on 2026-08-24? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>48</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0558-FRA-no_injured"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0558-FRA-no_injured'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "How many people did EM-DAT report injured for \"Flash flood in Afghanistan\" beginning on 2026-07-20? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>125</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0458-AFG-no_injured"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0458-AFG-no_injured'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "How many people did EM-DAT report injured for \"Explosion (Industrial) in China of May 2026\" beginning on 2026-05-22? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>128</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0355-CHN-no_injured"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0355-CHN-no_injured'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "How many people did EM-DAT report homeless for \"Ground movement in Peru\" beginning on 2026-07-19? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>3435</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0451-PER-no_homeless"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0451-PER-no_homeless'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "How many people did EM-DAT report homeless for \"Fire (Miscellaneous) in Norway of July 2026\" beginning on 2026-07-17? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>300</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0445-NOR-no_homeless"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0445-NOR-no_homeless'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "What damage cost did EM-DAT record for \"Storm (Tropical cyclone) in Mexico of June 2026\" beginning on 2026-06-08? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>100000</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0383-MEX-total_dam"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0383-MEX-total_dam'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "What damage cost did EM-DAT record for \"Tornado in United States of America\" beginning on 2026-04-23? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>5800000</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Impact",
+        "id": "emdat-impact-2026-0284-USA-total_dam"
+      }
+    ],
+    "verification_query": "MATCH (n:Impact {id: 'emdat-impact-2026-0284-USA-total_dam'}) RETURN n.impact_value AS answer"
+  },
+  {
+    "research_question": "For GDACS \"Flood in Türkiye\" beginning on 2023-11-18, what was the lowest temperature, in C, during 2023-11-11 through 2023-11-28, inclusive? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>6.68</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1102344"
+      }
+    ],
+    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1102344'}) RETURN n.weather_min_temperature AS answer"
+  },
+  {
+    "research_question": "For GDACS \"Forest fires in Mongolia\" beginning on 2022-07-06, what was the highest temperature, in C, during 2022-06-29 through 2022-07-13, inclusive? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>32.03</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1007158"
+      }
+    ],
+    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1007158'}) RETURN n.weather_max_temperature AS answer"
+  },
+  {
+    "research_question": "For GDACS \"Flood in France\" beginning on 2023-12-30, what was the highest daily rainfall, in mm/day, during 2023-12-23 through 2024-01-04, inclusive? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>21.11</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1102408"
+      }
+    ],
+    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1102408'}) RETURN n.weather_peak_daily_precipitation AS answer"
+  },
+  {
+    "research_question": "For GDACS \"Flood in Australia\" beginning on 2023-12-25, what was the highest daily mean wind speed, in m/s, during 2023-12-18 through 2023-12-30, inclusive? Return the exact number as <answer>NUMBER</answer>; no explanation or clarification.",
+    "full_answer_substrings": [
+      "answer>1.56</answer"
+    ],
+    "partial_answer_substrings": [],
+    "source_nodes": [
+      {
+        "label": "Event",
+        "id": "gdacs-event-1102426"
+      }
+    ],
+    "verification_query": "MATCH (n:Event {id: 'gdacs-event-1102426'}) RETURN n.weather_max_daily_mean_wind_speed AS answer"
   }
 ]
