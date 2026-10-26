@@ -76,6 +76,27 @@ def read_summary(output_dir: Path) -> list[dict[str, str]]:
 
 # Tests
 
+@pytest.mark.parametrize(
+    'input_file',
+    sorted(
+        (
+            path
+            for path in files('monty_tool.benchmarks.inputs').iterdir()
+            if path.name.endswith('.json')
+        ),
+        key=lambda path: path.name,
+    ),
+    ids=lambda path: path.name,
+)
+def test_benchmark_input_file_is_valid(input_file):
+    """
+    Check that all listed benchmark input files are valid.
+    """
+    TypeAdapter(list[BenchmarkInput]).validate_json(
+        input_file.read_text(encoding='utf-8')
+    )
+
+
 def test_benchmark_input_length():
     """
     Confirms that the benchmark question listing is above a set minimum.
