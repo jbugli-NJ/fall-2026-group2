@@ -1,5 +1,5 @@
 """
-Tests for CEMS footprints and the shared footprint helpers.
+Tests for CEMS footprints.
 """
 
 from unittest.mock import Mock
@@ -8,7 +8,6 @@ import pytest
 import requests
 
 from monty_tool.geo import cems
-from monty_tool.geo.schemas import REGIONAL_KM, extent_km, grade_detail
 
 BUCKET = 'https://rapidmapping-viewer.s3.eu-west-1.amazonaws.com/EMSR935/AOI01/DEL_PRODUCT'
 
@@ -158,21 +157,28 @@ def test_get_cems_footprints_rejects_bad_activation():
         cems.get_cems_footprints('935', client=Mock())
 
 
-def test_extent_km_handles_empty_and_points():
+
+def test_item_without_activation_yields_nothing():
     """
-    Confirms extent is None without coordinates and zero for a point.
+    Confirms an Item with no activation ID in its detail or its ID is skipped.
     """
-    assert extent_km({'type': 'FeatureCollection', 'features': []}) is None
-    assert extent_km({'type': 'Point', 'coordinates': [10, 10]}) == 0
+    item = _item(id='cems-response-unknown')
+    del item['properties']['monty:response_detail']['source_id']
+
+    assert cems.footprints_from_item(item) == []
 
 
-def test_grade_detail_marks_wide_footprints_regional():
+def test_get_cems_footprints_without_download(monkeypatch):
     """
-    Confirms outlines wider than REGIONAL_KM become regional, and that
-    graded footprints and tracks keep their grade at any size.
+    Confirms download=False returns footprints without fetching any layer.
     """
-    assert grade_detail('outline', REGIONAL_KM + 1) == 'regional'
-    assert grade_detail('outline', REGIONAL_KM) == 'outline'
-    assert grade_detail('outline', None) == 'outline'
-    assert grade_detail('modelled', REGIONAL_KM * 10) == 'modelled'
-    assert grade_detail('track', REGIONAL_KM * 10) == 'track'
+    client = Mock()
+    client.search.return_value.items_as_dicts.return_value = [_item()]
+    get = Mock()
+    monkeypatch.setattr(cems.requests, 'get', get)
+
+    footprints = cems.get_cems_footprints('EMSR935', download=False, client=client)
+
+    assert len(footprints) == 2
+    assert all(f.geojson is None for f in footprints)
+    get.assert_not_called()
