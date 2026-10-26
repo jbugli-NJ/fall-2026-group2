@@ -17,7 +17,7 @@ import numpy as np
 from pydantic import TypeAdapter, ValidationError
 import pytest
 
-from monty_tool.benchmarks.schemas import BenchmarkInput, BenchmarkOutput
+from monty_tool.benchmarks.schemas import BenchmarkInput, BenchmarkOutput, BenchmarkSourceNode
 from monty_tool.benchmarks import run_benchmark
 from monty_tool.utils.versions import BENCHMARK_SEEDS, FrozenModel, SEED
 
@@ -30,8 +30,15 @@ _INPUT_TEXT = (
     .read_text(encoding='utf-8')
 )
 INPUTS = TypeAdapter(list[BenchmarkInput]).validate_json(_INPUT_TEXT)
-FIRST_INPUT =  INPUTS[0]
-INPUT_BYTES = TypeAdapter(list[BenchmarkInput]).dump_json([FIRST_INPUT]) + b'\r\n'
+TEST_INPUT = BenchmarkInput(
+    research_question='How many people were affected by the example flood?',
+    full_answer_substrings=['3000'],
+    source_nodes=[BenchmarkSourceNode(label='Event', id='test-event')],
+    verification_query="MATCH (e:Event {id: 'test-event'}) RETURN e.num_affected AS answer",
+)
+
+
+INPUT_BYTES = TypeAdapter(list[BenchmarkInput]).dump_json([TEST_INPUT]) + b'\r\n'
 GIT_COMMIT = 'a' * 40
 
 
@@ -52,7 +59,7 @@ def benchmark_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     monkeypatch.setattr(run_benchmark, 'set_seed', lambda seed: None)
     assistant = Mock(spec=run_benchmark.QueryAssistant)
     assistant.ask.return_value = {
-        'answer': f'<{FIRST_INPUT.full_answer_substrings[0]}>',
+        'answer': f'<{TEST_INPUT.full_answer_substrings[0]}>',
         'tool_results': [],
     }
     monkeypatch.setattr(run_benchmark, 'QueryAssistant', Mock(return_value=assistant))
@@ -91,7 +98,7 @@ def test_main_saves_results_and_metadata(benchmark_workspace: Path, use_tools: b
     text, = [report.read_text(encoding='utf-8') for report in reports
              if report.read_text(encoding='utf-8').startswith(f'# Benchmark: {model}\n')]
     assert text.startswith(f'# Benchmark: {model}\n')
-    assert FIRST_INPUT.research_question in text
+    assert TEST_INPUT.research_question in text
     assert f'Random seed: {SEED}' in text
     assert f'Input SHA-256: {sha256(INPUT_BYTES).hexdigest()}' in text
     assert f'Git commit: {GIT_COMMIT}' in text
@@ -140,7 +147,7 @@ def test_main_uses_bedrock(benchmark_workspace: Path, monkeypatch: pytest.Monkey
     Select the Bedrock assistant and record its actual model ID in the results.
     """
     assistant = Mock(spec=run_benchmark.BedrockQueryAssistant)
-    assistant.ask.return_value = {'answer': f'<{FIRST_INPUT.full_answer_substrings[0]}>', 'tool_results': []}
+    assistant.ask.return_value = {'answer': f'<{TEST_INPUT.full_answer_substrings[0]}>', 'tool_results': []}
     bedrock = Mock(return_value=assistant)
     monkeypatch.setattr(run_benchmark, 'BedrockQueryAssistant', bedrock)
     args = ['--model', 'bedrock', '--seed', str(SEED)]
@@ -149,8 +156,8 @@ def test_main_uses_bedrock(benchmark_workspace: Path, monkeypatch: pytest.Monkey
 
     bedrock.assert_called_once_with()
     assert assistant.ask.call_args_list == [
-        call(FIRST_INPUT.research_question, use_tools=True),
-        call(FIRST_INPUT.research_question, use_tools=False),
+        call(TEST_INPUT.research_question, use_tools=True),
+        call(TEST_INPUT.research_question, use_tools=False),
     ]
     output_dir = benchmark_workspace / 'benchmarks' / '20261006_demo'
     rows = read_summary(output_dir)
@@ -246,7 +253,7 @@ def test_scoring():
     """
     Check full, partial, and zero credit calculation logic.
     """
-    benchmark = FIRST_INPUT.model_copy(update={
+    benchmark = TEST_INPUT.model_copy(update={
         'full_answer_substrings': ['Exact 1700.3'],
         'partial_answer_substrings': ['Exact 1700'],
     })
@@ -285,7 +292,7 @@ def test_bounded_scoring(expected: str, answer: str, matches: bool, credit: floa
     """
     Check word boundaries and comma variants for both credit levels.
     """
-    benchmark = FIRST_INPUT.model_copy(update={
+    benchmark = TEST_INPUT.model_copy(update={
         'full_answer_substrings': [expected] if credit == 1.0 else ['unmatched'],
         'partial_answer_substrings': [expected] if credit == 0.5 else [],
     })
@@ -297,16 +304,16 @@ def test_output():
     Confirms that expected LLM response elements are in the rendered markdown.
     """
     output = BenchmarkOutput(
-        benchmark_input=FIRST_INPUT, score=1, duration_seconds=0,
+        benchmark_input=TEST_INPUT, score=1, duration_seconds=0,
         response={'answer': '<answer>3,000</answer>', 'tool_results': [{
             'call': {'name': 'search_disaster_events', 'arguments': {'text': 'Sri Lanka'}},
             'result': 'private trace',
         }]},
     )
     assert output.response is not None
-    assert run_benchmark.score_answer(FIRST_INPUT, output.response['answer']) == 1.0
+    assert run_benchmark.score_answer(TEST_INPUT, output.response['answer']) == 1.0
     markdown = output.to_md(1)
-    assert FIRST_INPUT.research_question in markdown
+    assert TEST_INPUT.research_question in markdown
     assert '**Answer:** <answer>3,000</answer>' in markdown
     assert '**Tool calls:** 1' in markdown
     assert '    - search_disaster_events: {"text": "Sri Lanka"}' in markdown
@@ -320,9 +327,9 @@ def test_summary_appends_runs(tmp_path: Path):
     path = tmp_path / 'summary.csv'
     started_at = datetime(2026, 10, 4, tzinfo=timezone.utc)
     outputs = [
-        BenchmarkOutput(benchmark_input=FIRST_INPUT, score=1, duration_seconds=2),
-        BenchmarkOutput(benchmark_input=FIRST_INPUT, score=.5, duration_seconds=3),
-        BenchmarkOutput(benchmark_input=FIRST_INPUT, score=0, duration_seconds=4, error='failed'),
+        BenchmarkOutput(benchmark_input=TEST_INPUT, score=1, duration_seconds=2),
+        BenchmarkOutput(benchmark_input=TEST_INPUT, score=.5, duration_seconds=3),
+        BenchmarkOutput(benchmark_input=TEST_INPUT, score=0, duration_seconds=4, error='failed'),
     ]
     model = FrozenModel.QWEN3_1_7B
     input_hash = sha256(_INPUT_TEXT.encode('utf-8')).hexdigest()
@@ -386,7 +393,7 @@ def test_summary_plot_filters_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     build_plot = Mock()
     monkeypatch.setattr(run_benchmark, 'build_summary_plot', build_plot)
 
-    assert run_benchmark.save_summary_plot(path, INPUTS[:3]) == path.with_suffix('.svg')
+    assert run_benchmark.save_summary_plot(path, [TEST_INPUT] * 3) == path.with_suffix('.svg')
 
     build_plot.assert_called_once()
     plotted_rows = build_plot.call_args.args[0]
@@ -403,7 +410,7 @@ def test_choice_count_rejects_invalid_counts(choice_count: object):
     Require positive integer counts when choices are specified.
     """
     with pytest.raises(ValidationError):
-        BenchmarkInput.model_validate({**FIRST_INPUT.model_dump(), 'choice_count': choice_count})
+        BenchmarkInput.model_validate({**TEST_INPUT.model_dump(), 'choice_count': choice_count})
 
 
 @pytest.mark.parametrize(('counts', 'expected'), [
@@ -417,20 +424,25 @@ def test_random_chance_score(counts: list[int | None], expected: float):
     """
     Include questions without choices in the denominator with zero expected credit.
     """
-    benchmarks = [FIRST_INPUT.model_copy(update={'choice_count': count}) for count in counts]
-    assert run_benchmark.random_chance_score(benchmarks) == pytest.approx(expected)
+    benchmark_inputs = [TEST_INPUT.model_copy(update={'choice_count': count}) for count in counts]
+    assert run_benchmark.random_chance_score(benchmark_inputs) == pytest.approx(expected)
 
 
-def test_weather_random_chance_score():
+def test_weather_choice_counts():
     """
-    Match choice counts to the listed dates and compute the full weather baseline.
+    Match choice counts to the listed dates and source nodes.
     """
-    benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(
+    benchmark_inputs = TypeAdapter(list[BenchmarkInput]).validate_json(
         files('monty_tool.benchmarks.inputs')
         .joinpath('20261008_historical_weather.json')
         .read_text(encoding='utf-8')
     )
-    for benchmark in benchmarks:
-        dates = re.findall(r'\d{4}-\d{2}-\d{2}', benchmark.research_question)
-        assert benchmark.choice_count == len(dates)
-    assert run_benchmark.random_chance_score(benchmarks) == pytest.approx((19 / 2 + 1 / 3) / 20)
+    for question in benchmark_inputs:
+        dates = re.findall(r'\d{4}-\d{2}-\d{2}', question.research_question)
+        assert question.choice_count in (2, 3)
+        assert question.choice_count == len(dates)
+        assert len(set(dates)) == len(dates)
+        assert len(question.source_nodes) == question.choice_count
+        assert sum(
+            f'answer>{day}</answer' in question.full_answer_substrings for day in dates
+        ) == 1
