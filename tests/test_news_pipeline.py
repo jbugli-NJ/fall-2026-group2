@@ -447,16 +447,12 @@ def test_qwen_event_judge_returns_all_four_statuses(status):
         body_status="body_available",
         body_text="An earthquake struck Japan on September 10.",
     )
-    excerpt = (
-        None if status == "uncertain"
-        else "earthquake struck Japan on September 10"
-    )
     assistant = Mock()
     assistant._generate.return_value = {
         "content": json.dumps({
             "status": status,
             "reason": "Test decision based on the article.",
-            "evidence_excerpt": excerpt,
+            "evidence_id": None if status == "uncertain" else 1,
         })
     }
 
@@ -466,10 +462,34 @@ def test_qwen_event_judge_returns_all_four_statuses(status):
     )
 
     assert decision.status == status
+    if status == "uncertain":
+        assert decision.evidence_excerpt is None
+    else:
+        assert decision.evidence_excerpt == candidate.body_text
     assert decision.url == candidate.story.url
     assistant._generate.assert_called_once()
     assert assistant._generate.call_args.kwargs["use_tools"] is False
 
+def test_qwen_event_judge_rejects_unknown_passage_id():
+    event = build_event_context(make_record("event-a", source_id="a"))
+    story = MediaCloudStory(id=1, url="https://example.com/one")
+    assistant = Mock()
+    assistant._generate.return_value = {
+        "content": json.dumps({
+            "status": "same_event",
+            "reason": "Test reason.",
+            "evidence_id": 999,
+        })
+    }
+
+    judge = verification.make_qwen_event_judge(assistant)
+    status, reason, excerpt = judge(
+        event, story, "An earthquake struck Japan."
+    )
+
+    assert status == "uncertain"
+    assert reason == "The model did not select a valid article passage."
+    assert excerpt is None
 
 def test_qwen_event_judge_keeps_candidate_when_output_is_invalid():
     event = build_event_context(make_record("event-a", source_id="a"))
