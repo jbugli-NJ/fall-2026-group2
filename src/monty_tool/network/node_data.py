@@ -149,7 +149,7 @@ def media_cloud_run_to_node_data(
     *,
     snapshot_s3_uri: str,
 ) -> list[MediaCloudArticleInsertData]:
-    """Convert same-event and related-context decisions into graph rows."""
+    """Convert same-event decisions into graph rows."""
     rows: list[MediaCloudArticleInsertData] = []
 
     for assessment in run.assessments:
@@ -164,7 +164,7 @@ def media_cloud_run_to_node_data(
         ):
             raise ValueError("Media Cloud assessment does not match its event.")
 
-        if decision.status not in {"same_event", "related_context"}:
+        if decision.status != "same_event":
             continue
 
         if (
@@ -193,11 +193,6 @@ def media_cloud_run_to_node_data(
                 "body_text": evidence.body_text,
                 "story_id": evidence.story.id,
                 "event_id": decision.event_id,
-                "relationship_type": (
-                    "VERIFIED_FOR"
-                    if decision.status == "same_event"
-                    else "CONTEXT_FOR"
-                ),
                 "decision_reason": decision.reason,
                 "evidence_excerpt": decision.evidence_excerpt,
                 "snapshot_s3_uri": snapshot_s3_uri,

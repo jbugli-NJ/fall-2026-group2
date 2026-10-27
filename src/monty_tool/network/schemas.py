@@ -5,7 +5,7 @@ Schemas for data stored in the Neo4j graph.
 # Imports
 
 from datetime import date, datetime
-from typing import Literal, NotRequired, TypedDict
+from typing import NotRequired, TypedDict
 
 from monty_tool.embeddings.schemas import Embedding
 
@@ -90,7 +90,6 @@ class MediaCloudArticleInsertData(TypedDict):
     body_text: str
     story_id: int | str | None
     event_id: str
-    relationship_type: Literal["VERIFIED_FOR", "CONTEXT_FOR"]
     decision_reason: str
     evidence_excerpt: str
     snapshot_s3_uri: str

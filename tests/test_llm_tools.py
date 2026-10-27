@@ -279,7 +279,8 @@ def test_search_appeals_queries_launch_dates_and_returns_details(monkeypatch: py
 def test_event_news_query_uses_classified_media_cloud_links() -> None:
     query = tools._load_cypher_query("get_event_news.cypher")
 
-    assert "VERIFIED_FOR|CONTEXT_FOR" in query
+    assert "[link:VERIFIED_FOR]" in query
+    assert "CONTEXT_FOR" not in query
     assert "type(link) AS relationship_type" in query
     assert "link.evidence_excerpt AS evidence_excerpt" in query
     assert "body_excerpt" in query

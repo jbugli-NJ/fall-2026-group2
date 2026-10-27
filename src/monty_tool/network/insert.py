@@ -268,11 +268,8 @@ def insert_media_cloud_articles(
     event_id: str,
     snapshot_s3_uri: str,
 ) -> int:
-    """Atomically replace one event's Media Cloud links from a current snapshot.
+    """Insert same-event Media Cloud articles for one existing Event."""
 
-    An empty result removes obsolete links too. Article nodes and relationships
-    belonging to other events or S3 sources are preserved.
-    """
     root, separator, _ = snapshot_s3_uri.partition("/media_cloud_articles/current/")
     if not event_id or not separator or not root.startswith("s3://"):
         raise ValueError("An event ID and current Media Cloud S3 snapshot are required.")
@@ -280,7 +277,6 @@ def insert_media_cloud_articles(
     if any(
         row["event_id"] != event_id
         or row["snapshot_s3_uri"] != snapshot_s3_uri
-        or row["relationship_type"] not in {"VERIFIED_FOR", "CONTEXT_FOR"}
         for row in node_data
     ):
         raise ValueError("Media Cloud rows must belong to the same event and snapshot.")
@@ -298,21 +294,6 @@ def insert_media_cloud_articles(
                 f"News results have no matching Event node: {event_id!r}"
             )
 
-        # Remove only this source's relationships. Legacy links have no source
-        # property, so recognize them by their exclusively Media Cloud S3 URIs.
-        tx.run(
-            """
-            MATCH (:NewsArticle)-[link:VERIFIED_FOR|CONTEXT_FOR]->(event:Event {id: $event_id})
-            WHERE link.source_prefix = $source_prefix
-               OR (link.source_prefix IS NULL
-                   AND size(coalesce(link.snapshot_s3_uris, [])) > 0
-                   AND all(uri IN link.snapshot_s3_uris WHERE uri STARTS WITH $source_prefix))
-            DELETE link
-            """,
-            event_id=event_id,
-            source_prefix=source_prefix,
-        ).consume()
-
         processed = 0
         for batch in batched(node_data, NETWORK_INSERT_BATCH_SIZE):
             result = tx.run(
@@ -326,25 +307,11 @@ def insert_media_cloud_articles(
                 article.body_text = item.body_text,
                 article.media_cloud_story_id = item.story_id
 
-            FOREACH (_ IN CASE
-                WHEN item.relationship_type = 'VERIFIED_FOR' THEN [1]
-                ELSE []
-            END |
-                MERGE (article)-[verified:VERIFIED_FOR {source_prefix: $source_prefix}]->(event)
-                SET verified.decision_reason = item.decision_reason,
-                    verified.evidence_excerpt = item.evidence_excerpt,
-                    verified.snapshot_s3_uris = [item.snapshot_s3_uri]
-            )
+            MERGE (article)-[verified:VERIFIED_FOR {source_prefix: $source_prefix}]->(event)
+            SET verified.decision_reason = item.decision_reason,
+                verified.evidence_excerpt = item.evidence_excerpt,
+                verified.snapshot_s3_uris = [item.snapshot_s3_uri]
 
-            FOREACH (_ IN CASE
-                WHEN item.relationship_type = 'CONTEXT_FOR' THEN [1]
-                ELSE []
-            END |
-                MERGE (article)-[context:CONTEXT_FOR {source_prefix: $source_prefix}]->(event)
-                SET context.decision_reason = item.decision_reason,
-                    context.evidence_excerpt = item.evidence_excerpt,
-                    context.snapshot_s3_uris = [item.snapshot_s3_uri]
-            )
             RETURN count(item) AS processed
                 """,
                 items=list(batch),

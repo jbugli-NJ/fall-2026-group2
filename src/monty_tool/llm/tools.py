@@ -415,9 +415,7 @@ class QueryTools:
                 "function": {
                     "name": "get_event_news",
                     "description": (
-                         "Get saved Media Cloud articles linked to an existing disaster event. "
-                         "VERIFIED_FOR means classified as covering the event; CONTEXT_FOR "
-                        "provides related background and is not direct event evidence."
+                         "Get saved Media Cloud articles classified as covering an existing disaster event."
                     ),
                     "parameters": {
                         "type": "object",

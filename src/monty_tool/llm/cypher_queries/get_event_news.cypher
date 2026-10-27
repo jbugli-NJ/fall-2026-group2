@@ -1,7 +1,6 @@
-MATCH (article:NewsArticle)-[link:VERIFIED_FOR|CONTEXT_FOR]->(event:Event {id: $event_id})
+MATCH (article:NewsArticle)-[link:VERIFIED_FOR]->(event:Event {id: $event_id})
 WITH article, link, event
-ORDER BY CASE WHEN type(link) = 'VERIFIED_FOR' THEN 0 ELSE 1 END,
-         article.published_at DESC,
+ORDER BY article.published_at DESC,
          article.url
 LIMIT 20
 RETURN event.id AS event_id,
