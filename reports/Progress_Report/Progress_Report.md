@@ -56,3 +56,95 @@
 * [x] Refine NewsAPI tooling and article reranking
 
 ---
+
+## Date: Week 4 - September 29, 2026
+- Topics of discussion
+  - Moving shared data to S3
+    - Saving embeddings and other node data to reuse when building the network
+  - Geospatial investigation
+    - Using NASA POWER for temperature at disaster locations
+    - Limitations with records that don't have point locations
+  - NewsAPI collection
+    - Improving article relevance using disaster record context
+    - Saving results to avoid repeated API requests
+  - Initial demo app exploration
+
+- Action Items:
+
+* [x] Build utilities to save node data in S3 and load it into the local network
+* [x] Build initial NASA POWER data collection utilities
+* [x] Create a news collection pipeline with saved results and API request limits
+* [x] Explore Chainlit for the demo app
+* [x] Set up the LaTeX report and update the proposal
+
+---
+
+## Date: Week 5 - October 6, 2026
+- Topics of discussion
+  - Completing first pass at external data connections to the network
+    - Temperature data from NASA POWER
+    - Querying saved news articles associated with disaster records
+  - Demo app framework selection
+    - Moving to Streamlit after compatibility issues with Chainlit
+    - Showing the queries and source records behind LLM answers
+  - Initial LLM benchmarking
+    - Testing factual retrieval from the network
+    - Comparing Qwen and Gemma models
+    - Reliability of tool use across models
+
+- Action Items:
+
+* [x] Connect saved temperature and news data to the network
+  * [x] Expose both through tools for LLM queries
+* [x] Move news collection storage to S3
+* [x] Build an initial Streamlit demo app showing answers and supporting query results
+* [x] Create an initial factual retrieval benchmark
+  * [x] Run model comparisons and plot results
+* [x] Refine LLM tool use based on initial benchmark runs
+* [x] Extend the literature review and proposal diagram
+
+---
+
+## Date: Week 6 - October 13, 2026
+- Topics of discussion
+  - Extending benchmarking to external data
+    - Historical weather questions
+    - News synthesis questions
+    - Comparing answers with and without access to external data
+  - News retrieval limitations
+    - Improving searches using country and hazard names
+    - Further work needed on the news benchmark
+  - Preparing the demo app and benchmark results for the Red Cross demo
+
+- Action Items:
+
+* [x] Build weather and news question sets and run initial benchmarks
+* [x] Compare model responses with and without weather/news tools
+* [x] Refine NewsAPI searches and add random sampling for disaster selection
+* [x] Add utilities to refresh Montandon data for further news collection
+
+---
+
+## Date: Week 7 - October 23, 2026 (updated as of October 20)
+- Topics of discussion
+  - API-based LLM integration
+    - Using Sonnet 4.5 through AWS Bedrock to query the network
+  - Preliminary presentation and updated project direction
+    - Extending the demo app toward the proof-of-concept
+    - Remaining benchmarking and reporting work
+  - Updated news collection using Media Cloud
+
+- Action Items:
+
+* [x] Add Bedrock support for querying the network
+* [x] Connect the Bedrock assistant to the demo app
+* [x] Prepare preliminary presentation materials
+* [x] Update the proposal to reflect the remaining proof-of-concept and evaluation work
+* [ ] Update benchmarks for a more robust approach
+  * [ ] Add seeding variation and multiple runs for local LLMs
+  * [ ] Add hashed inputs to the saved CSV for clarity
+  * [ ] Run API models against benchmarks
+* [ ] Initial Media Cloud integration and testing over NewsAPI
+
+
+---
