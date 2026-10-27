@@ -1,127 +1,37 @@
-"""Transfer disaster input and news snapshots through S3."""
-
+"""Transfer disaster input and Media Cloud snapshots through S3."""
 import json
+from collections.abc import Iterator
+from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.boto3_utils.s3_utils import download_object, upload_object
 from monty_tool.data_cache import raw_cache_path
-from monty_tool.tools.resources import BUCKET_DATA_PREFIX, RAW_BUCKET_PREFIX
-from monty_tool.news.history import news_job_key
-from monty_tool.news.pipeline import NewsCollectionJob
-from monty_tool.news.schemas import NewsSearchResult, news_search_parameters
-from collections.abc import Iterator
-from tempfile import TemporaryDirectory
+from monty_tool.tools.resources import RAW_BUCKET_PREFIX
 
-NEWS_ARTICLES_PREFIX = BUCKET_DATA_PREFIX + "newsapi_articles/"
+if TYPE_CHECKING:
+    from monty_tool.news.history import MediaCloudRunSettings
+    from monty_tool.news.runner import MediaCloudJobRun
 
-def list_news_snapshot_keys(bucket: S3Bucket) -> list[str]:
-    """List saved news-search results for network loading."""
-    prefix = f"{NEWS_ARTICLES_PREFIX}by-job/"
-    return sorted(
-        obj.key
-        for obj in bucket.objects.filter(Prefix=prefix)
-        if obj.key.endswith(".json")
-    )
 
-def news_snapshot_key(
-    job: NewsCollectionJob, *, page_size: int = 100
-) -> str:
-    """Return the same S3 key for the same news search."""
-    return (
-        f"{NEWS_ARTICLES_PREFIX}by-job/"
-        f"{news_job_key(job, page_size=page_size)}.json"
-    )
+def current_snapshot_path(output_dir: Path, *, collection: str, event_id: str) -> Path:
+    """Use one current file per event, with path-safe identity components."""
+    if any(not value.strip() or value in {".", ".."} for value in (collection, event_id)):
+        raise ValueError("A collection and event ID are required for a snapshot.")
+    return output_dir / "current" / quote(collection, safe="") / f"{quote(event_id, safe='')}.json"
 
-def read_news_snapshot(
-    path: Path, *, key: str
-) -> tuple[NewsCollectionJob, NewsSearchResult]:
-    """Validate a saved search result and return its job and articles."""
-    try:
-        report = json.loads(path.read_text(encoding="utf-8"))
-        job = NewsCollectionJob.model_validate(report["job"])
-        result = NewsSearchResult.model_validate(report["result"])
-        parameters = report["search_parameters"]
-        page_size = parameters["page_size"]
 
-        if type(page_size) is not int or not 1 <= page_size <= 100:
-            raise ValueError("Invalid page size.")
+def current_snapshot_key(*, prefix: str, collection: str, event_id: str) -> str:
+    """Return the canonical S3 key for an event's current result."""
+    folder = prefix.strip().strip("/")
+    if not folder:
+        raise ValueError("An explicit S3 folder prefix is required.")
+    relative = current_snapshot_path(Path(), collection=collection, event_id=event_id)
+    return f"{folder}/media_cloud_articles/{relative.as_posix()}"
 
-        if (
-            report["schema_version"] != 1
-            or parameters != news_search_parameters(job.query, page_size=page_size)
-            or report["status"] != ("ok" if result.articles else "empty")
-            or job.event.item_id != job.query.item_id
-            or result.item_id != job.query.item_id
-            or result.query != job.query.query
-            or result.from_date != job.query.from_date
-            or result.to_date != job.query.to_date
-            or key != news_snapshot_key(job, page_size=page_size)
-        ):
-            raise ValueError("Snapshot contents do not match its S3 key.")
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError(f"Invalid S3 news snapshot: {key}") from exc
-
-    return job, result
-
-def iter_news_snapshots(
-    bucket: S3Bucket,
-) -> Iterator[tuple[str, NewsCollectionJob, NewsSearchResult]]:
-    """Download and validate saved results one at a time."""
-    with TemporaryDirectory() as temp_dir:
-        path = Path(temp_dir) / "snapshot.json"
-
-        for key in list_news_snapshot_keys(bucket):
-            download_object(bucket, key, path)
-            job, result = read_news_snapshot(path, key=key)
-            yield key, job, result
-
-def download_news_snapshot(
-    bucket: S3Bucket,
-    *,
-    job: NewsCollectionJob,
-    output_dir: Path,
-    page_size: int = 100,
-) -> Path | None:
-    """Download an existing result for this exact search, if present."""
-    key = news_snapshot_key(job, page_size=page_size)
-
-    exists = any(
-        obj.key == key
-        for obj in bucket.objects.filter(Prefix=key)
-    )
-    if not exists:
-        return None
-
-    path = output_dir / "s3-reuse" / Path(key).name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    download_object(bucket, key, path)
-
-    try:
-        report = json.loads(path.read_text(encoding="utf-8"))
-        saved_job = NewsCollectionJob.model_validate(report["job"])
-        result = NewsSearchResult.model_validate(report["result"])
-
-        expected_parameters = news_search_parameters(job.query, page_size=page_size)
-        valid = (
-            report["schema_version"] == 1
-            and report["search_parameters"] == expected_parameters
-            and news_job_key(saved_job, page_size=page_size)
-            == news_job_key(job, page_size=page_size)
-            and report["status"] == (
-                "ok" if result.articles else "empty"
-            )
-            and result.item_id == job.query.item_id
-            and result.query == job.query.query
-            and result.from_date == job.query.from_date
-            and result.to_date == job.query.to_date
-        )
-        if not valid:
-            raise ValueError("Snapshot does not match this search.")
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError(f"Invalid S3 news snapshot: {key}") from exc
-
-    return path
 
 def download_collection_cache(
     bucket: S3Bucket,
@@ -141,28 +51,111 @@ def download_collection_cache(
     return path
 
 
-def upload_news_snapshot(bucket: S3Bucket, snapshot: Path) -> str:
-    """Upload a successful result under its stable search key."""
+def save_media_cloud_snapshot(
+    run: "MediaCloudJobRun",
+    *,
+    output_dir: Path,
+    run_key: str | None = None,
+    request_settings: "MediaCloudRunSettings | None" = None,
+) -> Path:
+    """Atomically replace this event's current candidates and decisions."""
+    if (run_key is None) != (request_settings is None):
+        raise ValueError("run_key and request_settings must be supplied together.")
+    from monty_tool.news.collector import _save_snapshot
+
+    result = run.model_dump(mode="json")
+
+    # Evidence normally excludes body_text from JSON.
+    # Include it explicitly in the persistent snapshot.
+    for saved, assessment in zip(
+        result["assessments"],
+        run.assessments,
+        strict=True,
+    ):
+        saved["evidence"]["body_text"] = assessment.evidence.body_text
+
+    report = {
+        "schema_version": 1,
+        "provider": "media_cloud",
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+        "run": result,
+    }
+    if run_key is not None:
+        report["run_key"] = run_key
+        report["request_settings"] = request_settings
+    destination = current_snapshot_path(
+        output_dir, collection=run.job.event.collection, event_id=run.job.event.item_id,
+    )
+    staged = _save_snapshot(destination.parent, report)
     try:
-        report = json.loads(snapshot.read_text(encoding="utf-8"))
-        job = NewsCollectionJob.model_validate(report["job"])
-        result = NewsSearchResult.model_validate(report["result"])
-        parameters = report["search_parameters"]
-        page_size = parameters["page_size"]
+        read_media_cloud_snapshot(staged)
+        staged.replace(destination)
+    finally:
+        staged.unlink(missing_ok=True)
+    return destination
 
-        if (
-            report["schema_version"] != 1
-            or report["status"] != ("ok" if result.articles else "empty")
-            or parameters != news_search_parameters(job.query, page_size=page_size)
-            or result.item_id != job.query.item_id
-            or result.query != job.query.query
-            or result.from_date != job.query.from_date
-            or result.to_date != job.query.to_date
-        ):
-            raise ValueError("Snapshot is not a matching successful result.")
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError(f"Invalid news snapshot: {snapshot}") from exc
 
-    key = news_snapshot_key(job, page_size=page_size)
+def read_media_cloud_snapshot(path: Path) -> "MediaCloudJobRun":
+    """Read a saved Media Cloud run and validate its structure."""
+    from monty_tool.news.runner import MediaCloudJobRun
+
+    report = json.loads(path.read_text(encoding="utf-8"))
+
+    if (
+        not isinstance(report, dict)
+        or report.get("schema_version") != 1
+        or report.get("provider") != "media_cloud"
+        or "run" not in report
+    ):
+        raise ValueError("Invalid Media Cloud snapshot.")
+
+    return MediaCloudJobRun.model_validate(report["run"])
+
+
+def upload_media_cloud_snapshot(
+    bucket: S3Bucket,
+    snapshot: Path,
+    *,
+    prefix: str,
+) -> str:
+    """Replace the event's current S3 object after validating the snapshot."""
+    run = read_media_cloud_snapshot(snapshot)
+    key = current_snapshot_key(
+        prefix=prefix, collection=run.job.event.collection, event_id=run.job.event.item_id,
+    )
+
     upload_object(bucket, snapshot, key)
     return key
+
+def list_media_cloud_snapshot_keys(
+    bucket: S3Bucket, *, prefix: str
+) -> list[str]:
+    """List current results only; legacy snapshots are not graph input."""
+    folder = prefix.strip().strip("/")
+    if not folder:
+        raise ValueError("An explicit S3 folder prefix is required.")
+
+    snapshot_prefix = f"{folder}/media_cloud_articles/current/"
+    return sorted(
+        obj.key
+        for obj in bucket.objects.filter(Prefix=snapshot_prefix)
+        if obj.key.startswith(snapshot_prefix) and obj.key.endswith(".json")
+    )
+
+
+def iter_media_cloud_snapshots(
+    bucket: S3Bucket, *, prefix: str
+) -> Iterator[tuple[str, "MediaCloudJobRun"]]:
+    """Download current snapshots and validate their event-to-key identity."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "snapshot.json"
+
+        for key in list_media_cloud_snapshot_keys(bucket, prefix=prefix):
+            download_object(bucket, key, path)
+            run = read_media_cloud_snapshot(path)
+            expected_key = current_snapshot_key(
+                prefix=prefix, collection=run.job.event.collection, event_id=run.job.event.item_id,
+            )
+            if key != expected_key:
+                raise ValueError(f"Media Cloud snapshot event does not match its key: {key}")
+            yield key, run

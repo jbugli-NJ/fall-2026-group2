@@ -17,10 +17,10 @@ from monty_tool.network.schemas import (
     GOAppealNodeData,
     GOEventNodeData,
     MontandonItemNodeData,
-    NewsArticleInsertData,
+    MediaCloudArticleInsertData,
 )
-from monty_tool.news.pipeline import NewsCollectionJob
-from monty_tool.news.schemas import NewsSearchResult
+from monty_tool.news.runner import MediaCloudJobRun
+from datetime import datetime
 
 # Node data helper
 
@@ -143,26 +143,60 @@ def go_appeals_to_node_data(appeals: list[GOAppeal]) -> list[GOAppealNodeData]:
         })
     return node_data
 
-def news_result_to_node_data(
-    job: NewsCollectionJob,
-    result: NewsSearchResult,
+
+def media_cloud_run_to_node_data(
+    run: MediaCloudJobRun,
     *,
     snapshot_s3_uri: str,
-) -> list[NewsArticleInsertData]:
-    """Flatten articles for insertion into the disaster graph."""
-    if job.event.item_id != result.item_id:
-        raise ValueError("News result does not match its event.")
+) -> list[MediaCloudArticleInsertData]:
+    """Convert same-event decisions into graph rows."""
+    rows: list[MediaCloudArticleInsertData] = []
 
-    return [
-        {
-            "url": article.url,
-            "title": article.title,
-            "description": article.description,
-            "source_id": article.source.id,
-            "source_name": article.source.name,
-            "published_at": article.published_at,
-            "event_id": job.event.item_id,
-            "snapshot_s3_uri": snapshot_s3_uri,
-        }
-        for article in result.articles
-    ]
+    for assessment in run.assessments:
+        evidence = assessment.evidence
+        decision = assessment.decision
+
+        if (
+            evidence.event_id != run.job.event.item_id
+            or decision.event_id != run.job.event.item_id
+            or evidence.event_collection != run.job.event.collection
+            or decision.event_collection != run.job.event.collection
+        ):
+            raise ValueError("Media Cloud assessment does not match its event.")
+
+        if decision.status != "same_event":
+            continue
+
+        if (
+            not decision.url
+            or evidence.body_status != "body_available"
+            or not evidence.body_text
+            or not decision.evidence_excerpt
+        ):
+            raise ValueError("Classified article is missing its supporting evidence.")
+
+        published_at: datetime | None = None
+        if evidence.story.publish_date:
+            try:
+                published_at = datetime.fromisoformat(
+                    evidence.story.publish_date.replace("Z", "+00:00")
+                )
+            except ValueError:
+                pass
+
+        rows.append(
+            {
+                "url": decision.url,
+                "title": evidence.story.title or "(untitled)",
+                "source_name": evidence.story.media_name,
+                "published_at": published_at,
+                "body_text": evidence.body_text,
+                "story_id": evidence.story.id,
+                "event_id": decision.event_id,
+                "decision_reason": decision.reason,
+                "evidence_excerpt": decision.evidence_excerpt,
+                "snapshot_s3_uri": snapshot_s3_uri,
+            }
+        )
+
+    return rows

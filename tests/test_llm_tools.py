@@ -275,3 +275,13 @@ def test_search_appeals_queries_launch_dates_and_returns_details(monkeypatch: py
     assert parameters['from_date'] == parameters['to_date'] == date(2015, 9, 17)
     assert parameters['text'] == 'Malawi - Food Insecurity'
     assert parameters['country_code'] == 'MWI'
+
+def test_event_news_query_uses_classified_media_cloud_links() -> None:
+    query = tools._load_cypher_query("get_event_news.cypher")
+
+    assert "[link:VERIFIED_FOR]" in query
+    assert "CONTEXT_FOR" not in query
+    assert "type(link) AS relationship_type" in query
+    assert "link.evidence_excerpt AS evidence_excerpt" in query
+    assert "body_excerpt" in query
+    assert "RETRIEVED_FOR" not in query

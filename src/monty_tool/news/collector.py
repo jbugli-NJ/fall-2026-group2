@@ -2,18 +2,18 @@
 
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 from uuid import uuid4
+from time import sleep
 
-from requests.exceptions import RequestException
+from pydantic import BaseModel
 
-from monty_tool import news_api
-from monty_tool.news.pipeline import NewsCollectionJob
-from monty_tool.news.schemas import news_search_parameters
+from monty_tool.news.pipeline import MediaCloudCollectionJob
+from monty_tool.news.schemas import MediaCloudStory
 
+from monty_tool import media_cloud_api
 
 def _save_snapshot(
     output_dir: Path,
@@ -46,51 +46,83 @@ def _save_snapshot(
             temporary.unlink(missing_ok=True)
 
 
-def collect_news_job(
-    job: NewsCollectionJob,
+class MediaCloudCandidateBatch(BaseModel):
+    """Unverified candidates collected from a bounded number of pages."""
+
+    stories: list[MediaCloudStory]
+    pages_fetched: int
+    next_page_token: str | None
+    duplicates_removed: int
+
+
+def collect_media_cloud_candidates(
+    job: MediaCloudCollectionJob,
     *,
-    output_dir: Path,
     page_size: int = 100,
-) -> Path:
-    """Collect one search and save its outcome."""
+    max_pages: int = 2,
+    page_interval_seconds: float = 31.0,
+) -> MediaCloudCandidateBatch:
+    """Collect and deduplicate candidate stories; do not verify or save them."""
     if type(page_size) is not int or not 1 <= page_size <= 100:
         raise ValueError("page_size must be an integer between 1 and 100.")
-
+    if type(max_pages) is not int or max_pages < 1:
+        raise ValueError("max_pages must be a positive integer.")
+    if page_interval_seconds < 0:
+        raise ValueError("page_interval_seconds must not be negative.")
     if job.query.item_id != job.event.item_id:
         raise ValueError("The query and event must have the same item_id.")
 
-    if job.query.from_date > job.query.to_date:
-        raise ValueError("The query date range is invalid.")
+    stories: list[MediaCloudStory] = []
+    seen_ids: set[int | str] = set()
+    seen_urls: set[str] = set()
+    requested_tokens: set[str] = set()
+    token: str | None = None
+    duplicates_removed = 0
+    pages_fetched = 0
 
-    if not job.query.query.strip() or len(job.query.query) > 500:
-        raise ValueError("Search query must contain 1 to 500 characters.")
+    for page_number in range(max_pages):
+        if token is not None:
+            if token in requested_tokens:
+                raise ValueError("Media Cloud repeated a pagination token.")
+            requested_tokens.add(token)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+        if page_number > 0:
+            sleep(page_interval_seconds)
 
-    report: dict[str, Any] = {
-        "schema_version": 1,
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "job": job.model_dump(mode="json"),
-        "search_parameters": news_search_parameters(job.query, page_size=page_size),
-        "request_attempted": True,
-        "status": "error",
-        "result": None,
-        "error": None,
-    }
-
-    try:
-        result = news_api.search_news(
-            job.query,
+        page = media_cloud_api.search_media_cloud_page(
+            query=job.query.query,
+            start_date=job.query.from_date,
+            end_date=job.query.to_date,
+            collection_ids=job.collection_ids,
             page_size=page_size,
-            language="en",
-            sort_by="relevancy",
+            pagination_token=token,
         )
-        report["status"] = "ok" if result.articles else "empty"
-        report["result"] = result.model_dump(mode="json")
+        pages_fetched += 1
 
-    except (RequestException, RuntimeError, ValueError) as exc:
-        # Do not persist potentially sensitive exception messages.
-        report["error"] = {"type": type(exc).__name__}
+        for story in page.stories:
+            if (
+                (story.id is not None and story.id in seen_ids)
+                or (story.url is not None and story.url in seen_urls)
+            ):
+                duplicates_removed += 1
+                continue
 
-    report["finished_at"] = datetime.now(timezone.utc).isoformat()
-    return _save_snapshot(output_dir, report)
+            stories.append(story)
+            if story.id is not None:
+                seen_ids.add(story.id)
+            if story.url is not None:
+                seen_urls.add(story.url)
+
+        next_token = page.pagination_token or None
+        if token is not None and next_token == token:
+            raise ValueError("Media Cloud repeated a pagination token.")
+        token = next_token
+        if token is None:
+            break
+
+    return MediaCloudCandidateBatch(
+        stories=stories,
+        pages_fetched=pages_fetched,
+        next_page_token=token,
+        duplicates_removed=duplicates_removed,
+    )

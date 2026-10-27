@@ -1,97 +1,107 @@
-"""Find reusable news snapshots from previous collection runs."""
+"""Reuse completed Media Cloud runs with the same collection settings."""
 
-import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import TypedDict
 
-from monty_tool.news.pipeline import NewsCollectionJob
-from monty_tool.news.schemas import news_search_parameters
+from monty_tool.boto3_utils.s3_protocols import S3Bucket
+from monty_tool.boto3_utils.s3_utils import download_object
+from monty_tool.news.pipeline import MediaCloudCollectionJob
+from monty_tool.news.s3_storage import (
+    current_snapshot_key,
+    current_snapshot_path,
+    read_media_cloud_snapshot,
+)
 
 
-def news_job_key(
-    job: NewsCollectionJob,
-    *,
-    page_size: int = 100,
+class MediaCloudRunSettings(TypedDict):
+    page_size: int
+    max_pages: int
+    max_body_attempts: int
+    verification_mode: str
+
+
+def media_cloud_run_key(
+    job: MediaCloudCollectionJob, settings: MediaCloudRunSettings
 ) -> str:
-    """Identify an exact source-record search and its request settings."""
-    if type(page_size) is not int or not 1 <= page_size <= 100:
-        raise ValueError("page_size must be an integer between 1 and 100.")
-
+    """Identify one exact event search and assessment configuration."""
     identity = {
-        "collection": job.event.collection,
-        "query": job.query.model_dump(mode="json", exclude_none=True),
-        "search_parameters": news_search_parameters(job.query, page_size=page_size),
+        "job": job.model_dump(mode="json"),
+        "settings": settings,
     }
     encoded = json.dumps(
-        identity,
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
+        identity, sort_keys=True, ensure_ascii=False, separators=(",", ":")
     ).encode("utf-8")
+    return sha256(encoded).hexdigest()
 
-    return hashlib.sha256(encoded).hexdigest()
+
+def _matching_snapshot(
+    path: Path,
+    *,
+    job: MediaCloudCollectionJob,
+    settings: MediaCloudRunSettings,
+    run_key: str,
+) -> bool:
+    """Reject older, incomplete, or mismatched snapshots for reuse."""
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(report, dict)
+            or report.get("run_key") != run_key
+            or report.get("request_settings") != settings
+        ):
+            return False
+        run = read_media_cloud_snapshot(path)
+    except (OSError, TypeError, ValueError):
+        return False
+    return run.job == job and media_cloud_run_key(run.job, settings) == run_key
 
 
-def load_recent_snapshots(
+def find_local_media_cloud_snapshot(
     output_dir: Path,
     *,
-    refresh_after: timedelta = timedelta(hours=24),
-    now: datetime | None = None,
-) -> dict[str, Path]:
-    """Index recent successful snapshots once at the start of a run.
+    job: MediaCloudCollectionJob,
+    settings: MediaCloudRunSettings,
+    run_key: str,
+) -> Path | None:
+    """Reuse only the event's current result with identical run settings."""
+    path = current_snapshot_path(
+        output_dir, collection=job.event.collection, event_id=job.event.item_id,
+    )
+    if _matching_snapshot(path, job=job, settings=settings, run_key=run_key):
+        return path
+    return None
 
-    Empty search results count as successful searches.
-    Malformed snapshots raise an error rather than silently causing
-    additional API requests.
+
+def download_current_media_cloud_snapshot(
+    bucket: S3Bucket,
+    *,
+    prefix: str,
+    output_dir: Path,
+    job: MediaCloudCollectionJob,
+) -> tuple[Path, str] | None:
+    """Refresh the local current file from S3; the caller checks run settings.
+
+    Returning None means no current S3 object exists. A downloaded current file
+    supersedes older local settings, so the caller cannot revive a stale run.
     """
-    if refresh_after <= timedelta(0):
-        raise ValueError("refresh_after must be positive.")
+    key = current_snapshot_key(
+        prefix=prefix, collection=job.event.collection, event_id=job.event.item_id,
+    )
+    if not any(obj.key == key for obj in bucket.objects.filter(Prefix=key)):
+        return None
 
-    current = now if now is not None else datetime.now(timezone.utc)
-    if current.utcoffset() is None:
-        raise ValueError("now must include timezone information.")
-
-    recent: dict[str, tuple[datetime, Path]] = {}
-
-    for path in sorted(output_dir.glob("news-*.json")):
-        try:
-            report = json.loads(path.read_text(encoding="utf-8"))
-
-            if report["schema_version"] != 1:
-                raise ValueError("Unsupported snapshot schema.")
-
-            if report["status"] not in {"ok", "empty"}:
-                continue
-
-            finished = datetime.fromisoformat(report["finished_at"])
-            if finished.utcoffset() is None:
-                raise ValueError("Snapshot timestamp must include a timezone.")
-
-            age = current - finished
-            if not timedelta(0) <= age < refresh_after:
-                continue
-
-            job = NewsCollectionJob.model_validate(report["job"])
-            parameters = report["search_parameters"]
-            page_size = parameters["page_size"]
-
-            expected_parameters = news_search_parameters(job.query, page_size=page_size)
-            if parameters != expected_parameters:
-                continue
-
-            key = news_job_key(job, page_size=page_size)
-            previous = recent.get(key)
-
-            if previous is None or finished > previous[0]:
-                recent[key] = (finished, path)
-
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(
-                f"Invalid news snapshot: {path.name}"
-            ) from exc
-
-    return {
-        key: path
-        for key, (_, path) in recent.items()
-    }
+    path = current_snapshot_path(
+        output_dir, collection=job.event.collection, event_id=job.event.item_id,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path.parent) as temporary:
+        staged = Path(temporary) / "snapshot.json"
+        download_object(bucket, key, staged)
+        run = read_media_cloud_snapshot(staged)
+        if (run.job.event.item_id, run.job.event.collection) != (job.event.item_id, job.event.collection):
+            raise ValueError(f"Media Cloud snapshot event does not match its key: {key}")
+        staged.replace(path)
+    return path, key

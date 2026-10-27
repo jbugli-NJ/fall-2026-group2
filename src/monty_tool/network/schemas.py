@@ -80,16 +80,18 @@ class MontandonItemNodeData(BaseNodeData):
     impact_category: NotRequired[str]
     impact_estimate_type: NotRequired[str]
 
-class NewsArticleInsertData(TypedDict):
-    """One article and the event and S3 snapshot it came from."""
+class MediaCloudArticleInsertData(TypedDict):
+    """A classified Media Cloud article ready for graph insertion."""
 
     url: str
     title: str
-    description: str | None
-    source_id: str | None
-    source_name: str
-    published_at: datetime
+    source_name: str | None
+    published_at: datetime | None
+    body_text: str
+    story_id: int | str | None
     event_id: str
+    decision_reason: str
+    evidence_excerpt: str
     snapshot_s3_uri: str
 
 

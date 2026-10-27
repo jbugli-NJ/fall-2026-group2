@@ -29,7 +29,7 @@ DEFAULT_BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 
 class QueryAssistant:
     """
-    Answer questions by querying the local graph and NewsAPI.
+    Answer questions by querying the local graph and saved news.
     """
 
     _CONTEXT_LIMIT = 32_768
@@ -128,7 +128,7 @@ class QueryAssistant:
                         "get_disaster_context returns disaster info, including weather data. "
                         "Use get_event_news only when the question requires information "
                         "from news articles. "
-                        "Distinguish disaster event facts from news article candidates. "
+                        "Distinguish disaster-record facts from news coverage. "
                         if self.tools.enable_external else ""
                     )
                     + "Base your answer on tool results. Answer in the user's language."
@@ -267,7 +267,7 @@ class BedrockQueryAssistant:
                 "get_disaster_context returns disaster info, including weather data. "
                 "Use get_event_news only when the question requires information "
                 "from news articles. "
-                "Distinguish disaster event facts from news article candidates. "
+                "Distinguish disaster-record facts from news coverage. "
                 if self.tools.enable_external else ""
             )
             + "Base your answer on tool results. Answer in the user's language."

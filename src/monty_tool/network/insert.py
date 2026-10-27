@@ -33,7 +33,7 @@ from monty_tool.network.schemas import (
     GOAppealNodeData,
     GOEventNodeData,
     MontandonItemNodeData,
-    NewsArticleInsertData,
+    MediaCloudArticleInsertData,
 )
 
 
@@ -260,55 +260,65 @@ def insert_go_records_into_graph_db(
         insert_go_appeal_nodes(driver, appeal_data)
         insert_go_appeal_links(driver, appeal_data)
 
-def insert_news_articles(
-    driver: Driver, node_data: list[NewsArticleInsertData]
+
+def insert_media_cloud_articles(
+    driver: Driver,
+    node_data: list[MediaCloudArticleInsertData],
+    *,
+    event_id: str,
+    snapshot_s3_uri: str,
 ) -> int:
-    """Link news candidates to existing events without creating new events."""
-    if not node_data:
-        return 0
+    """Insert same-event Media Cloud articles for one existing Event."""
+
+    root, separator, _ = snapshot_s3_uri.partition("/media_cloud_articles/current/")
+    if not event_id or not separator or not root.startswith("s3://"):
+        raise ValueError("An event ID and current Media Cloud S3 snapshot are required.")
+    source_prefix = f"{root}/media_cloud_articles/"
+    if any(
+        row["event_id"] != event_id
+        or row["snapshot_s3_uri"] != snapshot_s3_uri
+        for row in node_data
+    ):
+        raise ValueError("Media Cloud rows must belong to the same event and snapshot.")
 
     def insert(tx: ManagedTransaction) -> int:
-        missing = tx.run(
+        event = tx.run(
             """
-            UNWIND $items AS item
-            OPTIONAL MATCH (event:Event {id: item.event_id})
-            WITH item, event
-            WHERE event IS NULL
-            RETURN DISTINCT item.event_id AS event_id
-            LIMIT 10
+            MATCH (event:Event {id: $event_id})
+            RETURN event.id AS event_id
             """,
-            items=node_data,
-        )
-        missing_ids = [record["event_id"] for record in missing]
-        if missing_ids:
+            event_id=event_id,
+        ).single()
+        if event is None:
             raise ValueError(
-                f"News results have no matching Event node: {missing_ids!r}"
+                f"News results have no matching Event node: {event_id!r}"
             )
 
-        result = tx.run(
-            """
+        processed = 0
+        for batch in batched(node_data, NETWORK_INSERT_BATCH_SIZE):
+            result = tx.run(
+                """
             UNWIND $items AS item
             MATCH (event:Event {id: item.event_id})
             MERGE (article:NewsArticle {url: item.url})
             SET article.title = item.title,
-                article.description = item.description,
-                article.source_id = item.source_id,
                 article.source_name = item.source_name,
-                article.published_at = item.published_at
-            MERGE (article)-[link:RETRIEVED_FOR]->(event)
-            SET link.snapshot_s3_uris =
-                CASE
-                    WHEN link.snapshot_s3_uris IS NULL
-                    THEN [item.snapshot_s3_uri]
-                    WHEN item.snapshot_s3_uri IN link.snapshot_s3_uris
-                    THEN link.snapshot_s3_uris
-                    ELSE link.snapshot_s3_uris + item.snapshot_s3_uri
-                END
+                article.published_at = item.published_at,
+                article.body_text = item.body_text,
+                article.media_cloud_story_id = item.story_id
+
+            MERGE (article)-[verified:VERIFIED_FOR {source_prefix: $source_prefix}]->(event)
+            SET verified.decision_reason = item.decision_reason,
+                verified.evidence_excerpt = item.evidence_excerpt,
+                verified.snapshot_s3_uris = [item.snapshot_s3_uri]
+
             RETURN count(item) AS processed
-            """,
-            items=node_data,
-        )
-        return result.single(strict=True)["processed"]
+                """,
+                items=list(batch),
+                source_prefix=source_prefix,
+            )
+            processed += result.single(strict=True)["processed"]
+        return processed
 
     with driver.session(database="neo4j") as session:
         return session.execute_write(insert)
