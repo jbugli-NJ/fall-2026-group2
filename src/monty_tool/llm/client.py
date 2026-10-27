@@ -24,6 +24,9 @@ from monty_tool.llm.tools import QueryTools
 from monty_tool.utils.versions import FrozenModel
 
 
+DEFAULT_BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
+
+
 class QueryAssistant:
     """
     Answer questions by querying the local graph and NewsAPI.
@@ -204,7 +207,7 @@ class BedrockQueryAssistant:
 
     def __init__(
         self,
-        model_id: str = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+        model_id: str = DEFAULT_BEDROCK_MODEL_ID,
         *,
         region: str | None = None,
         enable_external: bool = True,
