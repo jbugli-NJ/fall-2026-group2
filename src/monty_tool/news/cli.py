@@ -60,7 +60,7 @@ def load_qwen_judge(model: str) -> EventJudge:
     # Dry runs and deferred runs must not import or load the model.
     from monty_tool.llm.client import QueryAssistant
 
-    assistant = QueryAssistant(model_id=FrozenModel(model), enable_external=False)
+    assistant = QueryAssistant(model_id=FrozenModel(model))
     return make_qwen_event_judge(assistant)
 
 
