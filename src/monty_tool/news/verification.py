@@ -6,7 +6,7 @@ import json
 import re
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,7 @@ from pydantic import BaseModel, Field
 
 from monty_tool.event_context import EventContext
 from monty_tool.news.schemas import MediaCloudStory
-
-if TYPE_CHECKING:
-    from monty_tool.llm.client import QueryAssistant
+from monty_tool.llm.client import QueryAssistant
 
 MatchStatus = Literal[
     "same_event", "related_context", "uncertain", "different_event"
