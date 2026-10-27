@@ -106,21 +106,37 @@ Omitting `--collection` refreshes all Montandon collections. The flag accepts
 multiple collection IDs. `--no-geometry` produces `.nogeom.jsonl.gz` files;
 `--no-upload` keeps the downloaded files locally.
 
-### Collecting news from S3 disaster records
+### Collecting Media Cloud news from S3 disaster records
 
 The news collector reads `<AWS_BUCKET_PREFIX>/raw/<collection>.jsonl.gz` from `AWS_BUCKET`.
+Set those variables and AWS credentials as described above.
+For execution, obtain a personal [Media Cloud API key](https://www.mediacloud.org/documentation/search-api-guide)
+and set `MEDIACLOUD_API_KEY` locally.
+
+Find source collection IDs in the [Media Cloud Directory](https://www.mediacloud.org/media-cloud-directory).
+For example, `34412234` selects US National news sources. A collection selects
+publishers, not event locations. The same selected collections are used for
+every event in a run; repeat `--media-collection-id` for broader coverage.
+
+This example previews planned searches for GDACS events in the date range, using US National news sources. It is an example of the CLI workflow, not a global news collection.
 
 ```bash
-uv run -m monty_tool.news.cli --collection gdacs-events \
-  --start-date 2025-01-01 --end-date 2025-06-01 --dry-run
+uv run python -m monty_tool.news.cli --dry-run \
+  --collection gdacs-events \
+  --start-date 2025-01-01 --end-date 2025-06-01 \
+  --media-collection-id 34412234
 ```
+`--dry-run` reads the disaster data and shows planned searches without making
+Media Cloud requests or saving results. To collect and classify, use `--execute`
+instead and supply a Qwen `--model`, a run-wide `--request-limit`, and a
+per-event `--max-body-attempts`. Add `--s3-upload` to save results to S3;
+otherwise results are saved locally. Use `--refresh` to recollect and replace
+an event's current snapshot.
 
-`--dry-run` downloads the input and previews searches without calling NewsAPI or saving results.
-Replace it with `--execute --request-limit #` to make up to `#` NewsAPI requests and upload the saved results to S3.
-Each request retrieves up to 100 articles by default. Execution also checks S3 for existing searches to reuse.
-All disaster events in the date range are selected by default. Use `--max-records` to limit the selection.
-`--random` shuffles eligible disasters before selection and collection. The default order is newest first.
-`--no-geometry` selects the `.nogeom.jsonl.gz` input. Use `--s3-source-key` to override the full input key.
+Choose collection IDs that cover the events of interest: the US collection
+alone does not provide global publisher coverage. If the raw input is a
+`.nogeom.jsonl.gz` file, add `--no-geometry`. Publisher bodies may be
+unavailable, leaving some candidates `uncertain`.
 
 ### Updating NASA POWER data in S3
 
