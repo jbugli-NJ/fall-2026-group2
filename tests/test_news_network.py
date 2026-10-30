@@ -37,13 +37,15 @@ def _driver_for(tx: Mock) -> MagicMock:
     return driver
 
 
-def test_insert_media_cloud_articles_links_existing_event() -> None:
+@pytest.mark.parametrize("excerpt", [None, "An earthquake affected the region."])
+def test_insert_media_cloud_articles_links_existing_event(excerpt: str | None) -> None:
     tx = Mock()
     result = Mock()
     result.single.return_value = {"processed": 1}
     tx.run.side_effect = [Mock(single=Mock(return_value={"event_id": "event-1"})), result]
     driver = _driver_for(tx)
     row = _article_row()
+    row["evidence_excerpt"] = excerpt
 
     processed = insert_media_cloud_articles(
         cast(Driver, driver), [row], event_id="event-1", snapshot_s3_uri=row["snapshot_s3_uri"],
@@ -108,7 +110,8 @@ def test_mixed_event_rows_rejected_before_database_changes() -> None:
     driver.session.assert_not_called()
 
 
-def test_media_cloud_conversion_keeps_only_same_event_articles() -> None:
+@pytest.mark.parametrize("excerpt", [None, "An earthquake affected the region."])
+def test_media_cloud_conversion_keeps_only_same_event_articles(excerpt: str | None) -> None:
     run = Mock()
     run.job.event.item_id = "event-1"
     run.job.event.collection = "emdat-events"
@@ -133,7 +136,7 @@ def test_media_cloud_conversion_keeps_only_same_event_articles() -> None:
             status=status,
             url=f"https://example.com/{status}",
             reason="Test decision",
-            evidence_excerpt="An earthquake affected the region.",
+            evidence_excerpt=excerpt,
         )
         assessments.append(Mock(evidence=evidence, decision=decision))
 
@@ -148,6 +151,7 @@ def test_media_cloud_conversion_keeps_only_same_event_articles() -> None:
         "https://example.com/same_event",
     ]
     assert all(row["body_text"] for row in rows)
+    assert rows[0]["evidence_excerpt"] == excerpt
 
 
 @pytest.mark.parametrize("empty", [False, True])
