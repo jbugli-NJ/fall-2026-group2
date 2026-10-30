@@ -129,26 +129,13 @@ def answer_stub(question: str) -> tuple[str, list]:
 
 def answer_real(question: str, assistant_kind: str) -> tuple[str, list]:
     """
-    Drive the real assistant, rendering each tool call as it is made.
-
-    Wrapping the bound `execute` keeps the live step rendering out of
-    llm/client.py. Streamlit runs synchronously, so a wrapper can draw
-    straight into the page with no event-loop plumbing.
+    Render the tool results returned by the real assistant.
     """
-    assistant = load_assistant(assistant_kind)
-    inner = assistant.tools.execute
+    response = load_assistant(assistant_kind).ask(question)
+    for step in response['tool_results']:
+        show_step(step['call']['name'], step['call']['arguments'], step['result'])
+    return response['answer'], response['tool_results']
 
-    def execute(name: str, arguments: dict) -> dict:
-        result = inner(name, arguments)
-        show_step(name, arguments, result)
-        return result
-
-    assistant.tools.execute = execute
-    try:
-        response = assistant.ask(question)
-    finally:
-        assistant.tools.execute = inner
-    return response['answer'], response.get('tool_results', [])
 
 
 # Page
