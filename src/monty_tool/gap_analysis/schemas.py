@@ -72,3 +72,11 @@ class PairedResult(BaseModel):
     external: AnswerAttempt
     contribution: Contribution | None = None
     judge_error: str | None = None
+
+
+class AnalysisRun(BaseModel):
+    """
+    One invocation's settings and paired question results within an analysis.
+    """
+    metadata: dict[str, Any]
+    results: list[PairedResult] = Field(default_factory=list)
