@@ -208,3 +208,24 @@ The baseline is labeled `(no tools)` in reports, summaries, and plots.
 
 Markdown reports and CSV summaries store the full SHA-256 hash of the input file's
 raw bytes, including whitespace. The hash covers the entire file even when runs are limited.
+
+## Gap analysis
+
+A draft pipeline is available to compare answer coverage using Montandon alone vs. stored external data sources.
+
+```bash
+uv run run-gap-analysis \
+  --answer-model Qwen/Qwen3-1.7B \
+  --judge-model bedrock \
+  --country-code JPN --from-date 2024-01-01 --to-date 2024-01-31 \
+  --event-limit 1
+```
+
+Choose local models or `bedrock` independently for answering and judging.
+Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
+`--event-limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
+
+Outputs accumulate under `benchmarks/gap_analysis/`:
+
+- `results.json`: each invocation's settings, answers, evidence, and combined counts.
+- `summary.svg`: classification and failure counts by question template.
