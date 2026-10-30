@@ -142,6 +142,37 @@ class ConverseRequest(TypedDict):
     system: NotRequired[list[SystemContentBlock]]
     inferenceConfig: NotRequired[InferenceConfiguration]
     toolConfig: NotRequired[ToolConfiguration]
+    outputConfig: NotRequired[OutputConfiguration]
+
+
+class JSONSchemaDefinition(TypedDict):
+    """
+    A named JSON Schema serialized for Bedrock structured output.
+    """
+    name: str
+    schema: str
+
+
+class OutputStructure(TypedDict):
+    """
+    The schema attached to a text output format.
+    """
+    jsonSchema: JSONSchemaDefinition
+
+
+class TextOutputFormat(TypedDict):
+    """
+    A JSON Schema constrained text response.
+    """
+    type: Literal['json_schema']
+    structure: OutputStructure
+
+
+class OutputConfiguration(TypedDict):
+    """
+    Structured response settings for Converse.
+    """
+    textFormat: TextOutputFormat
 
 
 # Response data
@@ -208,6 +239,7 @@ class BedrockRuntimeClient(Protocol):
         system: list[SystemContentBlock] = ...,
         inferenceConfig: InferenceConfiguration = ...,
         toolConfig: ToolConfiguration = ...,
+        outputConfig: OutputConfiguration = ...,
     ) -> ConverseResponse:
         """
         Generate an assistant message.
