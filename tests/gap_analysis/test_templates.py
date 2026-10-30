@@ -11,10 +11,10 @@ from monty_tool.gap_analysis import templates
 
 def test_templates_have_unique_ids():
     """
-    Confirm that the IDs used for question templates are unique.
+    Verify template IDs and questions are unique and question braces are balanced.
     """
-    id_set = set([qt.id for qt in templates.TEMPLATES])
-    question_set = set([qt.question for qt in templates.TEMPLATES])
+    id_set = {qt.id for qt in templates.TEMPLATES}
+    question_set = {qt.question for qt in templates.TEMPLATES}
     assert len(id_set) == len(templates.TEMPLATES)
     assert len(question_set) == len(templates.TEMPLATES)
     for q in question_set:
