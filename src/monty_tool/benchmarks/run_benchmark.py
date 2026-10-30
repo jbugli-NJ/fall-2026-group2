@@ -1,5 +1,5 @@
 """
-Run a fact retrieval benchmark and save a model report, CSV summary, and plot.
+Compare fact retrieval with and without tools, saving reports, a CSV, and a plot.
 """
 
 # Imports
@@ -89,10 +89,6 @@ def build_parser() -> argparse.ArgumentParser:
         help='JSON file with benchmark inputs',
     )
     parser.add_argument(
-        '--enable-external', action=argparse.BooleanOptionalAction, default=True,
-        help='Expose stored news and weather data (enabled by default)',
-    )
-    parser.add_argument(
         '--limit', type=int,
         help='Run only the first N questions',
     )
@@ -101,9 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def score_answer(benchmark: BenchmarkInput, answer: str) -> float:
     """
-    Match literal answers at word boundaries, ignoring commas and case.
+    Score the last complete answer tag, ignoring commas and case.
     """
-    answer = answer.lower().replace(',', '')
+    matches = re.findall(r'<answer>.*?</answer>', answer, flags=re.IGNORECASE | re.DOTALL)
+    if not matches:
+        return 0.0
+    answer = matches[-1].lower().replace(',', '')
     if any(
         re.search(rf"\b{re.escape(value.lower().replace(',', ''))}\b", answer)
         for value in benchmark.full_answer_substrings
@@ -120,6 +119,8 @@ def score_answer(benchmark: BenchmarkInput, answer: str) -> float:
 def run_question(
     assistant: QueryAssistant | BedrockQueryAssistant,
     benchmark: BenchmarkInput,
+    *,
+    use_tools: bool = True,
     ) -> BenchmarkOutput:
     """
     Ask one question and return the LLM response, score, and potential failure.
@@ -130,7 +131,7 @@ def run_question(
     error = None
     score = 0.0
     try:
-        response = assistant.ask(benchmark.research_question)
+        response = assistant.ask(benchmark.research_question, use_tools=use_tools)
         answer = response['answer']
         score = score_answer(benchmark, answer)
     except Exception as e:
@@ -153,7 +154,7 @@ def render_report(
     *,
     input_sha256: str,
     git_commit: str,
-    enable_external: bool = True,
+    use_tools: bool = True,
     seed: int = SEED,
     ) -> str:
     """
@@ -162,7 +163,7 @@ def render_report(
     average = sum(output.score for output in outputs) / len(outputs) if outputs else 0.0
     model_id, revision = model_metadata(model)
     sections = [
-        f'# Benchmark: {model_id}' + ('' if enable_external else ' (core only)'),
+        f'# Benchmark: {model_id}' + ('' if use_tools else ' (no tools)'),
         f'Model revision: {revision}\n\nStart time (UTC): {started_at.isoformat()}',
         f'Random seed: {seed}',
         f'Input SHA-256: {input_sha256}',
@@ -190,7 +191,7 @@ def append_summary(
     *,
     input_sha256: str,
     git_commit: str,
-    enable_external: bool = True,
+    use_tools: bool = True,
     seed: int = SEED,
     ):
     """
@@ -198,7 +199,7 @@ def append_summary(
     """
     model_id, revision = model_metadata(model)
     row = {
-        'model': model_id + ('' if enable_external else ' (core only)'),
+        'model': model_id + ('' if use_tools else ' (no tools)'),
         'revision': revision,
         'seed': seed,
         'input_sha256': input_sha256,
@@ -221,7 +222,23 @@ def append_summary(
         writer.writerow(row)
 
 
-def build_summary_plot(rows: list[dict[str, str]]) -> Figure:
+def random_chance_score(benchmarks: list[BenchmarkInput]) -> float:
+    """
+    Average uniform guessing credit, assigning zero to questions without choices.
+    """
+    if not benchmarks:
+        return 0.0
+    return sum(
+        1 / benchmark.choice_count if benchmark.choice_count is not None else 0.0
+        for benchmark in benchmarks
+    ) / len(benchmarks)
+
+
+def build_summary_plot(
+    rows: list[dict[str, str]],
+    *,
+    chance_score: float = 0.0,
+    ) -> Figure:
     """
     Build a scatterplot displaying score svs. runtime colored by model.
     """
@@ -234,7 +251,12 @@ def build_summary_plot(rows: list[dict[str, str]]) -> Figure:
             [float(row['average_score']) for row in runs],
             label=model,
         )
-    if rows:
+    if chance_score > 0:
+        axes.axhline(
+            chance_score, color='gray', linestyle='--',
+            label=f'Random chance ({chance_score:.2%})',
+        )
+    if rows or chance_score > 0:
         axes.legend(title='Model configuration', loc='upper left', bbox_to_anchor=(1.02, 1))
     axes.set_title('Fact retrieval benchmark')
     axes.set_xlabel('Total runtime (seconds)')
@@ -246,13 +268,33 @@ def build_summary_plot(rows: list[dict[str, str]]) -> Figure:
     return figure
 
 
-def save_summary_plot(summary_path: Path) -> Path:
+def save_summary_plot(
+    summary_path: Path,
+    benchmarks: list[BenchmarkInput],
+    *,
+    input_sha256: str,
+    ) -> Path:
     """
     Read the comparison CSV and save its figure alongside it.
     """
+    total_questions = len(benchmarks)
+    current_revisions = {
+        model_id + suffix: revision
+        for model_id, revision in [
+            *(model_metadata(model) for model in FrozenModel),
+            model_metadata('bedrock'),
+        ]
+        for suffix in ('', ' (no tools)')
+    }
     with summary_path.open(encoding='utf-8', newline='') as file:
-        rows = list(csv.DictReader(file))
-    figure = build_summary_plot(rows)
+        rows = [
+            row for row in csv.DictReader(file)
+            if row['input_sha256'] == input_sha256
+            and row['revision'] == current_revisions.get(row['model'])
+            and int(row['total_questions']) == total_questions
+            and int(row['questions_completed']) == total_questions
+        ]
+    figure = build_summary_plot(rows, chance_score=random_chance_score(benchmarks))
     plot_path = summary_path.with_suffix('.svg')
     figure.savefig(plot_path)
     return plot_path
@@ -263,10 +305,11 @@ def run_seed(
     model: BenchmarkModel,
     output_dir: Path,
     *,
+    assistant: QueryAssistant | BedrockQueryAssistant,
     input_sha256: str,
     git_commit: str,
     seed: int,
-    enable_external: bool = True,
+    use_tools: bool = True,
     ) -> Path:
     """
     Evaluate one seed, updating its report and appending its summary row.
@@ -274,18 +317,16 @@ def run_seed(
     logger.info(f'Running benchmark with seed {seed}')
     set_seed(seed)
     if isinstance(model, FrozenModel):
-        assistant = QueryAssistant(model_id=model, enable_external=enable_external)
         model_slug = re.sub(r'[^a-z0-9]+', '_', model.value.lower()).strip('_')
     else:
-        assistant = BedrockQueryAssistant(enable_external=enable_external)
         model_slug = 'bedrock'
-    if not enable_external:
-        model_slug += '_core_only'
-    reports_dir = output_dir / 'reports'
+    if not use_tools:
+        model_slug += '_no_tools'
+    reports_dir = output_dir.joinpath('reports')
     reports_dir.mkdir(parents=True, exist_ok=True)
     started_at = datetime.now(timezone.utc)
     timestamp = started_at.strftime('%Y%m%dT%H%M%S.%fZ')
-    output_path = reports_dir / f'{model_slug}_{timestamp}.md'
+    output_path = reports_dir.joinpath(f'{model_slug}_{timestamp}.md')
     outputs: list[BenchmarkOutput] = []
 
     def write_report() -> None:
@@ -299,23 +340,23 @@ def run_seed(
             total_questions=len(benchmarks),
             input_sha256=input_sha256,
             git_commit=git_commit,
-            enable_external=enable_external,
+            use_tools=use_tools,
             seed=seed,
         ), encoding='utf-8')
 
     write_report()
     for number, benchmark in enumerate(benchmarks, start=1):
         logger.info(f'Question {number}/{len(benchmarks)}: {benchmark.research_question}')
-        output = run_question(assistant, benchmark)
+        output = run_question(assistant, benchmark, use_tools=use_tools)
         outputs.append(output)
         write_report()
         logger.info(f'Question {number} score: {output.score:.2%}')
-    summary_path = output_dir / 'summary.csv'
+    summary_path = output_dir.joinpath('summary.csv')
     append_summary(
         summary_path, model, outputs, started_at, len(benchmarks),
         input_sha256=input_sha256,
         git_commit=git_commit,
-        enable_external=enable_external,
+        use_tools=use_tools,
         seed=seed,
     )
     logger.info(f'Saved benchmark report: {output_path}')
@@ -335,21 +376,29 @@ def main(argv: list[str] | None = None) -> None:
     logger.info(f"Detected input file: {input_file.name}")
     input_bytes = input_file.read_bytes()
     input_sha256 = sha256(input_bytes).hexdigest()
-    benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(input_bytes)
-    if args.limit is not None:
-        benchmarks = benchmarks[:args.limit]
+    all_benchmarks = TypeAdapter(list[BenchmarkInput]).validate_json(input_bytes)
+    benchmarks = all_benchmarks if args.limit is None else all_benchmarks[:args.limit]
     git_commit = get_git_commit()
-    output_dir = Path('benchmarks', Path(input_file.name).stem)
+    output_dir = Path('benchmarks').joinpath(Path(input_file.name).stem)
     seeds = BENCHMARK_SEEDS if args.seed is None else (args.seed,)
+    set_seed(seeds[0])
+    assistant = (
+        QueryAssistant(model_id=model) if isinstance(model, FrozenModel)
+        else BedrockQueryAssistant()
+    )
     for seed in seeds:
-        run_seed(
-            benchmarks, model, output_dir,
-            input_sha256=input_sha256,
-            git_commit=git_commit,
-            enable_external=args.enable_external,
-            seed=seed,
-        )
-    plot_path = save_summary_plot(output_dir / 'summary.csv')
+        for use_tools in (True, False):
+            run_seed(
+                benchmarks, model, output_dir,
+                assistant=assistant,
+                input_sha256=input_sha256,
+                git_commit=git_commit,
+                use_tools=use_tools,
+                seed=seed,
+            )
+    plot_path = save_summary_plot(
+        output_dir.joinpath('summary.csv'), all_benchmarks, input_sha256=input_sha256,
+    )
     logger.info(f'Saved benchmark plot: {plot_path}')
 
 

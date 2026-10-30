@@ -17,35 +17,6 @@ from monty_tool.llm import tools
 
 # Tests
 
-def test_core_only_tools_block_external_access(monkeypatch: pytest.MonkeyPatch):
-    """
-    Hide news and weather options and block their execution before database access.
-    """
-    query_tools = tools.QueryTools(enable_external=False)
-    functions = {item['function']['name']: item['function'] for item in query_tools.definitions}
-    assert 'get_event_news' not in functions
-    assert 'min_mean_temperature' not in functions['search_disaster_events']['parameters']['properties']
-    run_query = Mock()
-    monkeypatch.setattr(query_tools, '_run_graph_query', run_query)
-    assert query_tools.execute('get_event_news', {'event_id': 'event-1'})['status'] == 'error'
-    assert query_tools.execute('search_disaster_events', {'min_mean_temperature': 10})['status'] == 'error'
-    run_query.assert_not_called()
-
-
-def test_core_only_results_omit_weather(monkeypatch: pytest.MonkeyPatch):
-    """
-    Return event and impact facts without either weather block.
-    """
-    row = {'event_id': 'event-1', 'weather': {'mean_temperature': 10},
-           'impacts': [{'impact_value': 5, 'weather': {'mean_temperature': 12}}]}
-    driver = Mock()
-    driver.execute_query.return_value = ([Mock(data=Mock(return_value=row))], None, None)
-    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: nullcontext(driver))
-    result = tools.QueryTools(enable_external=False).execute('get_disaster_context', {'event_id': 'event-1'})
-    assert result == {'status': 'ok', 'rows': [{'event_id': 'event-1', 'impacts': [{'impact_value': 5}]}]}
-    assert tools.QueryTools().execute('get_disaster_context', {'event_id': 'event-1'})['rows'] == [row]
-
-
 @pytest.mark.parametrize('metric', ['elevation', 'mean_temperature', 'precipitation_total'])
 def test_disaster_search_rejects_inverted_weather_ranges(metric):
     """
@@ -104,16 +75,83 @@ def test_graph_search_arguments_validates_dates():
         )
 
 
-@pytest.mark.parametrize('arguments', [
-    {},
-    {'from_date': '2026-09-20', 'to_date': '2026-09-20'},
-    {'from_date': '2026-09-19', 'to_date': '2026-09-20'},
+@pytest.mark.parametrize('name', [
+    'search_disaster_events', 'search_response_events', 'search_appeals',
 ])
-def test_graph_search_accepts_complete_or_absent_date_ranges(arguments: dict[str, Any]):
+@pytest.mark.parametrize(('arguments', 'from_date', 'to_date'), [
+    ({}, None, None),
+    ({'from_date': '2026-09-20'}, date(2026, 9, 20), None),
+    ({'to_date': '2026-09-20'}, None, date(2026, 9, 20)),
+    ({'from_date': '2026-09-20', 'to_date': '2026-09-20'}, date(2026, 9, 20), date(2026, 9, 20)),
+    ({'from_date': '2026-09-19', 'to_date': '2026-09-20'}, date(2026, 9, 19), date(2026, 9, 20)),
+])
+def test_accept_optional_graph_search_date_bounds(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    arguments: dict[str, Any],
+    from_date: date | None,
+    to_date: date | None,
+):
     """
-    Allow undated searches, exact days, and inclusive date ranges.
+    Checks that graph searches pass optional date bounds to the query.
     """
-    tools.GraphSearchArguments.model_validate(arguments)
+    driver = Mock()
+    driver.execute_query.return_value = ([], None, None)
+    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: nullcontext(driver))
+
+    result = tools.QueryTools().execute(name, arguments)
+    assert result['status'] == 'ok'
+    assert result['rows'] == []
+    query = driver.execute_query.call_args
+    assert query.kwargs['parameters_']['from_date'] == from_date
+    assert query.kwargs['parameters_']['to_date'] == to_date
+
+
+@pytest.mark.parametrize('name', [
+    'search_disaster_events', 'search_response_events', 'search_appeals',
+])
+@pytest.mark.parametrize(('arguments', 'match_count', 'expected_offset', 'next_offset'), [
+    ({}, 0, 0, None),
+    ({}, 10, 0, None),
+    ({'offset': 10}, 11, 10, 20),
+    ({'offset': 20}, 9, 20, None),
+])
+def test_return_paginated_graph_search_results(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    arguments: dict[str, Any],
+    match_count: int,
+    expected_offset: int,
+    next_offset: int | None,
+):
+    """
+    Checks that graph searches return at most 10 rows and the next offset when another page exists.
+    """
+    driver = Mock()
+    rows = [{'id': str(index)} for index in range(match_count)]
+    records = [Mock(data=Mock(return_value=row)) for row in rows]
+    driver.execute_query.return_value = (records, None, None)
+    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: nullcontext(driver))
+    result = tools.QueryTools().execute(name, arguments)
+    assert result == {
+        'status': 'ok',
+        'rows': rows[:10],
+        'pagination': {
+            'offset': expected_offset,
+            'limit': 10,
+            'next_offset': next_offset,
+        },
+    }
+    assert driver.execute_query.call_args.kwargs['parameters_']['offset'] == expected_offset
+
+
+@pytest.mark.parametrize('offset', [-1, 1.5, '10', True, None])
+def test_reject_invalid_graph_search_offsets(offset: Any):
+    """
+    Checks that graph searches reject invalid offset values.
+    """
+    with pytest.raises(ValueError, match='offset'):
+        tools.GraphSearchArguments.model_validate({'offset': offset})
 
 
 @pytest.mark.parametrize(
@@ -214,15 +252,10 @@ def test_query_tools_routes_graph_tools(
     ('name', 'arguments'),
     [
         ( 'search_disaster_events', {'country_code': 'JP'}),
-        ('search_disaster_events', {'from_date': '2026-09-20'}),
-        ('search_disaster_events', {'to_date': '2026-09-20'}),
+        ('search_disaster_events', {'from_date': '2026-09-20', 'to_date': '2026-09-19'}),
         ('get_disaster_context', {}),
         ('find_related_disaster_events', {'event_id': 'event-1', 'relation_kind': 'nonexistent'}),
         ('search_response_events', {'from_date': '2026-09-20', 'to_date': '2026-09-19'}),
-        ('search_response_events', {'from_date': '2026-09-20'}),
-        ('search_response_events', {'to_date': '2026-09-20'}),
-        ('search_appeals', {'from_date': '2015-09-17'}),
-        ('search_appeals', {'to_date': '2015-09-17'}),
         ('search_appeals', {'from_date': '2015-09-18', 'to_date': '2015-09-17'}),
         ('search_appeals', {'event_id': 'event-1'}),
         ('get_response_context', {'event_id': ''}),
@@ -269,6 +302,11 @@ def test_search_appeals_queries_launch_dates_and_returns_details(monkeypatch: py
     assert result == {
         'status': 'ok',
         'rows': [{**row, 'start_datetime': '2015-09-17T00:00:00'}],
+        'pagination': {
+            'offset': 0,
+            'limit': 10,
+            'next_offset': None,
+        },
     }
     driver.execute_query.assert_called_once()
     parameters = driver.execute_query.call_args.kwargs['parameters_']

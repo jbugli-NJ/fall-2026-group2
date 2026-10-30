@@ -60,7 +60,7 @@ def load_qwen_judge(model: str) -> EventJudge:
     # Dry runs and deferred runs must not import or load the model.
     from monty_tool.llm.client import QueryAssistant
 
-    assistant = QueryAssistant(model_id=FrozenModel(model), enable_external=False)
+    assistant = QueryAssistant(model_id=FrozenModel(model))
     return make_qwen_event_judge(assistant)
 
 
@@ -183,7 +183,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         verification_mode = "deferred"
     else:
         assert args.model is not None
-        verification_mode = args.model
+        verification_mode = f"{args.model}:token-probabilities-v1"
     judge: EventJudge | None = deferred_judge if args.defer_verification else None
     saved: list[dict[str, object]] = []
     requests_made = 0

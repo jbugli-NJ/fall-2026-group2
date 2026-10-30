@@ -91,7 +91,7 @@ class MediaCloudArticleInsertData(TypedDict):
     story_id: int | str | None
     event_id: str
     decision_reason: str
-    evidence_excerpt: str
+    evidence_excerpt: str | None
     snapshot_s3_uri: str
 
 

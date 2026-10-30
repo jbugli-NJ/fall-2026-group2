@@ -171,7 +171,6 @@ def media_cloud_run_to_node_data(
             not decision.url
             or evidence.body_status != "body_available"
             or not evidence.body_text
-            or not decision.evidence_excerpt
         ):
             raise ValueError("Classified article is missing its supporting evidence.")
 

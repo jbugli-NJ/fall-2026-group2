@@ -24,7 +24,6 @@ from monty_tool.utils.versions import FrozenModel
 def _query_assistant(
     monkeypatch: pytest.MonkeyPatch,
     model_id: FrozenModel = FrozenModel.QWEN3_1_7B,
-    enable_external: bool = True,
 ) -> client.QueryAssistant:
     """
     Creates a QueryAssistant without loading a tokenizer or model.
@@ -44,7 +43,7 @@ def _query_assistant(
         'from_pretrained',
         Mock(return_value=Mock(config=config.get_text_config())),
     )
-    return client.QueryAssistant(model_id=model_id, enable_external=enable_external)
+    return client.QueryAssistant(model_id=model_id)
 
 
 def _parsed(text: str, model_id: FrozenModel = FrozenModel.QWEN3_1_7B) -> dict[str, Any]:
@@ -80,16 +79,37 @@ def _bedrock_response(content: list[dict[str, Any]], stop_reason: str = 'end_tur
 
 # Tests
 
-def test_core_only_assistant_prompt(monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize('requests_tool', [False, True])
+def test_query_assistant_no_tools(monkeypatch: pytest.MonkeyPatch, requests_tool: bool):
     """
-    Pass the toggle to tools and omit news instructions from the prompt.
+    Hide tool definitions and prevent execution even if the model requests a tool.
     """
-    assistant = _query_assistant(monkeypatch, enable_external=False)
-    generate = Mock(return_value={'content': 'Answer'})
+    assistant = _query_assistant(monkeypatch)
+    execute = Mock()
+    monkeypatch.setattr(assistant.tools, 'execute', execute)
+    response = (
+        _parsed('<tool_call>{"name": "search_disaster_events", "arguments": {}}</tool_call>')
+        if requests_tool else {'content': 'Answer from memory'}
+    )
+    generate = Mock(return_value=response)
     monkeypatch.setattr(assistant, '_generate', generate)
-    assert assistant.ask('Question')['answer'] == 'Answer'
-    assert assistant.tools.enable_external is False
-    assert 'news' not in generate.call_args.args[0][0]['content'].lower()
+
+    if requests_tool:
+        with pytest.raises(ValueError, match='after the tool call limit'):
+            assistant.ask('Question', use_tools=False)
+    else:
+        assert assistant.ask('Question', use_tools=False) == {
+            'answer': 'Answer from memory', 'tool_results': [],
+        }
+    execute.assert_not_called()
+    assert generate.call_args.kwargs['use_tools'] is False
+    prompt = generate.call_args.args[0][0]['content']
+    assert 'own knowledge' in prompt
+    assert 'tool' not in prompt.lower()
+
+    generate.return_value = {'content': 'Answer with tools available'}
+    assistant.ask('Next question')
+    assert generate.call_args.kwargs['use_tools'] is True
 
 
 def test_query_assistant_resolves_qwen35_text_model(monkeypatch: pytest.MonkeyPatch):
@@ -266,6 +286,11 @@ def test_query_assistant_stops_tools_at_limit(
     assert execute.call_count == 1
     assert assistant._generate.call_count == 2
     assert assistant._generate.call_args.kwargs['use_tools'] is False
+    first_messages = assistant._generate.call_args_list[0].args[0]
+    final_messages = assistant._generate.call_args_list[1].args[0]
+    assert 'budget is exhausted' not in first_messages[0]['content']
+    assert 'budget is exhausted' in final_messages[0]['content']
+    assert [message['role'] for message in first_messages] == ['system', 'user']
 
 
 def test_query_generation_uses_transformers_parser(monkeypatch: pytest.MonkeyPatch):
@@ -299,6 +324,36 @@ def test_bedrock_assistant_returns_answer(monkeypatch: pytest.MonkeyPatch):
 
     assert assistant.ask('Question') == {'answer': 'An answer.', 'tool_results': []}
     execute.assert_not_called()
+
+
+@pytest.mark.parametrize('requests_tool', [False, True])
+def test_bedrock_assistant_no_tools(monkeypatch: pytest.MonkeyPatch, requests_tool: bool):
+    """
+    Omit tool definitions and reject tool requests when tools are disabled.
+    """
+    assistant, converse = _bedrock_assistant(monkeypatch)
+    if requests_tool:
+        converse.return_value = _bedrock_response([{'toolUse': {
+            'toolUseId': 'search-1', 'name': 'search_disaster_events', 'input': {},
+        }}], 'tool_use')
+    else:
+        converse.return_value = _bedrock_response([{'text': 'An answer.'}])
+    execute = Mock()
+    monkeypatch.setattr(assistant.tools, 'execute', execute)
+
+    if requests_tool:
+        with pytest.raises(ValueError, match='tool call limit'):
+            assistant.ask('Question', use_tools=False)
+    else:
+        assert assistant.ask('Question', use_tools=False) == {'answer': 'An answer.', 'tool_results': []}
+    execute.assert_not_called()
+    assert 'toolConfig' not in converse.call_args.kwargs
+    prompt = converse.call_args.kwargs['system'][0]['text']
+    assert 'own knowledge' in prompt and 'tool' not in prompt.lower()
+
+    converse.return_value = _bedrock_response([{'text': 'Next answer.'}])
+    assistant.ask('Next question')
+    assert 'toolConfig' in converse.call_args.kwargs
 
 
 def test_bedrock_assistant_executes_tool_call(monkeypatch: pytest.MonkeyPatch):
