@@ -357,7 +357,12 @@ def test_selected_model_is_used_once(environment, capsys):
     assert cli.main([*args, *flags, "--model", "Qwen/Qwen3-1.7B"]) == 0
     model.assert_called_once_with("Qwen/Qwen3-1.7B")
     judge.assert_called_once()
-    assert json.loads(capsys.readouterr().out)["saved"][0]["decisions"] == {"same_event": 1, "uncertain": 1}
+    saved = json.loads(capsys.readouterr().out)["saved"][0]
+    assert saved["decisions"] == {"same_event": 1, "uncertain": 1}
+    report = json.loads(Path(saved["snapshot"]).read_text())
+    assert report["request_settings"]["verification_mode"] == (
+        "Qwen/Qwen3-1.7B:token-probabilities-v1"
+    )
 
 
 def test_empty_selection_does_not_load_model_or_collect(environment, capsys):

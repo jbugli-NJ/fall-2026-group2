@@ -6,9 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 from typing import cast
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+import torch
 
 from monty_tool.event_context import build_event_context
 from monty_tool.news import query as news_query_module
@@ -373,7 +375,7 @@ def test_media_cloud_evidence_keeps_candidate_when_body_extraction_fails(
     assert evidence[0].story.url == "https://example.com/one"
 
 
-def test_media_cloud_verification_requires_body_and_real_excerpt():
+def test_media_cloud_verification_requires_body_and_valid_optional_excerpt():
     event = build_event_context(make_record("event-a", source_id="a"))
     candidate = runner.MediaCloudCandidateEvidence(
         event_id=event.item_id,
@@ -401,6 +403,11 @@ def test_media_cloud_verification_requires_body_and_real_excerpt():
     assert decision.event_id == event.item_id
     assert decision.url == candidate.story.url
     judge.assert_called_once_with(event, candidate.story, candidate.body_text)
+
+    judge.return_value = ("same_event", "Token probability classification.", None)
+    decision = verification.decide_media_cloud_candidate(event, candidate, judge=judge)
+    assert decision.status == "same_event"
+    assert decision.evidence_excerpt is None
 
     unavailable = candidate.model_copy(
         update={"body_status": "html_unavailable", "body_text": None}
@@ -430,11 +437,31 @@ def test_media_cloud_verification_requires_body_and_real_excerpt():
             event, wrong_event, judge=judge
         )
 
+def make_token_scoring_assistant(choice_index=0):
+    """
+    Mock model inference with real tensors and noncontiguous answer token IDs.
+    """
+    assistant = Mock(device="cpu", _CONTEXT_LIMIT=32_768)
+    choice_ids = [7, 2, 9, 4]
+    assistant.tokenizer.encode.side_effect = lambda choice, **_: [
+        choice_ids["ABCD".index(choice)]
+    ]
+    inputs = {"input_ids": torch.tensor([[10, 11]])}
+    assistant.tokenizer.apply_chat_template.return_value.to.return_value = inputs
+    logits = torch.zeros((1, 2, 12))
+    logits[0, 0, choice_ids[(choice_index + 1) % 4]] = 100
+    logits[0, -1, 0] = 100  # Ignore tokens outside the answer choices.
+    logits[0, -1, choice_ids[choice_index]] = 5
+    assistant.model.return_value = SimpleNamespace(logits=logits)
+    return assistant
+
+
 @pytest.mark.parametrize(
-    "status",
-    ["same_event", "related_context", "different_event", "uncertain"],
+    ("choice_index", "status"),
+    [(0, "same_event"), (1, "related_context"),
+     (2, "different_event"), (3, "uncertain")],
 )
-def test_qwen_event_judge_returns_all_four_statuses(status):
+def test_qwen_event_judge_returns_all_four_statuses(choice_index, status):
     event = build_event_context(make_record("event-a", source_id="a"))
     candidate = runner.MediaCloudCandidateEvidence(
         event_id=event.item_id,
@@ -442,56 +469,44 @@ def test_qwen_event_judge_returns_all_four_statuses(status):
         story=MediaCloudStory(
             id=1,
             title="Earthquake in Japan",
+            publish_date="2026-09-10",
             url="https://example.com/one",
         ),
         body_status="body_available",
         body_text="An earthquake struck Japan on September 10.",
     )
-    assistant = Mock()
-    assistant._generate.return_value = {
-        "content": json.dumps({
-            "status": status,
-            "reason": "Test decision based on the article.",
-            "evidence_id": None if status == "uncertain" else 1,
-        })
-    }
+    assistant = make_token_scoring_assistant(choice_index)
 
-    judge = verification.make_qwen_event_judge(assistant)
     decision = verification.decide_media_cloud_candidate(
-        event, candidate, judge=judge
+        event, candidate, judge=verification.make_qwen_event_judge(assistant)
     )
 
     assert decision.status == status
-    if status == "uncertain":
-        assert decision.evidence_excerpt is None
-    else:
-        assert decision.evidence_excerpt == candidate.body_text
+    assert decision.evidence_excerpt is None
     assert decision.url == candidate.story.url
-    assistant._generate.assert_called_once()
-    assert assistant._generate.call_args.kwargs["use_tools"] is False
-
-def test_qwen_event_judge_rejects_unknown_passage_id():
-    event = build_event_context(make_record("event-a", source_id="a"))
-    story = MediaCloudStory(id=1, url="https://example.com/one")
-    assistant = Mock()
-    assistant._generate.return_value = {
-        "content": json.dumps({
-            "status": "same_event",
-            "reason": "Test reason.",
-            "evidence_id": 999,
-        })
+    assert "next-token probability" in decision.reason
+    assistant._generate.assert_not_called()
+    assistant.model.generate.assert_not_called()
+    assistant.model.assert_called_once()
+    assert assistant.model.call_args.kwargs["logits_to_keep"] == 1
+    assert assistant.model.call_args.kwargs["use_cache"] is False
+    template = assistant.tokenizer.apply_chat_template.call_args
+    assert template.kwargs == {
+        "tokenize": True, "add_generation_prompt": True,
+        "enable_thinking": False, "return_dict": True, "return_tensors": "pt",
     }
+    payload = json.loads(template.args[0][1]["content"])
+    assert payload["article"] == {
+        "title": candidate.story.title,
+        "published_at": candidate.story.publish_date,
+        "body": candidate.body_text,
+    }
+    assert payload["event"]["title"] == event.title
+    assistant.tokenizer.apply_chat_template.return_value.to.assert_called_once_with("cpu")
 
-    judge = verification.make_qwen_event_judge(assistant)
-    status, reason, excerpt = judge(
-        event, story, "An earthquake struck Japan."
-    )
 
-    assert status == "uncertain"
-    assert reason == "The model did not select a valid article passage."
-    assert excerpt is None
-
-def test_qwen_event_judge_keeps_candidate_when_output_is_invalid():
+@pytest.mark.parametrize("failure", ["multi_token", "context", "inference", "nan", "inf"])
+def test_qwen_event_judge_keeps_candidate_when_scoring_fails(failure):
     event = build_event_context(make_record("event-a", source_id="a"))
     candidate = runner.MediaCloudCandidateEvidence(
         event_id=event.item_id,
@@ -500,17 +515,53 @@ def test_qwen_event_judge_keeps_candidate_when_output_is_invalid():
         body_status="body_available",
         body_text="An earthquake struck Japan.",
     )
-    assistant = Mock()
-    assistant._generate.return_value = {"content": "not JSON"}
+    assistant = make_token_scoring_assistant()
+    if failure == "multi_token":
+        assistant.tokenizer.encode.side_effect = None
+        assistant.tokenizer.encode.return_value = [1, 2]
+    elif failure == "context":
+        assistant._CONTEXT_LIMIT = 1
+    elif failure == "inference":
+        assistant.model.side_effect = RuntimeError("Model unavailable")
+    else:
+        assistant.model.return_value.logits[0, -1, 7] = float(failure)
 
     decision = verification.decide_media_cloud_candidate(
-        event,
-        candidate,
-        judge=verification.make_qwen_event_judge(assistant),
+        event, candidate, judge=verification.make_qwen_event_judge(assistant),
     )
 
     assert decision.status == "uncertain"
     assert decision.url == candidate.story.url
+    assert decision.reason == "Automated event judgment was unavailable or invalid."
+    assert decision.evidence_excerpt is None
+    if failure in {"multi_token", "context"}:
+        assistant.model.assert_not_called()
+
+
+@pytest.mark.parametrize("body_text", ["", " \n\t"])
+def test_qwen_event_judge_skips_unreadable_body(body_text):
+    event = build_event_context(make_record("event-a", source_id="a"))
+    assistant = make_token_scoring_assistant()
+    result = verification.make_qwen_event_judge(assistant)(
+        event, MediaCloudStory(id=1), body_text
+    )
+    assert result == (
+        "uncertain", "Publisher article body contains no readable text.", None,
+    )
+    assistant.tokenizer.apply_chat_template.assert_not_called()
+    assistant.model.assert_not_called()
+
+
+def test_relevance_prompt_bounds_article_and_event_description():
+    event = build_event_context(make_record("event-a", source_id="a"))
+    event = event.model_copy(update={"description": "d" * 3000})
+    messages = verification._story_inputs_to_messages(
+        event, MediaCloudStory(id=1), "b" * 13000,
+    )
+    payload = json.loads(messages[1]["content"])
+    assert payload["article"]["body"] == "b" * 12000
+    assert payload["event"]["description"] == "d" * 2000
+
 
 def test_run_media_cloud_job_keeps_all_candidates_and_decisions(monkeypatch):
     event = build_event_context(make_record("event-a", source_id="a"))

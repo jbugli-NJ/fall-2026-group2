@@ -183,7 +183,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         verification_mode = "deferred"
     else:
         assert args.model is not None
-        verification_mode = args.model
+        verification_mode = f"{args.model}:token-probabilities-v1"
     judge: EventJudge | None = deferred_judge if args.defer_verification else None
     saved: list[dict[str, object]] = []
     requests_made = 0
