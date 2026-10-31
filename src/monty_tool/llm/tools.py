@@ -41,7 +41,7 @@ def _core_data(value: Any) -> Any:
     if isinstance(value, dict):
         return {
             key: _core_data(item) for key, item in value.items()
-            if key != 'weather' and not key.startswith('weather_')
+            if key not in {'weather', 'external_footprints'} and not key.startswith('weather_')
         }
     if isinstance(value, list):
         return [_core_data(item) for item in value]
@@ -306,8 +306,9 @@ class QueryTools:
                 "function": {
                     "name": "get_disaster_context",
                     "description": (
-                        "Fetch impacts and stored weather for an event_id from search_disaster_events, "
-                        "including counts, temperature extremes, precipitation, and wind speed when available."
+                        "Fetch impacts, stored weather, and hazard footprints for an event_id from "
+                        "search_disaster_events, including counts, temperature extremes, precipitation, "
+                        "wind speed, and mapped or modelled affected areas when available."
                     ),
                     "parameters": {
                         "type": "object",
@@ -471,7 +472,9 @@ class QueryTools:
                         'Use get_disaster_context for recorded impacts.'
                     )
                 elif function['name'] == 'get_disaster_context':
-                    function['description'] = 'Fetch the Montandon record and impacts for an event_id.'
+                    function['description'] = (
+                        'Fetch the Montandon record, impacts, and Montandon hazard footprints for an event_id.'
+                    )
         self.definitions = definitions
 
     def _run_graph_query(
