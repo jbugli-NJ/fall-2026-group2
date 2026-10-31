@@ -21,7 +21,7 @@ Key Objectives:
     - External data connections, including articles surrounding disasters and temperature at disaster locations. This includes:
       - [NewsAPI](https://newsapi.org/)
 2. Explore the generated network to develop interpretable takeaways, such as:
-    - Identifying disaster node clusters, central nodes, and other network science measures ([networkx](https://networkx.org/en/) clustering, node centrality)
+    - Determining what external data sources, if any, can enrich the data bank and improve utility for stakeholders
     - Integrating the network with an LLM to run queries and provide recommendations (local [Neo4j](https://neo4j.com/product/community-edition/), LLM tool calls coverted to Cypher)
 4. Develop a proof-of-concept tool for Red Cross stakeholders to use with the full data bank as new disasters are added
 
@@ -124,7 +124,7 @@ PHASE 4: PROOF OF CONCEPT, EVALUATION & PAPER WORK (Weeks 8-12)
 [Weeks 8-10: Complete the Proof of Concept]
 - Transition the demo app to a full proof-of-concept, extending on existing work for more concrete Red Cross utility
   - Potentially could be distributed as a Python library or a separate repository
-- Complete and freeze benchmarking
+- Work on initial gap analysis evaluations to determine external data utility
 - Respond to feedback from the interim presentation
 - Draft first complete reports for the full network setup and LLM integration
   - Sketch out the investigation process, methods, and initial findings
@@ -172,11 +172,12 @@ Week 6:  Refine the demo app and/or change course as needed based on instruction
   or moving from local execution to an API with frontier models; draft a report on initial findings.
 Week 7:  Draft reports on the network and LLM work; meet with Red Cross stakeholders on findings and
   the proof-of-concept direction.
-Week 8:  Start the proof-of-concept tool or pipeline, test it on data bank records, and begin the paper.
-Week 9:  Continue the proof of concept and draft the paper's methods, findings, and limitations.
-Week 10: Complete the first proof-of-concept version and the first full paper draft.
-Week 11: Revise the proof of concept from stakeholder feedback; complete figures, results, and
-  paper revisions.
+Week 8:  Start the proof-of-concept tool or pipeline, test it on data bank records, begin initial gap
+  analysis evaluations to determine external data utility, and begin the paper.
+Week 9:  Continue the proof of concept and gap analysis evaluations; draft the paper's methods, findings, and limitations.
+Week 10: Complete the first proof-of-concept version, summarize initial gap analysis findings on external data utility,
+  and complete the first full paper draft.
+Week 11: Revise the proof of concept from stakeholder feedback; complete figures, results, and paper revisions.
 Week 12: Submit the completed research paper; document follow-up work and begin final deliverable preparation.
 Week 13: Complete remaining analysis, limitations, and next steps; prepare final materials.
 Week 14: Finalize all Red Cross deliverables and repository documentation.
