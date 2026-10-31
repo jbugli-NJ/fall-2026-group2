@@ -8,7 +8,7 @@ to events from other sources (`monty:corr_id` only links within a
 source). Items are pulled once into data/geo_survey/ (gitignored) as
 slimmed-down records; pass --refresh to pull again.
 
-    uv run python spikes/geo_footprints/coverage_survey.py
+    uv run python demo/geo_footprints/coverage_survey.py
 """
 
 # Imports

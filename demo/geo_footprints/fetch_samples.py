@@ -1,230 +1,179 @@
 """
 Spike: pull sample hazard footprints from each source, for geo_integration.
 
-Saves one GeoJSON FeatureCollection per sample under data/geo_samples/
-(gitignored), each feature tagged with `_source`, `_layer` and `_note` so
-the map can label them. The samples are hand-picked from a first look at
-staging in October 2026; swap the IDs below for others to inspect.
+Every sample starts from a Montandon record and goes through the
+`monty_tool.geo` adapters where a source has one, so the samples show
+what the graph pipeline would see. Saves one `Footprint` per line to
+data/geo_samples/footprints.jsonl (gitignored), which make_map.py
+validates on load. The samples are hand-picked from staging in October
+2026; swap the IDs below for others to inspect.
 
-    uv run python spikes/geo_footprints/fetch_samples.py
-    uv run python spikes/geo_footprints/make_map.py
+    uv run python demo/geo_footprints/fetch_samples.py
+    uv run python demo/geo_footprints/make_map.py
 """
 
 # Imports
 
-import json
-import os
 from pathlib import Path
 from typing import Any
 
 import requests
 from dotenv import load_dotenv
+from pystac_client import Client
 
+from monty_tool.api_utils import get_pystac_client
+from monty_tool.geo.cems import get_cems_footprints
+from monty_tool.geo.gdacs import get_gdacs_footprints
+from monty_tool.geo.schemas import Footprint, extent_km, grade_detail
 from monty_tool.geo.usgs import get_shakemap_footprints
 
 
 # Constants
 
-OUT_DIR = Path('data/geo_samples')
+OUT_PATH = Path('data/geo_samples/footprints.jsonl')
 
-STAC_URL = 'https://montandon-eoapi-stage.ifrc.org/stac/collections'
+# CEMS activations; each returns every layer of every product.
+CEMS_ACTIVATIONS = ['EMSR935']
 
-CEMS_URL = 'https://rapidmapping-viewer.s3.eu-west-1.amazonaws.com'
-
-USGS_EVENT_URL = 'https://earthquake.usgs.gov/fdsnws/event/1/query'
-
-# (name, source, layer, note, URL) for GeoJSON files linked from CEMS items.
-CEMS_LAYERS = [
-    ('cems_flood_observed', 'CEMS', 'Observed flood extent',
-     'EMSR935 AOI01 Moraira, Spain', 'EMSR935/AOI01/DEL_PRODUCT/'
-     'EMSR935_AOI01_DEL_PRODUCT_observedEventA_v1.json'),
-    ('cems_flood_modelled', 'CEMS', 'Modelled flood extent',
-     'EMSR935 AOI01 Moraira, Spain', 'EMSR935/AOI01/DEL_PRODUCT/'
-     'EMSR935_AOI01_DEL_PRODUCT_modelledEventA_v1.json'),
-    ('cems_flood_depth', 'CEMS', 'Flood depth',
-     'EMSR935 AOI01 Moraira, Spain', 'EMSR935/AOI01/DEL_PRODUCT/'
-     'EMSR935_AOI01_DEL_PRODUCT_floodDepthA_v1.json'),
-    ('cems_grading_buildings', 'CEMS', 'Damage grading: buildings',
-     'EMSR935 AOI02 Gandia, Spain', 'EMSR935/AOI02/GRA_PRODUCT/'
-     'EMSR935_AOI02_GRA_PRODUCT_builtUpP_v1.json'),
-    ('cems_grading_transport', 'CEMS', 'Damage grading: transport',
-     'EMSR935 AOI02 Gandia, Spain', 'EMSR935/AOI02/GRA_PRODUCT/'
-     'EMSR935_AOI02_GRA_PRODUCT_transportationL_v1.json'),
-    ('cems_grading_observed', 'CEMS', 'Observed flood extent (grading AOI)',
-     'EMSR935 AOI02 Gandia, Spain', 'EMSR935/AOI02/GRA_PRODUCT/'
-     'EMSR935_AOI02_GRA_PRODUCT_observedEventA_v1.json'),
+# Montandon quakes whose ShakeMaps are built into intensity bands.
+USGS_ITEMS = [
+    'usgs-event-us6000rtdt',  # M7.6 2025 Aomori Prefecture, Japan
+    'usgs-event-us6000tkt2',  # M7.7 68 km NNW of Ende, Indonesia
 ]
 
-# USGS events whose ShakeMap MMI contours are pulled straight from USGS;
-# us6000rfwz (M7.4 Philippines) is one Montandon is missing.
-USGS_EVENTS = ['us6000u43g', 'us6000rfwz']
-
-# (name, layer, note, Montandon hazard item ID) for GDACS hazard items.
-GDACS_HAZARDS = [
-    ('gdacs_flood_france', 'Flood polygon', 'Flood in France',
-     'gdacs-hazard-1104243-2'),
-    ('gdacs_fire_russia', 'Wildfire polygon', 'Forest fires in Russia',
-     'gdacs-hazard-1033087-1'),
-    ('gdacs_fire_australia', 'Wildfire polygon', 'Forest fires in Australia',
-     'gdacs-hazard-1033085-1'),
-    ('gdacs_drought_sahel', 'Drought polygon',
-     'Drought in CAF/CMR/NER/NGA/TCD; expected too coarse',
-     'gdacs-hazard-1027567-2'),
+# GDACS events; the drought is expected to grade as regional.
+GDACS_EVENTS = [
+    '1104243',  # Flood in France
+    '1033087',  # Forest fires in Russia
+    '1033085',  # Forest fires in Australia
+    '1027567',  # Drought in CAF/CMR/NER/NGA/TCD
 ]
 
-# Latest IBTrACS hazard item for a storm; each item carries the full track.
-IBTRACS_HAZARDS = [
-    ('ibtracs_agueda', 'Tropical Cyclone AGUEDA',
-     '2026293S05054-hazard-20261022T000000Z'),
+# IBTrACS and PDC have no adapter (a track is not an area, and most PDC
+# polygons are regional), so the spike builds their Footprints itself.
+IBTRACS_ITEMS = [
+    '2026293S05054-hazard-20261022T000000Z',  # Tropical Cyclone AGUEDA
 ]
 
-# PDC hazard items whose `Maps` asset holds the hazard polygons.
-PDC_HAZARDS = [
-    ('pdc_storm_brazil', 'Thunderstorm, South and Southeast Brazil; '
-     'expected too coarse',
-     'pdc-hazard-937967d1-2350-4706-857e-d73bf8d5d7db-555498-1792498419071'),
+PDC_ITEMS = [
+    # Thunderstorm, South and Southeast Brazil
+    'pdc-hazard-937967d1-2350-4706-857e-d73bf8d5d7db-555498-1792498419071',
 ]
+
+FETCH_TIMEOUT = 120
 
 
 # Fetching
 
-def _headers() -> dict[str, str]:
-    """
-    Montandon auth headers, from MONTANDON_API_TOKEN in .env.
-    """
-    load_dotenv()
-    token = os.getenv('MONTANDON_API_TOKEN')
-    if token is None:
-        raise ValueError('MONTANDON_API_TOKEN is unset!')
-    return {'Authorization': f'Bearer {token}'}
+def _item(client: Client, collection: str, item_id: str) -> dict[str, Any]:
+    [item] = client.search(collections=[collection], ids=[item_id]).items_as_dicts()
+    return item
 
 
-def _get_json(url: str, **kwargs: Any) -> Any:
-    response = requests.get(url, timeout=120, **kwargs)
-    response.raise_for_status()
-    return response.json()
+def _self_url(item: dict[str, Any]) -> str:
+    return next(link['href'] for link in item['links'] if link['rel'] == 'self')
 
 
-def _stac_item(collection: str, item_id: str) -> dict[str, Any]:
-    return _get_json(
-        f'{STAC_URL}/{collection}/items/{item_id}', headers=_headers(),
-    )
+def fetch_cems(client: Client) -> list[Footprint]:
+    return [
+        footprint
+        for activation in CEMS_ACTIVATIONS
+        for footprint in get_cems_footprints(activation, client=client)
+    ]
 
 
-def _tag(
-    features: list[dict[str, Any]],
-    source: str,
-    layer: str,
-    note: str,
-    ) -> dict[str, Any]:
-    """
-    Wrap features in a FeatureCollection, labelling each for the map.
-    """
-    for feature in features:
-        feature.setdefault('properties', {})
-        feature['properties'].update(
-            {'_source': source, '_layer': layer, '_note': note},
-        )
-    return {'type': 'FeatureCollection', 'features': features}
+def fetch_usgs(client: Client) -> list[Footprint]:
+    return [
+        footprint
+        for item_id in USGS_ITEMS
+        for footprint in get_shakemap_footprints(item_id, client=client)
+    ]
 
 
-def _item_feature(item: dict[str, Any]) -> dict[str, Any]:
-    """
-    A STAC item as a plain feature, keeping only its title and datetime.
-    """
-    properties = item['properties']
-    return {
-        'type': 'Feature',
-        'geometry': item['geometry'],
-        'properties': {
-            'id': item['id'],
-            'title': properties.get('title'),
-            'datetime': properties.get('datetime'),
-        },
-    }
+def fetch_gdacs(client: Client) -> list[Footprint]:
+    return [
+        footprint
+        for event_id in GDACS_EVENTS
+        for footprint in get_gdacs_footprints(event_id, client=client)
+    ]
 
 
-def fetch_cems() -> dict[str, dict[str, Any]]:
-    samples = {}
-    for name, source, layer, note, path in CEMS_LAYERS:
-        data = _get_json(f'{CEMS_URL}/{path}')
-        samples[name] = _tag(data['features'], source, layer, note)
-    return samples
+def fetch_ibtracs(client: Client) -> list[Footprint]:
+    footprints = []
+    for item_id in IBTRACS_ITEMS:
+        item = _item(client, 'ibtracs-hazards', item_id)
+        properties = item['properties']
+        geojson = {'type': 'FeatureCollection', 'features': [
+            {'type': 'Feature', 'geometry': item['geometry'], 'properties': {}},
+        ]}
+        footprints.append(Footprint(
+            source='IBTrACS',
+            item_id=item_id,
+            event_ref=properties.get('monty:src_event_id') or item_id,
+            layer='track',
+            label='Cyclone track',
+            detail='track',
+            datetime=properties['datetime'],
+            hazard_codes=properties.get('monty:hazard_codes') or [],
+            country_codes=properties.get('monty:country_codes') or [],
+            data_url=_self_url(item),
+            feature_count=1,
+            size_km=extent_km(geojson),
+            geojson=geojson,
+        ))
+    return footprints
 
 
-def fetch_usgs() -> dict[str, dict[str, Any]]:
-    samples = {}
-    for event_id in USGS_EVENTS:
-        event = _get_json(
-            USGS_EVENT_URL, params={'eventid': event_id, 'format': 'geojson'},
-        )
-        shakemap = event['properties']['products']['shakemap'][0]
-        url = shakemap['contents']['download/cont_mmi.json']['url']
-        contours = _get_json(url)['features']
-        note = event['properties']['title']
-        samples[f'usgs_shakemap_{event_id}'] = _tag(
-            contours, 'USGS', 'ShakeMap MMI contours', note,
-        )
-        # The same ShakeMap as intensity bands, via the geo package.
-        [footprint] = get_shakemap_footprints(event_id)
-        assert footprint.geojson is not None
-        samples[f'usgs_bands_{event_id}'] = _tag(
-            footprint.geojson['features'], 'USGS', 'ShakeMap MMI bands', note,
-        )
-        epicentre = {
-            'type': 'Feature',
-            'geometry': event['geometry'],
-            'properties': {'title': note},
-        }
-        samples[f'usgs_epicentre_{event_id}'] = _tag(
-            [epicentre], 'USGS', 'Epicentre', note,
-        )
-    return samples
-
-
-def fetch_gdacs() -> dict[str, dict[str, Any]]:
-    samples = {}
-    for name, layer, note, item_id in GDACS_HAZARDS:
-        item = _stac_item('gdacs-hazards', item_id)
-        samples[name] = _tag([_item_feature(item)], 'GDACS', layer, note)
-    return samples
-
-
-def fetch_ibtracs() -> dict[str, dict[str, Any]]:
-    samples = {}
-    for name, note, item_id in IBTRACS_HAZARDS:
-        item = _stac_item('ibtracs-hazards', item_id)
-        samples[name] = _tag(
-            [_item_feature(item)], 'IBTrACS', 'Cyclone track', note,
-        )
-    return samples
-
-
-def fetch_pdc() -> dict[str, dict[str, Any]]:
-    samples = {}
-    for name, note, item_id in PDC_HAZARDS:
-        item = _stac_item('pdc-hazards', item_id)
-        maps = _get_json(item['assets']['Maps']['href'])
+def fetch_pdc(client: Client) -> list[Footprint]:
+    footprints = []
+    for item_id in PDC_ITEMS:
+        item = _item(client, 'pdc-hazards', item_id)
+        properties = item['properties']
+        url = item['assets']['Maps']['href']
+        response = requests.get(url, timeout=FETCH_TIMEOUT)
+        response.raise_for_status()
         # Older revisions of the same polygon come along marked inactive.
         active = [
-            feature for feature in maps['features']
+            feature for feature in response.json()['features']
             if str(feature['properties'].get('isActive')) == 'True'
         ]
-        samples[name] = _tag(active, 'PDC', 'Hazard polygon (active)', note)
-    return samples
+        geojson = {'type': 'FeatureCollection', 'features': active}
+        size_km = extent_km(geojson)
+        footprints.append(Footprint(
+            source='PDC',
+            item_id=item_id,
+            event_ref=properties.get('monty:src_event_id') or item_id,
+            area_name=properties.get('title'),
+            layer='hazard_polygon',
+            label='Hazard polygon (active)',
+            detail=grade_detail('outline', size_km),
+            datetime=properties['datetime'],
+            hazard_codes=properties.get('monty:hazard_codes') or [],
+            country_codes=properties.get('monty:country_codes') or [],
+            data_url=url,
+            feature_count=len(active),
+            size_km=size_km,
+            geojson=geojson,
+        ))
+    return footprints
 
 
 # Main
 
 def main() -> None:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    load_dotenv()
+    client = get_pystac_client()
     fetchers = [fetch_cems, fetch_usgs, fetch_gdacs, fetch_ibtracs, fetch_pdc]
-    for fetch in fetchers:
-        for name, collection in fetch().items():
-            path = OUT_DIR / f'{name}.geojson'
-            path.write_text(json.dumps(collection))
-            count = len(collection['features'])
-            print(f'{path}  ({count} features)')
+    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with OUT_PATH.open('w') as file:
+        for fetch in fetchers:
+            for footprint in fetch(client):
+                file.write(footprint.model_dump_json() + '\n')
+                print(
+                    f'{footprint.source} {footprint.item_id} {footprint.layer}: '
+                    f'{footprint.feature_count} features, {footprint.detail}',
+                )
+    print(f'Wrote {OUT_PATH}')
 
 
 if __name__ == '__main__':

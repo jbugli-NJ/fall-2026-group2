@@ -1,25 +1,28 @@
 """
 Spike: render the samples from fetch_samples.py onto one Leaflet map.
 
-Writes a self-contained data/geo_samples/map.html with every
-data/geo_samples/*.geojson embedded as a toggleable layer. Click a
-feature to see its properties. Open the file in any browser; the only
-network access it needs is Leaflet and the basemap tiles.
+Writes a self-contained data/geo_samples/map.html with every Footprint
+in data/geo_samples/footprints.jsonl embedded as a toggleable layer.
+Click a feature to see its properties. Open the file in any browser; the
+only network access it needs is Leaflet and the basemap tiles.
 
-    uv run python spikes/geo_footprints/make_map.py
+    uv run python demo/geo_footprints/make_map.py
 """
 
 # Imports
 
 import json
 from pathlib import Path
+from typing import Any
+
+from monty_tool.geo.schemas import Footprint
 
 
 # Constants
 
-SAMPLE_DIR = Path('data/geo_samples')
+SAMPLE_PATH = Path('data/geo_samples/footprints.jsonl')
 
-OUT_PATH = SAMPLE_DIR / 'map.html'
+OUT_PATH = SAMPLE_PATH.with_name('map.html')
 
 # Fallback colour per source; ShakeMap contours carry their own colour.
 SOURCE_COLOURS = {
@@ -64,10 +67,11 @@ const imagery = L.tileLayer(
   {maxZoom: 19, attribution: 'Esri World Imagery'});
 const map = L.map('map', {layers: [streets]});
 
-function style(feature) {
-  const p = feature.properties;
-  const colour = p.color || COLOURS[p._source] || '#333';
-  return {color: colour, weight: 2, fillColor: colour, fillOpacity: 0.3};
+function styleFor(source) {
+  return feature => {
+    const colour = feature.properties.color || COLOURS[source] || '#333';
+    return {color: colour, weight: 2, fillColor: colour, fillOpacity: 0.3};
+  };
 }
 
 function popup(feature, layer) {
@@ -81,14 +85,11 @@ function popup(feature, layer) {
 const overlays = {};
 const bounds = L.latLngBounds([]);
 const jumps = [];
-for (const [name, collection] of Object.entries(SAMPLES)) {
-  const first = collection.features[0];
-  const label = first
-    ? `${first.properties._source}: ${first.properties._layer} ` +
-      `(${first.properties._note}) [${collection.features.length}]`
-    : `${name} [empty]`;
-  const layer = L.geoJSON(collection, {
-    style: style,
+for (const sample of SAMPLES) {
+  const label = `${sample.source}: ${sample.label} (${sample.place}, ` +
+    `${sample.detail}) [${sample.geojson.features.length}]`;
+  const layer = L.geoJSON(sample.geojson, {
+    style: styleFor(sample.source),
     onEachFeature: popup,
     pointToLayer: (f, latlng) => L.circleMarker(latlng, {radius: 6}),
   }).addTo(map);
@@ -130,15 +131,29 @@ map.fitBounds(bounds.isValid() ? bounds : [[-60, -180], [80, 180]]);
 
 # Main
 
-def main() -> None:
-    samples = {
-        path.stem: json.loads(path.read_text())
-        for path in sorted(SAMPLE_DIR.glob('*.geojson'))
+def _sample(footprint: Footprint) -> dict[str, Any]:
+    """
+    What the map needs from a footprint to draw and label it.
+    """
+    place = ' '.join(filter(None, [footprint.event_ref, footprint.area_name]))
+    return {
+        'source': footprint.source,
+        'label': footprint.label,
+        'place': place,
+        'detail': footprint.detail,
+        'geojson': footprint.geojson,
     }
-    if not samples:
-        raise SystemExit(
-            f'No samples in {SAMPLE_DIR}; run fetch_samples.py first.',
-        )
+
+
+def main() -> None:
+    if not SAMPLE_PATH.exists():
+        raise SystemExit(f'No {SAMPLE_PATH}; run fetch_samples.py first.')
+    footprints = [
+        Footprint.model_validate_json(line)
+        for line in SAMPLE_PATH.read_text().splitlines()
+        if line
+    ]
+    samples = [_sample(footprint) for footprint in footprints if footprint.geojson]
     html = (
         TEMPLATE
         .replace('__SAMPLES__', json.dumps(samples))
