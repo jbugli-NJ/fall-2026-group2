@@ -28,6 +28,24 @@ logger = logging.getLogger(__name__)
 
 _OMIT_VALUE = object()
 _CYPHER_QUERY_PACKAGE = 'monty_tool.llm.cypher_queries'
+_WEATHER_FILTERS = {
+    'min_elevation', 'max_elevation', 'min_mean_temperature',
+    'max_mean_temperature', 'min_precipitation_total', 'max_precipitation_total',
+}
+
+
+def _core_data(value: Any) -> Any:
+    """
+    Remove external data fields recursively from tool results.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _core_data(item) for key, item in value.items()
+            if key != 'weather' and not key.startswith('weather_')
+        }
+    if isinstance(value, list):
+        return [_core_data(item) for item in value]
+    return value
 
 type CypherTemplateFile = Literal[
     'search_disaster_events.cypher',
@@ -203,13 +221,14 @@ class QueryTools:
     Graph and news tools available to QueryAssistant.
     """
 
-    def __init__(self, max_tool_calls: int = 10):
+    def __init__(self, max_tool_calls: int = 10, *, enable_external: bool = True):
         if max_tool_calls < 1:
             raise ValueError("max_tool_calls must be at least 1.")
 
         self.max_tool_calls = max_tool_calls
+        self.enable_external = enable_external
         self.tool_call_count = 0
-        self.definitions = [
+        definitions = [
             {
                 "type": "function",
                 "function": {
@@ -437,6 +456,23 @@ class QueryTools:
                 },
             },
         ]
+        if not enable_external:
+            definitions = [
+                definition for definition in definitions
+                if definition['function']['name'] != 'get_event_news'
+            ]
+            for definition in definitions:
+                function = definition['function']
+                if function['name'] == 'search_disaster_events':
+                    for name in _WEATHER_FILTERS:
+                        function['parameters']['properties'].pop(name)
+                    function['description'] = (
+                        'Find up to 10 newest matching disaster events. Dates filter event starts. '
+                        'Use get_disaster_context for recorded impacts.'
+                    )
+                elif function['name'] == 'get_disaster_context':
+                    function['description'] = 'Fetch the Montandon record and impacts for an event_id.'
+        self.definitions = definitions
 
     def _run_graph_query(
         self,
@@ -467,6 +503,8 @@ class QueryTools:
             "status": "ok",
             "rows": [_json_value(record.data()) for record in records],
         }
+        if not self.enable_external:
+            result = _core_data(result)
         if isinstance(args, GraphSearchArguments):
             result["rows"] = result["rows"][:10]
             result["pagination"] = {
@@ -494,6 +532,11 @@ class QueryTools:
             }
 
         self.tool_call_count += 1
+        if not self.enable_external and (
+            name == 'get_event_news'
+            or (name == 'search_disaster_events' and _WEATHER_FILTERS.intersection(arguments))
+        ):
+            return {'status': 'error', 'message': 'External news and weather access is disabled.'}
         try:
             if name == "search_disaster_events":
                 return self._run_graph_query(

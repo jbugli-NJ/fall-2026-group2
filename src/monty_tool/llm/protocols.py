@@ -7,7 +7,6 @@ Query assistant typing protocols.
 from typing import Protocol
 
 from monty_tool.llm.schemas import QueryAssistantResponse
-from monty_tool.llm.tools import QueryTools
 
 
 # Assistant protocol
@@ -16,9 +15,11 @@ class QueryAssistantProtocol(Protocol):
     """
     A query assistant for disaster records.
     """
-    tools: QueryTools
+    max_tool_calls: int
 
-    def ask(self, question: str) -> QueryAssistantResponse:
+    def ask(
+        self, question: str, *, use_tools: bool = True, enable_external: bool = True,
+    ) -> QueryAssistantResponse:
         """
         Answer a question and return the tool results.
         """

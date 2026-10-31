@@ -9,6 +9,7 @@ import os
 from typing import Any, cast
 
 import boto3
+from botocore.config import Config
 
 from monty_tool.boto3_utils.llm_protocols import (
     BedrockRuntimeClient,
@@ -17,7 +18,6 @@ from monty_tool.boto3_utils.llm_protocols import (
     ConverseRequest,
     ConverseResponse,
     SystemContentBlock,
-    ToolConfiguration,
 )
 from monty_tool.llm.schemas import QueryAssistantResponse
 from monty_tool.llm.tools import QueryTools
@@ -25,6 +25,28 @@ from monty_tool.utils.versions import FrozenModel
 
 
 DEFAULT_BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
+
+
+def _system_prompt(use_tools: bool, enable_external: bool) -> str:
+    """
+    Describe the evidence available for the current question.
+    """
+    if not use_tools:
+        return (
+            "You answer questions about disaster records using your own knowledge. "
+            "Answer in the user's language."
+        )
+    return (
+        "You answer questions about disaster records. Use graph search tools to find events, "
+        "then use returned event IDs for details or related records. Use response tools for "
+        "IFRC events and appeals. Base factual statements on tool results and identify "
+        "information that remains unavailable. Answer in the user's language. "
+        + (
+            "get_disaster_context includes stored weather. Use get_event_news for relevant "
+            "stored articles. Distinguish Montandon records from external evidence."
+            if enable_external else "The available tools expose Montandon records and impacts."
+        )
+    )
 
 
 class QueryAssistant:
@@ -36,12 +58,14 @@ class QueryAssistant:
     def __init__(
         self,
         model_id: FrozenModel = FrozenModel.QWEN3_5_4B,
+        *,
+        max_tool_calls: int = 10,
         ):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         from transformers.cli.serving.utils import get_response_template
 
-        self.tools = QueryTools()
+        self.max_tool_calls = max_tool_calls
         self.device = "cuda" if torch.cuda.is_available() else (
             "mps" if torch.backends.mps.is_available() else "cpu"
         )
@@ -66,7 +90,8 @@ class QueryAssistant:
         self,
         messages: list[dict[str, Any]],
         max_new_tokens: int = 1024,
-        use_tools: bool = True,
+        *,
+        tool_definitions: list[dict[str, Any]] | None = None,
         ) -> dict[str, Any]:
         """
         Generate one response while enforcing the context limit.
@@ -75,7 +100,7 @@ class QueryAssistant:
 
         inputs = self.tokenizer.apply_chat_template(
             messages,
-            tools=self.tools.definitions if use_tools else None,
+            tools=tool_definitions,
             tokenize=True,
             add_generation_prompt=True,
             enable_thinking=False,
@@ -105,37 +130,25 @@ class QueryAssistant:
         return self.tokenizer.parse_response(
             response,
             prefix=inputs['input_ids'][0],
-            tools=self.tools.definitions if use_tools else None,
+            tools=tool_definitions,
         )
 
-    def ask(self, question: str, *, use_tools: bool = True) -> QueryAssistantResponse:
+    def ask(
+        self, question: str, *, use_tools: bool = True, enable_external: bool = True,
+    ) -> QueryAssistantResponse:
         """
         Answer one question with optional access to graph query tools.
         """
-        self.tools.tool_call_count = 0
-        if use_tools:
-            system_prompt = (
-                "You answer questions about disaster records. Use graph search "
-                "tools to find events, then use returned event IDs for details "
-                "or related records. Use response tools for IFRC events and "
-                "appeals. "
-                "get_disaster_context returns disaster info, including weather data. "
-                "Use get_event_news only when the question requires information "
-                "from news articles. "
-                "Distinguish disaster event facts from news article candidates. "
-                "Base your answer on tool results. Answer in the user's language."
-            )
-        else:
-            system_prompt = (
-                "You answer questions about disaster records using your own knowledge. "
-                "Answer in the user's language."
-            )
+        tools = QueryTools(
+            max_tool_calls=self.max_tool_calls, enable_external=enable_external,
+        )
+        system_prompt = _system_prompt(use_tools, enable_external)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question},
         ]
         tool_results: list[dict[str, Any]] = []
-        tool_budget = self.tools.max_tool_calls if use_tools else 0
+        tool_budget = self.max_tool_calls if use_tools else 0
 
         while True:
             remaining_calls = tool_budget - len(tool_results)
@@ -154,7 +167,7 @@ class QueryAssistant:
                 ]
             response = self._generate(
                 generation_messages,
-                use_tools=tools_available,
+                tool_definitions=tools.definitions if tools_available else None,
             )
             calls = [tool_call['function'] for tool_call in response.get('tool_calls', [])]
             if any(
@@ -181,7 +194,7 @@ class QueryAssistant:
             results = []
             for call in calls:
                 print("Tool call:", json.dumps(call, ensure_ascii=False, default=str))
-                result = self.tools.execute(call["name"], call["arguments"])
+                result = tools.execute(call["name"], call["arguments"])
                 print("Tool result:", json.dumps(result, ensure_ascii=False, default=str))
                 results.append(result)
                 tool_results.append({"call": call, "result": result})
@@ -219,8 +232,9 @@ class BedrockQueryAssistant:
         model_id: str = DEFAULT_BEDROCK_MODEL_ID,
         *,
         region: str | None = None,
+        max_tool_calls: int = 25,
         ):
-        self.tools = QueryTools(max_tool_calls=25)
+        self.max_tool_calls = max_tool_calls
         self.model_id = model_id
         region = (
             region
@@ -230,18 +244,8 @@ class BedrockQueryAssistant:
         )
         self.client = cast(
             BedrockRuntimeClient,
-            boto3.client('bedrock-runtime', region_name=region),
+            boto3.client('bedrock-runtime', region_name=region, config=Config(read_timeout=120)),
         )
-        self.tool_config: ToolConfiguration = {
-            'tools': [
-                {'toolSpec': {
-                    'name': definition['function']['name'],
-                    'description': definition['function']['description'],
-                    'inputSchema': {'json': definition['function']['parameters']},
-                }}
-                for definition in self.tools.definitions
-            ],
-        }
 
     def _generate(
         self,
@@ -249,7 +253,7 @@ class BedrockQueryAssistant:
         system: list[SystemContentBlock],
         max_new_tokens: int = 1024,
         *,
-        use_tools: bool = True,
+        tool_definitions: list[dict[str, Any]] | None = None,
         ) -> ConverseResponse:
         """
         Generate one response through Bedrock Converse.
@@ -260,35 +264,35 @@ class BedrockQueryAssistant:
             'system': system,
             'inferenceConfig': {'maxTokens': max_new_tokens, 'temperature': 0.0},
         }
-        if use_tools:
-            request['toolConfig'] = self.tool_config
+        if tool_definitions is not None:
+            request['toolConfig'] = {
+                'tools': [
+                    {'toolSpec': {
+                        'name': definition['function']['name'],
+                        'description': definition['function']['description'],
+                        'inputSchema': {'json': definition['function']['parameters']},
+                    }}
+                    for definition in tool_definitions
+                ],
+            }
         return self.client.converse(**request)
 
-    def ask(self, question: str, *, use_tools: bool = True) -> QueryAssistantResponse:
+    def ask(
+        self, question: str, *, use_tools: bool = True, enable_external: bool = True,
+    ) -> QueryAssistantResponse:
         """
         Answer one question with optional tool access.
         """
-        self.tools.tool_call_count = 0
-        system_prompt = (
-            "You answer questions about disaster records. Use graph search "
-            "tools to find events, then use returned event IDs for details "
-            "or related records. Use response tools for IFRC events and "
-            "appeals. "
-            "get_disaster_context returns disaster info, including weather data. "
-            "Use get_event_news only when the question requires information "
-            "from news articles. "
-            "Distinguish disaster event facts from news article candidates. "
-            "Base your answer on tool results. Answer in the user's language."
-        ) if use_tools else (
-            "You answer questions about disaster records using your own knowledge. "
-            "Answer in the user's language."
+        tools = QueryTools(
+            max_tool_calls=self.max_tool_calls, enable_external=enable_external,
         )
+        system_prompt = _system_prompt(use_tools, enable_external)
         system: list[SystemContentBlock] = [{'text': system_prompt}]
         messages: list[ConverseMessage] = [
             {'role': 'user', 'content': [{'text': question}]},
         ]
         tool_results: list[dict[str, Any]] = []
-        tool_budget = self.tools.max_tool_calls if use_tools else 0
+        tool_budget = self.max_tool_calls if use_tools else 0
 
         while True:
             remaining_calls = tool_budget - len(tool_results)
@@ -299,7 +303,10 @@ class BedrockQueryAssistant:
                     ' The tool call budget is exhausted. '
                     'Provide your final answer using the results already collected.'
                 )}]
-            response = self._generate(messages, generation_system, use_tools=use_tools)
+            response = self._generate(
+                messages, generation_system,
+                tool_definitions=tools.definitions if tools_available else None,
+            )
             stop_reason = response['stopReason']
             if stop_reason not in ('end_turn', 'stop_sequence', 'tool_use'):
                 raise ValueError(f'Model response stopped with {stop_reason}.')
@@ -324,14 +331,14 @@ class BedrockQueryAssistant:
             results: list[ContentBlock] = []
             for tool_call in calls:
                 call = {'name': tool_call['name'], 'arguments': tool_call['input']}
-                if len(tool_results) >= self.tools.max_tool_calls:
+                if len(tool_results) >= self.max_tool_calls:
                     result = {
                         'status': 'limit_reached',
                         'message': 'The tool call limit has been reached.',
                     }
                 else:
                     print('Tool call:', json.dumps(call, ensure_ascii=False, default=str))
-                    result = self.tools.execute(call['name'], call['arguments'])
+                    result = tools.execute(call['name'], call['arguments'])
                     print('Tool result:', json.dumps(result, ensure_ascii=False, default=str))
                     tool_results.append({'call': call, 'result': result})
 

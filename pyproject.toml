@@ -28,6 +28,7 @@ dependencies = [
 [project.scripts]
 monty-tool = "monty_tool:main"
 run-fact-benchmark = "monty_tool.benchmarks.run_benchmark:main"
+run-gap-analysis = "monty_tool.gap_analysis.run:main"
 setup-network = "monty_tool.tools.setup_network:main"
 update-network-node-data = "monty_tool.tools.update_network_node_data:main"
 update-raw-data = "monty_tool.tools.update_raw_data:main"

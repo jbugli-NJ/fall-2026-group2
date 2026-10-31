@@ -125,7 +125,7 @@
 
 ---
 
-## Date: Week 7 - October 23, 2026 (updated as of October 20)
+## Date: Week 7 - October 20, 2026
 - Topics of discussion
   - API-based LLM integration
     - Using Sonnet 4.5 through AWS Bedrock to query the network
@@ -133,6 +133,9 @@
     - Extending the demo app toward the proof-of-concept
     - Remaining benchmarking and reporting work
   - Updated news collection using Media Cloud
+  - Further benchmark refinement
+    - Expanding question sets and comparing answers with and without tools
+    - Improving scoring and plots
 
 - Action Items:
 
@@ -140,11 +143,31 @@
 * [x] Connect the Bedrock assistant to the demo app
 * [x] Prepare preliminary presentation materials
 * [x] Update the proposal to reflect the remaining proof-of-concept and evaluation work
-* [ ] Update benchmarks for a more robust approach
-  * [ ] Add seeding variation and multiple runs for local LLMs
-  * [ ] Add hashed inputs to the saved CSV for clarity
-  * [ ] Run API models against benchmarks
-* [ ] Initial Media Cloud integration and testing over NewsAPI
+* [x] Update benchmarks for a more robust approach
+  * [x] Add seeding variation and multiple runs for local LLMs
+  * [x] Add hashed inputs to the saved CSV for clarity
+* [x] Initial Media Cloud integration and testing over NewsAPI
+* [x] Refine benchmark questions, scoring, and plots
+* [x] Add pagination for LLM tool queries
+* [x] Move the Streamlit app into the demo folder
 
+
+---
+
+## Date: Week 8 - October 27, 2026 (as of October 30, 2026)
+- Topics of discussion
+  - News article relevance
+    - Using token probabilities to classify Media Cloud articles
+  - Initial gap analysis work
+    - Determining whether external data fills gaps in Montandon records
+    - Comparing answers with and without external data
+    - Using LLMs to judge utility by comparing responses
+
+- Action Items:
+
+* [x] Switch article relevance classification to token probabilities
+* [x] Build initial gap analysis utilities
+  * [x] Add question templates and LLM judging
+* [x] Update the proposal to reflect gap analysis work
 
 ---

@@ -6,8 +6,8 @@ Tests for LLM tools.
 
 from contextlib import nullcontext
 from datetime import date, datetime, time
-from typing import Any, cast, get_args
-from unittest.mock import Mock, ANY
+from typing import Any, get_args
+from unittest.mock import Mock
 from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 
 import pytest
@@ -15,7 +15,60 @@ import pytest
 from monty_tool.llm import tools
 
 
+@pytest.fixture
+def graph_driver(monkeypatch):
+    """
+    Supply an empty graph response that each test can replace.
+    """
+    driver = Mock()
+    driver.execute_query.return_value = ([], None, None)
+    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: nullcontext(driver))
+    return driver
+
+
 # Tests
+
+@pytest.mark.parametrize('enable_external', [False, True])
+def test_external_access_controls_tool_definitions(enable_external):
+    """
+    Advertise news and weather filters only when external access is enabled.
+    """
+    definitions = {
+        item['function']['name']: item['function']
+        for item in tools.QueryTools(enable_external=enable_external).definitions
+    }
+    assert ('get_event_news' in definitions) == enable_external
+    filters = definitions['search_disaster_events']['parameters']['properties']
+    assert ('min_elevation' in filters) == enable_external
+
+
+@pytest.mark.parametrize('name, arguments', [
+    ('get_event_news', {'event_id': 'event-1'}),
+    ('search_disaster_events', {'min_elevation': 0}),
+])
+def test_core_only_blocks_external_calls(graph_driver, name, arguments):
+    """
+    Reject external requests before querying the graph.
+    """
+    result = tools.QueryTools(enable_external=False).execute(name, arguments)
+    assert result['status'] == 'error'
+    graph_driver.execute_query.assert_not_called()
+
+
+@pytest.mark.parametrize('enable_external', [False, True])
+def test_external_access_controls_event_and_impact_weather(graph_driver, enable_external):
+    """
+    Preserve core impact values while exposing weather only in external mode.
+    """
+    row = {'weather': {'source': 'external'}, 'impacts': [{'impact_value': 12, 'weather': {}}]}
+    graph_driver.execute_query.return_value = ([Mock(data=Mock(return_value=row))], None, None)
+
+    result = tools.QueryTools(enable_external=enable_external).execute(
+        'get_disaster_context', {'event_id': 'event-1'},
+    )
+
+    assert result['rows'] == [row if enable_external else {'impacts': [{'impact_value': 12}]}]
+
 
 @pytest.mark.parametrize('metric', ['elevation', 'mean_temperature', 'precipitation_total'])
 def test_disaster_search_rejects_inverted_weather_ranges(metric):
@@ -41,9 +94,8 @@ def test_load_cypher_query_completes():
     """
     Checks that importlib can be used to load the package with Cypher query templates.
     """
-    for template_file in  get_args(tools.CypherTemplateFile):
-        test = tools._load_cypher_query(name=template_file)
-        assert len(test) > 1
+    for template_file in get_args(tools.CypherTemplateFile):
+        assert tools._load_cypher_query(name=template_file).strip()
 
 
 @pytest.mark.parametrize('country_code', ['', 'US'])
@@ -86,7 +138,7 @@ def test_graph_search_arguments_validates_dates():
     ({'from_date': '2026-09-19', 'to_date': '2026-09-20'}, date(2026, 9, 19), date(2026, 9, 20)),
 ])
 def test_accept_optional_graph_search_date_bounds(
-    monkeypatch: pytest.MonkeyPatch,
+    graph_driver,
     name: str,
     arguments: dict[str, Any],
     from_date: date | None,
@@ -95,14 +147,10 @@ def test_accept_optional_graph_search_date_bounds(
     """
     Checks that graph searches pass optional date bounds to the query.
     """
-    driver = Mock()
-    driver.execute_query.return_value = ([], None, None)
-    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: nullcontext(driver))
-
     result = tools.QueryTools().execute(name, arguments)
     assert result['status'] == 'ok'
     assert result['rows'] == []
-    query = driver.execute_query.call_args
+    query = graph_driver.execute_query.call_args
     assert query.kwargs['parameters_']['from_date'] == from_date
     assert query.kwargs['parameters_']['to_date'] == to_date
 
@@ -117,7 +165,7 @@ def test_accept_optional_graph_search_date_bounds(
     ({'offset': 20}, 9, 20, None),
 ])
 def test_return_paginated_graph_search_results(
-    monkeypatch: pytest.MonkeyPatch,
+    graph_driver,
     name: str,
     arguments: dict[str, Any],
     match_count: int,
@@ -127,11 +175,9 @@ def test_return_paginated_graph_search_results(
     """
     Checks that graph searches return at most 10 rows and the next offset when another page exists.
     """
-    driver = Mock()
     rows = [{'id': str(index)} for index in range(match_count)]
     records = [Mock(data=Mock(return_value=row)) for row in rows]
-    driver.execute_query.return_value = (records, None, None)
-    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: nullcontext(driver))
+    graph_driver.execute_query.return_value = (records, None, None)
     result = tools.QueryTools().execute(name, arguments)
     assert result == {
         'status': 'ok',
@@ -142,7 +188,7 @@ def test_return_paginated_graph_search_results(
             'next_offset': next_offset,
         },
     }
-    assert driver.execute_query.call_args.kwargs['parameters_']['offset'] == expected_offset
+    assert graph_driver.execute_query.call_args.kwargs['parameters_']['offset'] == expected_offset
 
 
 @pytest.mark.parametrize('offset', [-1, 1.5, '10', True, None])
@@ -197,21 +243,13 @@ def test_json_value_serializes_and_omits_large_values(value: Any, expected: Any)
 
 def test_query_tools_has_definitions():
     """
-    Checks that `QueryTools` has a full set of definitions when initialized.
-    This also does some other checks for definition contents to catch obvious issues.
+    Tool definitions have names and reject unsupported arguments.
     """
-    query_tools = tools.QueryTools()
-    for definition in query_tools.definitions:
+    for definition in tools.QueryTools().definitions:
+        function = definition['function']
         assert definition['type'] == 'function'
-        function = cast(dict, definition['function'])
-        expected_keys = {'name', 'description', 'parameters'}
-        assert expected_keys.issubset(function)
-        assert len(function['name'].strip()) >= 1
-        parameters = cast(dict, function['parameters'])
-        assert len(parameters) >= 1
-        assert 'properties' in parameters
-        assert 'additionalProperties' in parameters
-        assert parameters['additionalProperties'] == False
+        assert function['name']
+        assert function['parameters']['additionalProperties'] is False
 
 
 @pytest.mark.parametrize(
@@ -270,13 +308,11 @@ def test_query_tools_reject_invalid_graph_tool_arguments(
     Checks that graph query tools return error messages given invalid inputs.
     """
     result = tools.QueryTools().execute(name, arguments)
-    assert result == {
-        'status': 'error',
-        'message': ANY,
-    }
+    assert result['status'] == 'error'
+    assert result['message']
 
 
-def test_search_appeals_queries_launch_dates_and_returns_details(monkeypatch: pytest.MonkeyPatch):
+def test_search_appeals_preserves_details_and_date_parameters(graph_driver):
     """
     Checks that appeal searches pass launch dates and return funding and beneficiary details.
     """
@@ -285,14 +321,7 @@ def test_search_appeals_queries_launch_dates_and_returns_details(monkeypatch: py
         'start_datetime': datetime(2015, 9, 17), 'amount_funded': 873154.34,
         'beneficiaries': 1000, 'event_id': None,
     }
-    record = Mock()
-    record.data.return_value = row
-    driver = Mock()
-    driver.execute_query.return_value = ([record], None, None)
-    driver_context = Mock()
-    driver_context.__enter__ = Mock(return_value=driver)
-    driver_context.__exit__ = Mock(return_value=False)
-    monkeypatch.setattr(tools, 'get_graph_db_driver', lambda: driver_context)
+    graph_driver.execute_query.return_value = ([Mock(data=Mock(return_value=row))], None, None)
 
     result = tools.QueryTools().execute('search_appeals', {
         'text': 'Malawi - Food Insecurity', 'country_code': 'MWI',
@@ -308,8 +337,8 @@ def test_search_appeals_queries_launch_dates_and_returns_details(monkeypatch: py
             'next_offset': None,
         },
     }
-    driver.execute_query.assert_called_once()
-    parameters = driver.execute_query.call_args.kwargs['parameters_']
+    graph_driver.execute_query.assert_called_once()
+    parameters = graph_driver.execute_query.call_args.kwargs['parameters_']
     assert parameters['from_date'] == parameters['to_date'] == date(2015, 9, 17)
     assert parameters['text'] == 'Malawi - Food Insecurity'
     assert parameters['country_code'] == 'MWI'

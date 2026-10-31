@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from monty_tool.event_context import EventContext
 from monty_tool.llm.client import QueryAssistant
+from monty_tool.llm.classification import classify_labels
 from monty_tool.news.schemas import MediaCloudStory
 
 
@@ -120,50 +121,14 @@ def judge_story_relevance(
     """
     Select the relevance label with the highest next-token probability.
     """
-    import torch
-
     if not body_text.strip():
         return "uncertain"
-
-    messages = _story_inputs_to_messages(
-        event=event,
-        story=story,
-        body_text=body_text,
+    label = classify_labels(
+        assistant,
+        _story_inputs_to_messages(event, story, body_text),
+        tuple(_MATCH_LETTER_MAP),
     )
-
-    choices = tuple(_MATCH_LETTER_MAP)
-    choice_ids: list[int] = []
-    for choice in choices:
-        token_ids = assistant.tokenizer.encode(choice, add_special_tokens=False)
-        if len(token_ids) != 1:
-            raise ValueError(f"Choice {choice!r} must encode to exactly one token.")
-        choice_ids.append(token_ids[0])
-
-    inputs = assistant.tokenizer.apply_chat_template(
-        messages,
-        tokenize=True,
-        add_generation_prompt=True,
-        enable_thinking=False,
-        return_dict=True,
-        return_tensors="pt",
-    ).to(assistant.device)
-    prompt_length = inputs["input_ids"].shape[-1]
-
-    if prompt_length > assistant._CONTEXT_LIMIT:
-        raise ValueError(
-            "Conversation exceeds the context limit (32,768 tokens)."
-        )
-
-    with torch.inference_mode():
-        output = assistant.model(**inputs, logits_to_keep=1, use_cache=False)
-        choice_logits = output.logits[0, -1, choice_ids].float()
-        if not torch.isfinite(choice_logits).all().item():
-            raise ValueError("Model returned non-finite choice logits.")
-        # Normalize over the four labels, rather than the entire vocabulary.
-        choice_probabilities = choice_logits.softmax(dim=-1)
-        best_choice_index = int(choice_probabilities.argmax().item())
-
-    return _MATCH_LETTER_MAP[choices[best_choice_index]]
+    return _MATCH_LETTER_MAP[label]
 
 
 def make_qwen_event_judge(assistant: QueryAssistant) -> EventJudge:
