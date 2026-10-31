@@ -5,7 +5,7 @@ Tests for the network setup tool.
 import gzip
 from datetime import date
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 
 from botocore.exceptions import ClientError
 import pytest
@@ -99,6 +99,7 @@ def test_setup_loads_news_after_events(monkeypatch):
     monkeypatch.setattr(setup_network, "get_bucket", Mock(return_value=bucket))
     monkeypatch.setattr(setup_network, "_montandon_node_data_keys", Mock(return_value=["nodes.jsonl.gz"]))
     monkeypatch.setattr(setup_network, "_download_validated_weather", Mock())
+    monkeypatch.setattr(setup_network, "_download_validated_footprints", Mock(return_value=None))
     monkeypatch.setattr(setup_network, "_download_node_data", Mock(side_effect=[["event"], ["appeal"]]))
     monkeypatch.setattr(setup_network, "get_graph_db_driver", Mock(return_value=driver_context))
     monkeypatch.setattr(setup_network, "insert_go_records_into_graph_db", insert_events)
@@ -122,3 +123,13 @@ def test_setup_loads_news_after_events(monkeypatch):
     load_news.assert_called_once_with(
         bucket, bucket_name="test-bucket", driver=driver
     )
+
+
+def test_missing_footprints_rebuild_without_them(tmp_path):
+    """
+    Footprints are optional, unlike weather, so a missing file is not an error.
+    """
+    bucket = Mock()
+    bucket.download_file.side_effect = ClientError({'Error': {'Code': '404'}}, 'HeadObject')
+    with patch.object(setup_network, 'download_object', side_effect=bucket.download_file):
+        assert setup_network._download_validated_footprints(bucket, 'b', tmp_path) is None

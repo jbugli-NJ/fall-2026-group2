@@ -77,6 +77,14 @@ def initialize_db():
             """,
             database_='neo4j',
         )
+        driver.execute_query(
+            """
+            CREATE CONSTRAINT footprint_id_unique IF NOT EXISTS
+            FOR (node:Footprint)
+            REQUIRE node.id IS UNIQUE
+            """,
+            database_='neo4j',
+        )
 
 def initialize_vector_indexes():
     """

@@ -36,8 +36,10 @@ from monty_tool.network.schemas import (
     GOEventNodeData,
     MontandonItemNodeData,
 )
+from monty_tool.network.footprints import insert_footprints, validated_footprint_node_data
 from monty_tool.network.weather import insert_weather_properties, validated_weather_node_data
 from monty_tool.tools.resources import (
+    FOOTPRINT_NODE_DATA_BUCKET_KEY,
     GO_APPEAL_NODE_DATA_BUCKET_KEY,
     GO_EVENT_NODE_DATA_BUCKET_KEY,
     MONTANDON_NODE_DATA_BUCKET_PREFIX,
@@ -100,6 +102,42 @@ def _insert_weather_data(path: Path) -> None:
         for batch in batched(validated_weather_node_data(path), NETWORK_INSERT_BATCH_SIZE):
             count += insert_weather_properties(driver, list(batch))
     logger.info('Attached NASA POWER properties to %d Montandon nodes', count)
+
+
+def _download_validated_footprints(
+    bucket: S3Bucket,
+    bucket_name: str,
+    tmp_path: Path,
+    ) -> Path | None:
+    """
+    Download and validate footprint data, or None when none has been built.
+    """
+    path = tmp_path.joinpath('footprint.jsonl.gz')
+    uri = f's3://{bucket_name}/{FOOTPRINT_NODE_DATA_BUCKET_KEY}'
+    logger.info('Downloading %s', uri)
+    try:
+        download_object(bucket, FOOTPRINT_NODE_DATA_BUCKET_KEY, path)
+    except ClientError as error:
+        if error.response['Error']['Code'] in {'404', 'NoSuchKey', 'NotFound'}:
+            logger.warning('No footprint data at %s; rebuilding without footprints.', uri)
+            return None
+        raise
+    count = sum(1 for _ in validated_footprint_node_data(path))
+    logger.info('Validated %d footprint records', count)
+    return path
+
+
+def _insert_footprint_data(path: Path) -> None:
+    """
+    Link footprints to loaded events in batches.
+    """
+    linked = unmatched = 0
+    with get_graph_db_driver() as driver:
+        for batch in batched(validated_footprint_node_data(path), NETWORK_INSERT_BATCH_SIZE):
+            batch_linked, batch_unmatched = insert_footprints(driver, list(batch))
+            linked += batch_linked
+            unmatched += batch_unmatched
+    logger.info('Linked %d footprints to events; %d had no loaded event', linked, unmatched)
 
 
 def _montandon_node_data_keys(bucket: S3Bucket) -> list[str]:
@@ -191,6 +229,7 @@ def main():
     with TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         weather_path = _download_validated_weather(bucket, bucket_name, tmp_path)
+        footprint_path = _download_validated_footprints(bucket, bucket_name, tmp_path)
         clear_db()
         initialize_db()
         for key in montandon_keys:
@@ -201,6 +240,8 @@ def main():
                 tmp_path=tmp_path,
             )
         _insert_weather_data(weather_path)
+        if footprint_path is not None:
+            _insert_footprint_data(footprint_path)
         initialize_vector_indexes()
         create_montandon_deterministic_relationships()
         create_montandon_similarity_relationships()
