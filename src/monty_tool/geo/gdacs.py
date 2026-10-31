@@ -123,8 +123,9 @@ def get_event_items(
     """
     Every `gdacs-hazards` Item (one per episode) for a GDACS event.
 
-    GDACS event IDs are only unique within a hazard type, so in rare
-    cases this can return episodes of an unrelated event of another type.
+    GDACS event IDs are only guaranteed unique within a hazard type, so
+    this could return episodes of an unrelated event of another type; the
+    October 2026 coverage survey found no such shared IDs since 2024.
     """
     event_id = gdacs_event_id(event_id)
     if not event_id.isdigit():

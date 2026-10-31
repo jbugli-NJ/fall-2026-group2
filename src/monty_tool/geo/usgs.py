@@ -4,8 +4,9 @@ Earthquake shaking footprints from USGS ShakeMap.
 Quakes are looked up in Montandon, so a quake Montandon lacks gets no
 footprint and shows up as a gap rather than being filled in from USGS
 (in October 2026 Montandon held about 70% of the M5.5+ quakes in the
-USGS catalog). The ShakeMap itself is not in Montandon: its
-`usgs-hazards` Items carry a placeholder geometry. Every `usgs-events`
+USGS catalog). The ShakeMap itself is not in Montandon: the geometry of
+its `usgs-hazards` Items is just the rectangle around the map, with no
+shaking intensity, and is sometimes empty. Every `usgs-events`
 and `usgs-hazards` Item does link the USGS event it was built from as
 its `source` asset, though, and that event lists the ShakeMap files.
 

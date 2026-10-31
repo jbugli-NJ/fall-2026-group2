@@ -5,8 +5,10 @@ For CEMS, USGS ShakeMap, GDACS, PDC and IBTrACS, counts events since
 2024 by hazard type and records whether each comes with a detailed
 footprint, how big it is, and what fields are available for matching it
 to events from other sources (`monty:corr_id` only links within a
-source). Items are pulled once into data/geo_survey/ (gitignored) as
-slimmed-down records; pass --refresh to pull again.
+source). It ends with the gaps found in Montandon itself, which are
+recorded for the gap analysis rather than filled in from the sources.
+Items are pulled once into data/geo_survey/ (gitignored) as slimmed-down
+records; pass --refresh to pull again.
 
     uv run python demo/geo_footprints/coverage_survey.py
 """
@@ -44,6 +46,10 @@ USGS_CATALOG_URL = 'https://earthquake.usgs.gov/fdsnws/event/1/query'
 
 # ShakeMap contours are only published for larger quakes.
 MIN_MAGNITUDE = 5.5
+
+MAGNITUDE_FILTER = {
+    'op': '>=', 'args': [{'property': 'eq:magnitude'}, MIN_MAGNITUDE],
+}
 
 # Footprints wider than this are treated as regional rather than
 # event-shaped; roughly the size of a large metropolitan area.
@@ -96,7 +102,8 @@ def summarise_geometry(geometry: dict[str, Any] | None) -> dict[str, Any]:
 def _slim(item: dict[str, Any], geometry: bool) -> dict[str, Any]:
     """
     Keep what the survey needs from an Item: properties, asset keys and
-    hrefs, and a geometry summary instead of the geometry itself.
+    hrefs, link relations, and a geometry summary instead of the geometry
+    itself.
     """
     record = {
         'id': item['id'],
@@ -105,6 +112,9 @@ def _slim(item: dict[str, Any], geometry: bool) -> dict[str, Any]:
             key: asset.get('href')
             for key, asset in (item.get('assets') or {}).items()
         },
+        'link_rels': sorted({
+            link['rel'] for link in item.get('links') or [] if link.get('rel')
+        }),
     }
     if geometry:
         record['geometry'] = summarise_geometry(item.get('geometry'))
@@ -117,23 +127,26 @@ def pull(
     geometry: bool,
     refresh: bool,
     cql_filter: dict[str, Any] | None = None,
+    page_size: int = 1000,
     ) -> list[dict[str, Any]]:
     """
     Slimmed Items from a collection since START, cached as JSON Lines.
+    Filtered searches on some collections time out upstream at the
+    default page size, so `page_size` can be lowered for them.
     """
     path = CACHE_DIR / f'{name}.jsonl.gz'
     if path.exists() and not refresh:
         with gzip.open(path, 'rt', encoding='utf-8') as file:
             return [json.loads(line) for line in file]
     print(f'Pulling {collection} since {START}...', flush=True)
-    exclude = ['links'] if geometry else ['links', 'geometry']
+    exclude = [] if geometry else ['geometry']
     search = get_pystac_client().search(
         collections=[collection],
         datetime=f'{START}/..',
-        limit=1000,
+        limit=page_size,
         filter=cql_filter,
         filter_lang='cql2-json' if cql_filter else None,
-        fields={'exclude': exclude},
+        fields={'exclude': exclude} if exclude else None,
     )
     records = []
     for item in search.items_as_dicts():
@@ -308,8 +321,9 @@ def survey_cems(refresh: bool) -> tuple[str, list[Any]]:
 
 
 def survey_usgs(refresh: bool) -> tuple[str, list[Any]]:
-    magnitude = {'op': '>=', 'args': [{'property': 'eq:magnitude'}, MIN_MAGNITUDE]}
-    montandon = pull('usgs-events-m55', 'usgs-events', True, refresh, magnitude)
+    montandon = pull(
+        'usgs-events-m55', 'usgs-events', True, refresh, MAGNITUDE_FILTER,
+    )
     montandon_ids = {
         record['properties'].get('monty:src_event_id')
         or record['id'].removeprefix('usgs-event-')
@@ -455,6 +469,98 @@ def survey_ibtracs(refresh: bool) -> tuple[str, list[Any]]:
     return text, ['IBTrACS events', *matching_fields(storms)]
 
 
+def _unknown_country(record: dict[str, Any]) -> bool:
+    codes = record['properties'].get('monty:country_codes') or []
+    return not codes or set(codes) <= {'UNK'}
+
+
+def _gdacs_number(record: dict[str, Any]) -> str:
+    return record['id'].removeprefix('gdacs-hazard-').split('-')[0]
+
+
+def survey_gaps(refresh: bool) -> str:
+    """
+    Gaps in Montandon's own records that the footprint adapters run into.
+    Each is counted here so the gap analysis can report it; none is
+    filled in from the upstream source.
+    """
+    usgs_events = pull(
+        'usgs-events-m55', 'usgs-events', True, refresh, MAGNITUDE_FILTER,
+    )
+    usgs_hazards = pull(
+        'usgs-hazards-m55', 'usgs-hazards', True, refresh, MAGNITUDE_FILTER,
+        page_size=250,
+    )
+    gdacs = pull('gdacs-hazards', 'gdacs-hazards', True, refresh)
+    rows = []
+
+    # A ShakeMap Item's geometry is the rectangle around the map (five
+    # vertices), or an empty one at (0, 0), never the shaking itself.
+    shakemaps = [r for r in usgs_hazards if r['id'].endswith('-shakemap')]
+    boxes = [r for r in shakemaps if r['geometry']['vertices'] == 5]
+    empty = sum(not r['geometry']['size_km'] for r in boxes)
+    rows.append([
+        'ShakeMap geometry is only a bounding box', 'usgs-hazards',
+        len(boxes), len(shakemaps), _pct(len(boxes), len(shakemaps)),
+        f'No shaking intensity in Montandon ({empty} boxes empty); it is '
+        'only reachable through the source asset to USGS.',
+    ])
+
+    unknown_sources = [
+        ('usgs-events (M5.5+)', usgs_events),
+        ('gdacs-hazards', latest_per_event(gdacs, _src_event)),
+        ('cems-events', pull('cems-events', 'cems-events', True, refresh)),
+        ('ibtracs-events', latest_per_event(
+            pull('ibtracs-events', 'ibtracs-events', True, refresh), _src_event,
+        )),
+        ('pdc-hazards', latest_per_event(
+            pull('pdc-hazards', 'pdc-hazards', True, refresh), _src_event,
+        )),
+    ]
+    for name, records in unknown_sources:
+        unknown = sum(_unknown_country(r) for r in records)
+        rows.append([
+            'No country, or only UNK', name, unknown, len(records),
+            _pct(unknown, len(records)),
+            'Often offshore or multi-country; the event cannot be '
+            'filtered by country.',
+        ])
+
+    if all('link_rels' in r for r in gdacs):
+        unlinked = sum(
+            'via' not in r['link_rels'] and 'report' not in r['assets']
+            for r in gdacs
+        )
+        rows.append([
+            'No via link or report asset', 'gdacs-hazards', unlinked,
+            len(gdacs), _pct(unlinked, len(gdacs)),
+            'Footprint has no link back to GDACS.',
+        ])
+    else:
+        rows.append([
+            'No via link or report asset', 'gdacs-hazards', '-', len(gdacs),
+            '-', 'Cache predates link relations; run with --refresh.',
+        ])
+
+    clusters: dict[str, set[str]] = defaultdict(set)
+    for record in gdacs:
+        clusters[_gdacs_number(record)].add(hazard_cluster(record))
+    shared = sum(len(names) > 1 for names in clusters.values())
+    rows.append([
+        'Event number shared across hazard types', 'gdacs-hazards', shared,
+        len(clusters), _pct(shared, len(clusters)),
+        'Looking an event up by number can return an unrelated hazard.',
+    ])
+
+    return '\n\n'.join([
+        '## Montandon gaps',
+        'Gaps in Montandon\'s own records, recorded for the gap analysis '
+        'rather than filled in from the sources. Quakes missing from '
+        'Montandon altogether are counted in the USGS ShakeMap section.',
+        _table(['Gap', 'Collection', 'Affected', 'Of', 'Share', 'Effect'], rows),
+    ])
+
+
 # Main
 
 def main() -> None:
@@ -484,6 +590,8 @@ def main() -> None:
             matching,
         ),
     ]))
+    print('\n' + sections[-1])
+    sections.append(survey_gaps(args.refresh))
     print('\n' + sections[-1])
     report = f'# Footprint coverage survey (since {START[:10]})\n\n'
     REPORT_PATH.write_text(report + '\n\n'.join(sections) + '\n')
