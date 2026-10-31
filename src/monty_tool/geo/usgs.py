@@ -1,10 +1,13 @@
 """
 Earthquake shaking footprints from USGS ShakeMap.
 
-Fetched from USGS directly rather than through Montandon: the
-`usgs-hazards` ShakeMap Items carry a placeholder geometry, and in
-October 2026 Montandon held only about 70% of the M5.5+ quakes in the
-USGS catalog, every one of which had a ShakeMap.
+Quakes are looked up in Montandon, so a quake Montandon lacks gets no
+footprint and shows up as a gap rather than being filled in from USGS
+(in October 2026 Montandon held about 70% of the M5.5+ quakes in the
+USGS catalog). The ShakeMap itself is not in Montandon: its
+`usgs-hazards` Items carry a placeholder geometry. Every `usgs-events`
+and `usgs-hazards` Item does link the USGS event it was built from as
+its `source` asset, though, and that event lists the ShakeMap files.
 
 ShakeMap publishes intensity as a grid (CoverageJSON) and as contour
 lines. Contours that run off the grid edge do not close, so footprints
@@ -20,11 +23,18 @@ import requests
 from shapely import box, unary_union
 from shapely.geometry import mapping
 
+from pystac_client import Client
+
+from monty_tool.api_utils import get_pystac_client
 from monty_tool.geo.schemas import Footprint, extent_km
 
 SOURCE = 'USGS'
 
-EVENT_URL = 'https://earthquake.usgs.gov/fdsnws/event/1/query'
+# Montandon ID prefixes to the collection holding them.
+COLLECTIONS = {
+    'usgs-event-': 'usgs-events',
+    'usgs-hazard-': 'usgs-hazards',
+}
 
 # Medium resolution is about 2 km per cell, and about 200 KB for a M7;
 # low is coarse enough to show steps, high is four times the size.
@@ -55,15 +65,6 @@ MMI_BANDS: dict[int, tuple[str, str, str]] = {
 }
 
 
-def usgs_event_id(event_id: str) -> str:
-    """
-    The USGS event ID behind a USGS or Montandon ID, e.g.
-    'usgs-hazard-us6000u43g-shakemap' -> 'us6000u43g'.
-    """
-    event_id = event_id.removeprefix('usgs-event-').removeprefix('usgs-hazard-')
-    return event_id.removesuffix('-shakemap')
-
-
 def mmi_band(value: float) -> int:
     """
     The MMI band a grid value falls in, as USGS rounds it: 5.5 to 6.5 is VI.
@@ -71,15 +72,31 @@ def mmi_band(value: float) -> int:
     return min(10, max(1, math.floor(value + 0.5)))
 
 
-def get_event(event_id: str) -> dict[str, Any]:
+def get_item(item_id: str, client: Client | None = None) -> dict[str, Any] | None:
     """
-    A USGS event's GeoJSON detail, including its products.
+    A Montandon `usgs-events` or `usgs-hazards` Item, or None when
+    Montandon does not hold it.
     """
-    response = requests.get(
-        EVENT_URL,
-        params={'eventid': usgs_event_id(event_id), 'format': 'geojson'},
-        timeout=FETCH_TIMEOUT,
+    collection = next(
+        (name for prefix, name in COLLECTIONS.items() if item_id.startswith(prefix)),
+        None,
     )
+    if collection is None:
+        raise ValueError(f'Not a Montandon USGS item ID: {item_id!r}')
+    client = client or get_pystac_client()
+    search = client.search(collections=[collection], ids=[item_id])
+    return next(iter(search.items_as_dicts()), None)
+
+
+def get_source_event(item: dict[str, Any]) -> dict[str, Any]:
+    """
+    The USGS event GeoJSON, including its products, that a Montandon USGS
+    Item links as its `source` asset.
+    """
+    source = item.get('assets', {}).get('source')
+    if source is None:
+        raise ValueError(f"Montandon item {item['id']} has no source asset")
+    response = requests.get(source['href'], timeout=FETCH_TIMEOUT)
     response.raise_for_status()
     return response.json()
 
@@ -185,20 +202,37 @@ def load_geojson(footprint: Footprint, min_mmi: int = DEFAULT_MIN_MMI) -> Footpr
     })
 
 
-def get_shakemap_footprints(
-    event_id: str,
+def footprints_from_item(
+    item: dict[str, Any],
     *,
     download: bool = True,
     min_mmi: int = DEFAULT_MIN_MMI,
     ) -> list[Footprint]:
     """
-    The ShakeMap footprint of one quake, by USGS or Montandon ID, as a
-    list so it matches the other adapters; empty when USGS has no
-    ShakeMap for it.
+    The ShakeMap footprint of a Montandon USGS Item's quake, as a list so
+    it matches the other adapters; empty when USGS has no ShakeMap for it.
     """
-    footprint = footprint_from_event(get_event(event_id))
+    footprint = footprint_from_event(get_source_event(item))
     if footprint is None:
         return []
     if download:
         footprint = load_geojson(footprint, min_mmi=min_mmi)
     return [footprint]
+
+
+def get_shakemap_footprints(
+    item_id: str,
+    *,
+    download: bool = True,
+    min_mmi: int = DEFAULT_MIN_MMI,
+    client: Client | None = None,
+    ) -> list[Footprint]:
+    """
+    The ShakeMap footprint of one quake by Montandon ID, e.g.
+    'usgs-event-us6000u43g'; empty when Montandon does not hold the quake
+    or USGS has no ShakeMap for it.
+    """
+    item = get_item(item_id, client=client)
+    if item is None:
+        return []
+    return footprints_from_item(item, download=download, min_mmi=min_mmi)

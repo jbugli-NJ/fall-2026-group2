@@ -11,6 +11,8 @@ from monty_tool.geo import usgs
 
 GRID_URL = 'https://earthquake.usgs.gov/product/shakemap/us1/coverage_mmi_medium_res.covjson'
 
+SOURCE_URL = 'https://earthquake.usgs.gov/fdsnws/event/1/query?eventid=us1&format=geojson'
+
 
 def _coverage(values, columns=3, rows=3):
     """
@@ -47,14 +49,18 @@ def _shakemap(weight, version, grid=True):
     }
 
 
-@pytest.mark.parametrize('event_id', [
-    'us6000u43g', 'usgs-event-us6000u43g', 'usgs-hazard-us6000u43g-shakemap',
-])
-def test_usgs_event_id_strips_montandon_wrapping(event_id):
+def _item(item_id='usgs-event-us1', source=True):
+    assets = {'source': {'href': SOURCE_URL}} if source else {}
+    return {'id': item_id, 'assets': assets}
+
+
+def _client(items):
     """
-    Confirms Montandon event and hazard IDs map to the USGS event ID.
+    A STAC client whose searches return `items`.
     """
-    assert usgs.usgs_event_id(event_id) == 'us6000u43g'
+    client = Mock()
+    client.search.return_value.items_as_dicts.return_value = iter(items)
+    return client
 
 
 @pytest.mark.parametrize(('value', 'band'), [
@@ -121,9 +127,40 @@ def test_footprint_is_none_without_shakemap_grid(shakemaps):
     assert usgs.footprint_from_event(_event(shakemaps)) is None
 
 
-def test_get_shakemap_footprints_downloads_grid(monkeypatch):
+def test_get_item_searches_the_matching_collection():
     """
-    Confirms the event is looked up by USGS ID and its grid turned into bands.
+    Confirms event and hazard IDs are looked up in their own collection.
+    """
+    client = _client([_item('usgs-hazard-us1-shakemap')])
+
+    item = usgs.get_item('usgs-hazard-us1-shakemap', client=client)
+
+    assert item is not None
+    assert client.search.call_args.kwargs == {
+        'collections': ['usgs-hazards'], 'ids': ['usgs-hazard-us1-shakemap'],
+    }
+
+
+def test_get_item_rejects_non_montandon_ids():
+    """
+    Confirms a bare USGS ID is refused rather than fetched from USGS.
+    """
+    with pytest.raises(ValueError, match='Not a Montandon USGS item ID'):
+        usgs.get_item('us1', client=_client([]))
+
+
+def test_get_source_event_needs_source_asset():
+    """
+    Confirms an Item without a source asset raises rather than guessing.
+    """
+    with pytest.raises(ValueError, match='no source asset'):
+        usgs.get_source_event(_item(source=False))
+
+
+def test_get_shakemap_footprints_follows_source_asset(monkeypatch):
+    """
+    Confirms the USGS event is fetched from the Item's source asset and its
+    grid turned into bands.
     """
     get = Mock(side_effect=[
         Mock(json=Mock(return_value=_event([_shakemap(10, '1')]))),
@@ -131,11 +168,22 @@ def test_get_shakemap_footprints_downloads_grid(monkeypatch):
     ])
     monkeypatch.setattr(usgs.requests, 'get', get)
 
-    [footprint] = usgs.get_shakemap_footprints('usgs-event-us1')
+    [footprint] = usgs.get_shakemap_footprints('usgs-event-us1', client=_client([_item()]))
 
-    assert get.call_args_list[0].kwargs['params']['eventid'] == 'us1'
+    assert get.call_args_list[0].args == (SOURCE_URL,)
     assert footprint.feature_count == 1
     assert footprint.size_km == pytest.approx(3 * 110.57, abs=0.1)
+
+
+def test_get_shakemap_footprints_skips_quakes_missing_from_montandon(monkeypatch):
+    """
+    Confirms a quake Montandon lacks gives an empty list without asking USGS.
+    """
+    get = Mock()
+    monkeypatch.setattr(usgs.requests, 'get', get)
+
+    assert usgs.get_shakemap_footprints('usgs-event-us1', client=_client([])) == []
+    get.assert_not_called()
 
 
 def test_get_shakemap_footprints_without_shakemap(monkeypatch):
@@ -145,5 +193,5 @@ def test_get_shakemap_footprints_without_shakemap(monkeypatch):
     get = Mock(return_value=Mock(json=Mock(return_value=_event([]))))
     monkeypatch.setattr(usgs.requests, 'get', get)
 
-    assert usgs.get_shakemap_footprints('us1') == []
+    assert usgs.get_shakemap_footprints('usgs-event-us1', client=_client([_item()])) == []
     assert get.call_count == 1
