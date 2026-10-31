@@ -46,10 +46,6 @@ FETCH_TIMEOUT = 120
 # would mostly add a wide ring of weak or unfelt shaking.
 DEFAULT_MIN_MMI = 4
 
-# Hazard codes Montandon gives USGS earthquakes, so ShakeMap footprints
-# line up with Montandon records in the hazard crosswalk.
-HAZARD_CODES = ['GH0101', 'EQ', 'nat-geo-ear-gro']
-
 # Roman numeral, USGS shaking description and USGS colour per MMI band.
 MMI_BANDS: dict[int, tuple[str, str, str]] = {
     1: ('I', 'Not felt', '#ffffff'),
@@ -101,10 +97,15 @@ def get_source_event(item: dict[str, Any]) -> dict[str, Any]:
     return response.json()
 
 
-def footprint_from_event(event: dict[str, Any]) -> Footprint | None:
+def footprint_from_event(
+    event: dict[str, Any],
+    item: dict[str, Any],
+    ) -> Footprint | None:
     """
     The ShakeMap footprint of a USGS event, without downloading its grid,
-    or None when the event has no ShakeMap.
+    or None when the event has no ShakeMap. `item` is the Montandon Item
+    the event was reached from, which the footprint is filed under and
+    takes its hazard and country codes from.
     """
     shakemaps = event['properties'].get('products', {}).get('shakemap') or []
     if not shakemaps:
@@ -119,14 +120,15 @@ def footprint_from_event(event: dict[str, Any]) -> Footprint | None:
     version = shakemap['properties'].get('version', '?')
     return Footprint(
         source=SOURCE,
-        item_id=f"usgs-shakemap-{event['id']}-v{version}",
+        item_id=item['id'],
         event_ref=event['id'],
         area_name=properties.get('place'),
         layer='shaking_intensity',
         label=f'Shaking intensity (ShakeMap v{version}, {status})',
         detail='modelled',
         datetime=datetime.fromtimestamp(properties['time'] / 1000, tz=UTC),
-        hazard_codes=HAZARD_CODES,
+        hazard_codes=item['properties'].get('monty:hazard_codes') or [],
+        country_codes=item['properties'].get('monty:country_codes') or [],
         data_url=grid['url'],
         source_url=properties.get('url'),
         severity_property='mmi',
@@ -212,7 +214,7 @@ def footprints_from_item(
     The ShakeMap footprint of a Montandon USGS Item's quake, as a list so
     it matches the other adapters; empty when USGS has no ShakeMap for it.
     """
-    footprint = footprint_from_event(get_source_event(item))
+    footprint = footprint_from_event(get_source_event(item), item)
     if footprint is None:
         return []
     if download:

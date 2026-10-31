@@ -51,7 +51,14 @@ def _shakemap(weight, version, grid=True):
 
 def _item(item_id='usgs-event-us1', source=True):
     assets = {'source': {'href': SOURCE_URL}} if source else {}
-    return {'id': item_id, 'assets': assets}
+    return {
+        'id': item_id,
+        'properties': {
+            'monty:hazard_codes': ['GH0101', 'EQ'],
+            'monty:country_codes': ['JPN'],
+        },
+        'assets': assets,
+    }
 
 
 def _client(items):
@@ -109,11 +116,16 @@ def test_footprint_uses_preferred_shakemap():
     """
     Confirms the highest-weighted ShakeMap is used.
     """
-    footprint = usgs.footprint_from_event(_event([_shakemap(10, '2'), _shakemap(200, '5')]))
+    footprint = usgs.footprint_from_event(
+        _event([_shakemap(10, '2'), _shakemap(200, '5')]), _item(),
+    )
 
     assert footprint is not None
     assert footprint.data_url.endswith('v=5')
-    assert footprint.item_id == 'usgs-shakemap-us1-v5'
+    assert footprint.item_id == 'usgs-event-us1'
+    assert footprint.event_ref == 'us1'
+    assert footprint.hazard_codes == ['GH0101', 'EQ']
+    assert footprint.country_codes == ['JPN']
     assert footprint.label == 'Shaking intensity (ShakeMap v5, reviewed)'
     assert footprint.detail == 'modelled'
     assert footprint.datetime.year == 2025
@@ -124,7 +136,7 @@ def test_footprint_is_none_without_shakemap_grid(shakemaps):
     """
     Confirms events without a ShakeMap, or without its grid, give None.
     """
-    assert usgs.footprint_from_event(_event(shakemaps)) is None
+    assert usgs.footprint_from_event(_event(shakemaps), _item()) is None
 
 
 def test_get_item_searches_the_matching_collection():
