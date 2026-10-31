@@ -153,3 +153,21 @@
 
 
 ---
+
+## Date: Week 8 - October 27, 2026 (as of October 30, 2026)
+- Topics of discussion
+  - News article relevance
+    - Using token probabilities to classify Media Cloud articles
+  - Initial gap analysis work
+    - Determining whether external data fills gaps in Montandon records
+    - Comparing answers with and without external data
+    - Using LLMs to judge utility by comparing responses
+
+- Action Items:
+
+* [x] Switch article relevance classification to token probabilities
+* [x] Build initial gap analysis utilities
+  * [x] Add question templates and LLM judging
+* [x] Update the proposal to reflect gap analysis work
+
+---
