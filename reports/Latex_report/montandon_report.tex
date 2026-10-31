@@ -1,6 +1,7 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
 \usepackage[hidelinks]{hyperref}
+\usepackage{tabularx}
 
 \begin{document}
 
@@ -82,7 +83,99 @@ and check the resulting answers against the records returned.
 
 \section{Solution and Methodology}
 
-This section will describe data access, feature generation, graph construction, and the query setup.
+This section describes the data sources and will be expanded with feature generation,
+graph construction, and the query setup.
+
+
+\subsection{Data Sources}
+
+This project combines disaster records obtained through Montandon with
+selected external data sources. Montandon records were obtained through its
+API using a token issued through IFRC GO. Prepared datasets used to build
+the graph are stored in S3 and loaded into Neo4j. The table summarizes
+each source's coverage,  date range in our project files,
+licence or use terms, and graph mapping.
+
+\begin{table}[htbp]
+    \centering
+    \footnotesize
+    \begin{tabularx}{\textwidth}{@{}p{2.3cm}X p{2.4cm}p{2.5cm}X@{}}
+    \hline
+    Source (origin) & What it covers & Date range in project files &
+    Access / use terms &  How it enters the graph \\
+    \hline
+
+    EM-DAT (Montandon) &
+    Disaster events and reported impacts &
+    1900-01-01--2026-08-28 &
+    Montandon API token (issued through IFRC GO) &
+    \texttt{Event} and \texttt{Impact} nodes store the records;
+    \texttt{IMPACT\_OF} links impacts to events \\
+    \hline
+
+    GDACS (Montandon) &
+    Disaster alerts and event information &
+    2000-01-01--2026-09-11 &
+    Montandon API token (issued through IFRC GO); Free to use with acknowledgement of GDACS &
+    \texttt{Event} nodes store the records and link to country,
+    hazard, and date nodes \\
+    \hline
+
+    IFRC event collection (Montandon) &
+    Disaster-response events and impacts &
+    Events: 1970-01-01--2026-08-26;
+    impacts: 1997-11-10--2026-08-10 &
+    Montandon API token (issued through IFRC GO) &
+    \texttt{Event} and \texttt{Impact} nodes store the records;
+    \texttt{IMPACT\_OF} links impacts to events \\
+    \hline
+
+    IFRC GO (external) &
+    Emergency events and appeals &
+    Events: 1919-01-01--2026-09-11;
+    appeals: 1919-01-01--2026-09-02 &
+    Public IFRC GO API &
+    \texttt{GOEvent} and \texttt{GOAppeal} nodes;
+    \texttt{IN\_COUNTRY} and \texttt{FOR\_EVENT} relationships \\
+    \hline
+
+    NASA POWER (external) &
+    Daily temperature, precipitation, and wind data for locations
+    associated with Montandon records &
+    2021-09-15--2026-09-13 &
+    Free access; cite NASA POWER &
+    Daily records are matched by \texttt{item\_id} and summarized
+    as weather properties on \texttt{MontandonItem} nodes \\
+    \hline
+
+    Media Cloud (external) &
+    News article metadata, with article text retrieved separately
+    from publisher websites &
+    \textemdash &
+    Media Cloud account and API key &
+    \texttt{NewsArticle} nodes store article information and link
+    to \texttt{Event} nodes through \texttt{VERIFIED\_FOR} \\
+    \hline
+
+    Geospatial data (external) &
+    &
+    &
+    &
+    \\
+    \hline
+    \end{tabularx}
+    \end{table}
+
+    Source-access and citation information is documented by
+    \href{https://montandondata.org/get-started.html}{Montandon},
+    \href{https://doc.emdat.be/docs/data-accessibility/}{EM-DAT},
+    \href{https://www.gdacs.org/Documents/2025/GDACS_API_quickstart_v2.pdf}{GDACS},
+    \href{https://go.ifrc.org/terms-and-conditions}{IFRC GO},
+    \href{https://power.larc.nasa.gov/docs/referencing/}{NASA POWER},
+    \href{https://www.mediacloud.org/legal/media-cloud-terms-of-use}{Media Cloud}.
+
+
+
 
 \section{Results and Discussion}
 
