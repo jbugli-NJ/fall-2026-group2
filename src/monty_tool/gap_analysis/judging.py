@@ -12,7 +12,7 @@ from monty_tool.llm.classification import classify_labels
 from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 
 
-RUBRIC_VERSION = 'source-contribution-v3'
+RUBRIC_VERSION = 'source-contribution-v1'
 LABELS = {
     'A': Contribution.FILLS_FIELD,
     'B': Contribution.EXTENDS_COVERAGE,
