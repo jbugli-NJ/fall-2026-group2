@@ -114,7 +114,8 @@ def test_main_measures_each_source_against_shared_baseline(
     """
     set_seed = Mock()
     monkeypatch.setattr(run, 'set_seed', set_seed)
-    monkeypatch.setattr(run, 'select_contexts', Mock(return_value=[pair.core_context]))
+    select_contexts = Mock(return_value=[pair.core_context])
+    monkeypatch.setattr(run, 'select_contexts', select_contexts)
     monkeypatch.setattr(run, 'construct_gap_questions', Mock(return_value=[pair.question]))
     assistant = Mock()
     assistant.ask.return_value = pair.core.response
@@ -136,7 +137,9 @@ def test_main_measures_each_source_against_shared_baseline(
     ]
     set_seed.assert_called_once_with(run.SEED)
     require_external_data = not selection_flags
-    assert run.select_contexts.call_args.kwargs['require_external_data'] is require_external_data
+    select_contexts.assert_called_once_with(
+        run.GraphSearchArguments(), 1, require_external_data=require_external_data,
+    )
     batch = run.load_runs(tmp_path)[0]
     assert batch.metadata['seed'] == run.SEED
     assert batch.metadata['require_external_data'] is require_external_data

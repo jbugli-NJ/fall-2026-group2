@@ -4,6 +4,8 @@ Tests for the improvement chart.
 
 # Imports
 
+import numpy as np
+
 from monty_tool.gap_analysis.plotting import build_summary_plot
 
 
@@ -36,7 +38,7 @@ def test_chart_preserves_rates_and_separates_models():
     ]
     figure = build_summary_plot(summary)
     axes = figure.axes[0]
-    first, second = [points.get_offsets() for points in axes.collections]
+    first, second = [np.asarray(points.get_offsets()) for points in axes.collections]
     assert list(first[:, 0]) == [0.6]
     assert list(second[:, 0]) == [0.6, 0.0]
     assert first[0, 1] > second[0, 1]
