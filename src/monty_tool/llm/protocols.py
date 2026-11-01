@@ -18,7 +18,12 @@ class QueryAssistantProtocol(Protocol):
     max_tool_calls: int
 
     def ask(
-        self, question: str, *, use_tools: bool = True, enable_external: bool = True,
+        self,
+        question: str,
+        *,
+        use_tools: bool = True,
+        enable_news: bool = True,
+        enable_weather: bool = True,
     ) -> QueryAssistantResponse:
         """
         Answer a question and return the tool results.

@@ -28,37 +28,48 @@ def graph_driver(monkeypatch):
 
 # Tests
 
-@pytest.mark.parametrize('enable_external', [False, True])
-def test_external_access_controls_tool_definitions(enable_external):
+@pytest.mark.parametrize('enable_news', [False, True])
+@pytest.mark.parametrize('enable_weather', [False, True])
+def test_source_flags_control_tool_definitions(enable_news, enable_weather):
     """
-    Advertise news and weather filters only when external access is enabled.
+    Expose tools and search filters only for enabled sources.
     """
     definitions = {
         item['function']['name']: item['function']
-        for item in tools.QueryTools(enable_external=enable_external).definitions
+        for item in tools.QueryTools(
+            enable_news=enable_news, enable_weather=enable_weather,
+        ).definitions
     }
-    assert ('get_event_news' in definitions) == enable_external
+    assert ('get_event_news' in definitions) == enable_news
     filters = definitions['search_disaster_events']['parameters']['properties']
-    assert ('min_elevation' in filters) == enable_external
+    assert ('min_elevation' in filters) == enable_weather
 
 
+@pytest.mark.parametrize('enable_news', [False, True])
+@pytest.mark.parametrize('enable_weather', [False, True])
 @pytest.mark.parametrize('name, arguments', [
     ('get_event_news', {'event_id': 'event-1'}),
     ('search_disaster_events', {'min_elevation': 0}),
 ])
-def test_core_only_blocks_external_calls(graph_driver, name, arguments):
+def test_source_flags_control_tool_execution(
+    graph_driver, enable_news, enable_weather, name, arguments,
+):
     """
-    Reject external requests before querying the graph.
+    Reject calls for disabled sources before querying the graph.
     """
-    result = tools.QueryTools(enable_external=False).execute(name, arguments)
-    assert result['status'] == 'error'
-    graph_driver.execute_query.assert_not_called()
+    result = tools.QueryTools(
+        enable_news=enable_news, enable_weather=enable_weather,
+    ).execute(name, arguments)
+    allowed = enable_news if name == 'get_event_news' else enable_weather
+    assert result['status'] == ('ok' if allowed else 'error')
+    assert graph_driver.execute_query.called == allowed
 
 
-@pytest.mark.parametrize('enable_external', [False, True])
-def test_external_access_controls_event_and_impact_weather(graph_driver, enable_external):
+@pytest.mark.parametrize('enable_news', [False, True])
+@pytest.mark.parametrize('enable_weather', [False, True])
+def test_source_flags_control_weather_results(graph_driver, enable_news, enable_weather):
     """
-    Preserve core impact values while exposing weather only in external mode.
+    Omit weather fields when disabled and preserve other event data.
     """
     row = {
         'weather': {'source': 'external'},

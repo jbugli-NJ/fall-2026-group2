@@ -27,7 +27,7 @@ from monty_tool.utils.versions import FrozenModel
 DEFAULT_BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 
 
-def _system_prompt(use_tools: bool, enable_external: bool) -> str:
+def _system_prompt(use_tools: bool, enable_news: bool, enable_weather: bool) -> str:
     """
     Describe the evidence available for the current question.
     """
@@ -42,10 +42,10 @@ def _system_prompt(use_tools: bool, enable_external: bool) -> str:
         "IFRC events and appeals. Base factual statements on tool results and identify "
         "information that remains unavailable. Answer in the user's language. "
         + (
-            "get_disaster_context includes stored weather and USGS ShakeMap footprints under "
-            "external_footprints. Use get_event_news for relevant "
-            "stored articles. Distinguish Montandon records from external evidence."
-            if enable_external else "The available tools expose Montandon records and impacts."
+            "The available tools expose Montandon records and impacts. "
+            + ("get_disaster_context includes stored weather. " if enable_weather else "")
+            + ("Use get_event_news for relevant stored articles. " if enable_news else "")
+            + "Distinguish Montandon records from external evidence."
         )
     )
 
@@ -135,15 +135,21 @@ class QueryAssistant:
         )
 
     def ask(
-        self, question: str, *, use_tools: bool = True, enable_external: bool = True,
+        self,
+        question: str,
+        *,
+        use_tools: bool = True,
+        enable_news: bool = True,
+        enable_weather: bool = True,
     ) -> QueryAssistantResponse:
         """
         Answer one question with optional access to graph query tools.
         """
         tools = QueryTools(
-            max_tool_calls=self.max_tool_calls, enable_external=enable_external,
+            max_tool_calls=self.max_tool_calls,
+            enable_news=enable_news, enable_weather=enable_weather,
         )
-        system_prompt = _system_prompt(use_tools, enable_external)
+        system_prompt = _system_prompt(use_tools, enable_news, enable_weather)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question},
@@ -279,15 +285,17 @@ class BedrockQueryAssistant:
         return self.client.converse(**request)
 
     def ask(
-        self, question: str, *, use_tools: bool = True, enable_external: bool = True,
+        self, question: str, *, use_tools: bool = True,
+        enable_news: bool = True, enable_weather: bool = True,
     ) -> QueryAssistantResponse:
         """
         Answer one question with optional tool access.
         """
         tools = QueryTools(
-            max_tool_calls=self.max_tool_calls, enable_external=enable_external,
+            max_tool_calls=self.max_tool_calls,
+            enable_news=enable_news, enable_weather=enable_weather,
         )
-        system_prompt = _system_prompt(use_tools, enable_external)
+        system_prompt = _system_prompt(use_tools, enable_news, enable_weather)
         system: list[SystemContentBlock] = [{'text': system_prompt}]
         messages: list[ConverseMessage] = [
             {'role': 'user', 'content': [{'text': question}]},

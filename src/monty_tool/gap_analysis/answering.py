@@ -10,6 +10,7 @@ from typing import Any, LiteralString, cast
 
 from neo4j import RoutingControl
 
+from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES, ExternalSourceName
 from monty_tool.gap_analysis.schemas import AnswerAttempt, GapQuestion, QuestionTemplate
 from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
@@ -88,18 +89,22 @@ def answer_question(
     assistant: QueryAssistantProtocol,
     question: GapQuestion,
     *,
-    enable_external: bool,
+    external_source: ExternalSourceName | None,
 ) -> AnswerAttempt:
     """
-    Answer a gap analysis question with external data enabled or disabled.
+    Answer a question using the selected data sources.
     Return the answer, elapsed time, and any retrieval or model error.
+    Use external_source=None to restrict the answer to Montandon records.
     """
+    if external_source is not None and external_source not in EXTERNAL_SOURCES:
+        raise ValueError(f'Unknown external source: {external_source}')
     started = perf_counter()
     try:
         response = assistant.ask(
             question.question,
             use_tools=True,
-            enable_external=enable_external,
+            enable_news=external_source == 'news',
+            enable_weather=external_source == 'weather',
         )
         attempt = AnswerAttempt(
             response=response,

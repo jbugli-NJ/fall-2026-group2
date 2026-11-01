@@ -39,6 +39,7 @@ def test_bedrock_judge_reads_label_and_rejects_incomplete_response(pair):
     """
     Verify Bedrock labels are parsed and incomplete responses raise an error.
     """
+    pair.external_source = 'weather'
     assistant = Mock()
     response = {
         'stopReason': 'end_turn',
@@ -49,9 +50,10 @@ def test_bedrock_judge_reads_label_and_rejects_incomplete_response(pair):
     assert judge.judge(pair) == Contribution.QUALIFIES
     request = assistant.client.converse.call_args.kwargs
     assert request['system'] == [{'text': judging.RUBRIC}]
-    assert json.loads(request['messages'][0]['content'][0]['text'])['core_context'] == {
-        'event_id': 'e',
-    }
+    payload = json.loads(request['messages'][0]['content'][0]['text'])
+    assert payload['core_context'] == {'event_id': 'e'}
+    assert payload['external_source'] == 'weather'
+    assert payload['external_source_evidence'] == 'Weather fields in graph query results.'
     response['stopReason'] = 'max_tokens'
     with pytest.raises(ValueError):
         judge.judge(pair)

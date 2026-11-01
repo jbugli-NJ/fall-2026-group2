@@ -16,6 +16,7 @@ from monty_tool.gap_analysis.answering import (
     make_answerer,
     select_contexts,
 )
+from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES, ExternalSourceName
 from monty_tool.gap_analysis.judging import (
     RUBRIC, RUBRIC_VERSION, BedrockContributionJudge, LocalContributionJudge,
 )
@@ -23,6 +24,7 @@ from monty_tool.gap_analysis.protocols import ContributionJudge
 from monty_tool.gap_analysis.plotting import build_summary_plot
 from monty_tool.gap_analysis.schemas import (
     AnalysisRun,
+    AnswerAttempt,
     Contribution,
     GapQuestion,
     PairedResult,
@@ -39,16 +41,23 @@ def run_pair(
     core_context: dict[str, Any],
     assistant: QueryAssistantProtocol,
     judge: ContributionJudge,
+    *,
+    external_source: ExternalSourceName,
+    core: AnswerAttempt | None = None,
 ) -> PairedResult:
     """
-    Answer a question with and without external data, then judge the external
-    contribution.
+    Answer with and without an external source, then judge what it adds.
     """
     pair = PairedResult(
+        external_source=external_source,
         question=question,
         core_context=core_context,
-        core=answer_question(assistant, question, enable_external=False),
-        external=answer_question(assistant, question, enable_external=True),
+        core=core if core is not None else answer_question(
+            assistant, question, external_source=None,
+        ),
+        external=answer_question(
+            assistant, question, external_source=external_source,
+        ),
     )
     if pair.core.error is None and pair.external.error is None:
         try:
@@ -60,15 +69,19 @@ def run_pair(
 
 def summarize(results: list[PairedResult]) -> dict[str, Any]:
     """
-    Count categories and answer, tool, and judge failures for each question template.
+    Count categories and failures for each question template and source.
     """
     summary = {}
-    for template_id in sorted({pair.question.template_id for pair in results}):
-        pairs = [pair for pair in results if pair.question.template_id == template_id]
+    groups = sorted({(pair.question.template_id, pair.external_source) for pair in results})
+    for template_id, source in groups:
+        pairs = [
+            pair for pair in results
+            if pair.question.template_id == template_id and pair.external_source == source
+        ]
         counts = Counter(
             pair.contribution.value for pair in pairs if pair.contribution is not None
         )
-        summary[template_id] = {
+        summary[f'{template_id} / {source}'] = {
             'attempted': len(pairs),
             'evaluated': sum(counts.values()),
             'answer_failures': sum(
@@ -210,7 +223,8 @@ def main(argv: list[str] | None = None) -> int:
         'rubric_version': RUBRIC_VERSION,
         'rubric': RUBRIC,
         'total_questions': len(questions),
-        'external_sources': ['stored_news', 'stored_weather'],
+        'external_sources': list(EXTERNAL_SOURCES),
+        'comparisons': [f'core_vs_{name}' for name in EXTERNAL_SOURCES],
         'retrieval_policy': (
             'require_successful_query_per_answer; report_recovered_tool_failures'
         ),
@@ -218,13 +232,19 @@ def main(argv: list[str] | None = None) -> int:
     current_run = AnalysisRun(metadata=metadata)
     runs.append(current_run)
     save_results(output_dir, runs)
-    for question, context in questions:
+    for index, (question, context) in enumerate(questions, 1):
         print(
-            f'{len(current_run.results) + 1}/{len(questions)}: '
+            f'{index}/{len(questions)}: '
             f'{question.event_id} / {question.template_id}'
         )
-        current_run.results.append(run_pair(question, context, assistant, judge))
-        save_results(output_dir, runs)
+        core = answer_question(
+            assistant, question, external_source=None,
+        )
+        for external_source in EXTERNAL_SOURCES:
+            current_run.results.append(run_pair(
+                question, context, assistant, judge, external_source=external_source, core=core,
+            ))
+            save_results(output_dir, runs)
     print(f'Results: {output_dir}')
     return int(any(pair.contribution is None for pair in current_run.results))
 
