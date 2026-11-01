@@ -194,6 +194,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--from-date')
     parser.add_argument('--to-date')
     parser.add_argument('--event-limit', type=_positive_int, default=1)
+    parser.add_argument(
+        '--require-external-data',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help='Filters events to require stored external data (default: enabled).',
+    )
     parser.add_argument('--max-tool-calls', type=_positive_int, default=10)
     parser.add_argument(
         '--output-dir',
@@ -226,7 +232,9 @@ def main(argv: list[str] | None = None) -> int:
     filters = GraphSearchArguments(
         country_code=args.country_code, from_date=args.from_date, to_date=args.to_date,
     )
-    contexts = select_contexts(filters, args.event_limit)
+    contexts = select_contexts(
+        filters, args.event_limit, require_external_data=args.require_external_data,
+    )
     if not contexts:
         parser.error('No disaster events matched the selection.')
     questions = [
@@ -262,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
         'max_tool_calls': args.max_tool_calls,
         'selection': filters.model_dump(mode='json'),
         'event_limit': args.event_limit,
+        'require_external_data': args.require_external_data,
         'event_ids': [context['event_id'] for context in contexts],
         'templates': [template.model_dump() for template in TEMPLATES],
         'rubric_version': RUBRIC_VERSION,
