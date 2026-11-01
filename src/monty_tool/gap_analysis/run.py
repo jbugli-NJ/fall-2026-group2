@@ -195,6 +195,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--to-date')
     parser.add_argument('--event-limit', type=_positive_int, default=1)
     parser.add_argument(
+        '--external-sources',
+        nargs='+',
+        choices=tuple(EXTERNAL_SOURCES),
+        default=list(EXTERNAL_SOURCES),
+        help='Sources to compare separately against Montandon (default: all).',
+    )
+    parser.add_argument(
         '--require-external-data',
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -226,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
+    external_sources = list(dict.fromkeys(args.external_sources))
     started = datetime.now(timezone.utc)
     output_dir = args.output_dir
     runs = load_runs(output_dir)
@@ -233,7 +241,10 @@ def main(argv: list[str] | None = None) -> int:
         country_code=args.country_code, from_date=args.from_date, to_date=args.to_date,
     )
     contexts = select_contexts(
-        filters, args.event_limit, require_external_data=args.require_external_data,
+        filters,
+        args.event_limit,
+        require_external_data=args.require_external_data,
+        external_sources=external_sources,
     )
     if not contexts:
         parser.error('No disaster events matched the selection.')
@@ -276,8 +287,8 @@ def main(argv: list[str] | None = None) -> int:
         'rubric_version': RUBRIC_VERSION,
         'rubric': RUBRIC,
         'total_questions': len(questions),
-        'external_sources': list(EXTERNAL_SOURCES),
-        'comparisons': [f'core_vs_{name}' for name in EXTERNAL_SOURCES],
+        'external_sources': external_sources,
+        'comparisons': [f'core_vs_{name}' for name in external_sources],
         'retrieval_policy': (
             'require_successful_query_per_answer; report_recovered_tool_failures'
         ),
@@ -295,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
             question,
             external_source=None,
         )
-        for external_source in EXTERNAL_SOURCES:
+        for external_source in external_sources:
             current_run.results.append(run_pair(
                 question=question,
                 core_context=context,

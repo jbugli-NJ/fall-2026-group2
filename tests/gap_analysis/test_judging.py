@@ -35,11 +35,23 @@ def test_local_judge_uses_label_classifier(monkeypatch, pair):
     assert classify.call_args.args[2] == tuple('ABCDEFG')
 
 
-def test_bedrock_judge_reads_label_and_rejects_incomplete_response(pair):
+@pytest.mark.parametrize('source, evidence', [
+    ('weather', 'Weather fields in graph query results.'),
+    (
+        'shakemap_footprints',
+        'USGS ShakeMap footprints in external_footprints in graph query results. '
+        'The footprints field contains Montandon evidence and remains core evidence.',
+    ),
+])
+def test_bedrock_judge_reads_label_and_rejects_incomplete_response(
+    pair,
+    source,
+    evidence,
+):
     """
     Verify Bedrock labels are parsed and incomplete responses raise an error.
     """
-    pair.external_source = 'weather'
+    pair.external_source = source
     assistant = Mock()
     response = {
         'stopReason': 'end_turn',
@@ -52,8 +64,8 @@ def test_bedrock_judge_reads_label_and_rejects_incomplete_response(pair):
     assert request['system'] == [{'text': judging.RUBRIC}]
     payload = json.loads(request['messages'][0]['content'][0]['text'])
     assert payload['core_context'] == {'event_id': 'e'}
-    assert payload['external_source'] == 'weather'
-    assert payload['external_source_evidence'] == 'Weather fields in graph query results.'
+    assert payload['external_source'] == source
+    assert payload['external_source_evidence'] == evidence
     response['stopReason'] = 'max_tokens'
     with pytest.raises(ValueError):
         judge.judge(pair)

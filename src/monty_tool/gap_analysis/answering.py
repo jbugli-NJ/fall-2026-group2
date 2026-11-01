@@ -50,10 +50,11 @@ def select_contexts(
     limit: int,
     *,
     require_external_data: bool = True,
+    external_sources: list[ExternalSourceName] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Fetch the newest matching event records and their impacts, up to the supplied limit.
-    By default, require stored weather and verified articles for each event.
+    By default, require stored evidence for every selected external source.
     """
     if limit < 1:
         raise ValueError('Event limit must be positive.')
@@ -68,6 +69,9 @@ def select_contexts(
                 **filters.model_dump(),
                 'limit': limit,
                 'require_external_data': require_external_data,
+                'external_sources': (
+                    list(EXTERNAL_SOURCES) if external_sources is None else external_sources
+                ),
             },
             database_='neo4j',
             routing_=RoutingControl.READ,
@@ -115,7 +119,7 @@ def answer_question(
             use_tools=True,
             enable_news=external_source == 'news',
             enable_weather=external_source == 'weather',
-            enable_external_footprints=False,
+            enable_external_footprints=external_source == 'shakemap_footprints',
         )
         attempt = AnswerAttempt(
             response=response,
