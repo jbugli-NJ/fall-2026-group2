@@ -115,6 +115,7 @@ def answer_question(
             use_tools=True,
             enable_news=external_source == 'news',
             enable_weather=external_source == 'weather',
+            enable_external_footprints=False,
         )
         attempt = AnswerAttempt(
             response=response,
