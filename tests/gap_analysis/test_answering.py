@@ -24,7 +24,7 @@ def test_answer_requires_successful_retrieval(pair, statuses, failed):
         'answer': 'Answer',
         'tool_results': [{'result': {'status': status}} for status in statuses],
     }
-    result = answering.answer_question(assistant, pair.question, enable_external=False)
+    result = answering.answer_question(assistant, pair.question, external_source=None)
     assert (result.error is not None) == failed
     assert result.response == assistant.ask.return_value
 
@@ -35,7 +35,7 @@ def test_model_error_is_saved(pair):
     """
     assistant = Mock()
     assistant.ask.side_effect = ValueError('Model failed')
-    result = answering.answer_question(assistant, pair.question, enable_external=False)
+    result = answering.answer_question(assistant, pair.question, external_source=None)
     assert result.error == 'Model failed'
 
 
