@@ -4,6 +4,15 @@ WHERE ($country_code IS NULL OR EXISTS {
       })
   AND ($from_date IS NULL OR date(event.start_datetime) >= $from_date)
   AND ($to_date IS NULL OR date(event.start_datetime) <= $to_date)
+  AND (NOT $require_external_data OR (
+        (event.weather_source IS NOT NULL OR EXISTS {
+          MATCH (impact:Impact)-[:IMPACT_OF]->(event)
+          WHERE impact.weather_source IS NOT NULL
+        })
+        AND EXISTS {
+          MATCH (:NewsArticle)-[:VERIFIED_FOR]->(event)
+        }
+      ))
 WITH event
 ORDER BY event.start_datetime DESC, event.id ASC
 SKIP $offset

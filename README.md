@@ -225,6 +225,9 @@ Choose local models or `bedrock` independently for answering and judging.
 Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
 `--event-limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
 
+By default, events must have stored external data to be included.
+Use `--no-require-external-data` to disable that filter.
+
 Outputs accumulate under `benchmarks/gap_analysis/`:
 
 - `results.json`: each invocation's settings, answers, evidence, and combined counts by external source.

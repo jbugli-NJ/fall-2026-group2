@@ -39,15 +39,22 @@ def test_model_error_is_saved(pair):
     assert result.error == 'Model failed'
 
 
-def test_event_selection_uses_one_graph_query(monkeypatch):
+@pytest.mark.parametrize('require_external_data', [True, False])
+def test_event_selection_uses_one_graph_query(monkeypatch, require_external_data):
     """
-    Verify event selection makes one graph query with the requested limit.
+    Pass the event limit and external data requirement to the selection query.
     """
     driver = Mock()
     driver.execute_query.return_value = (
         [Mock(data=lambda: {'event_id': 'e'})], None, None,
     )
     monkeypatch.setattr(answering, 'get_graph_db_driver', lambda: nullcontext(driver))
-    assert answering.select_contexts(GraphSearchArguments(), 2) == [{'event_id': 'e'}]
+    assert answering.select_contexts(
+        GraphSearchArguments(), 2, require_external_data=require_external_data,
+    ) == [{'event_id': 'e'}]
     driver.execute_query.assert_called_once()
     assert driver.execute_query.call_args.kwargs['parameters_']['limit'] == 2
+    assert (
+        driver.execute_query.call_args.kwargs['parameters_']['require_external_data']
+        is require_external_data
+    )

@@ -45,9 +45,15 @@ def make_answerer(model: str) -> AnyQueryAssistant:
     )
 
 
-def select_contexts(filters: GraphSearchArguments, limit: int) -> list[dict[str, Any]]:
+def select_contexts(
+    filters: GraphSearchArguments,
+    limit: int,
+    *,
+    require_external_data: bool = True,
+) -> list[dict[str, Any]]:
     """
     Fetch the newest matching event records and their impacts, up to the supplied limit.
+    By default, require stored weather and verified articles for each event.
     """
     if limit < 1:
         raise ValueError('Event limit must be positive.')
@@ -58,7 +64,11 @@ def select_contexts(filters: GraphSearchArguments, limit: int) -> list[dict[str,
     with get_graph_db_driver() as driver:
         records, _, _ = driver.execute_query(
             query,
-            parameters_={**filters.model_dump(), 'limit': limit},
+            parameters_={
+                **filters.model_dump(),
+                'limit': limit,
+                'require_external_data': require_external_data,
+            },
             database_='neo4j',
             routing_=RoutingControl.READ,
         )

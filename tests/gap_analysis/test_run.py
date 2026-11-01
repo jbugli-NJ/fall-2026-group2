@@ -105,7 +105,10 @@ def test_saved_runs_accumulate_without_overwriting(tmp_path, pair):
     assert tmp_path.joinpath('summary.svg').is_file()
 
 
-def test_main_measures_each_source_against_shared_baseline(monkeypatch, tmp_path, pair):
+@pytest.mark.parametrize('selection_flags', [[], ['--no-require-external-data']])
+def test_main_measures_each_source_against_shared_baseline(
+    monkeypatch, tmp_path, pair, selection_flags,
+):
     """
     Save a separate judgment for each external source.
     """
@@ -123,6 +126,7 @@ def test_main_measures_each_source_against_shared_baseline(monkeypatch, tmp_path
     assert run.main([
         '--answer-model', run.MODEL_CHOICES[0], '--judge-model', run.MODEL_CHOICES[0],
         '--output-dir', str(tmp_path),
+        *selection_flags,
     ]) == 0
 
     assert [call.kwargs for call in assistant.ask.call_args_list] == [
@@ -131,8 +135,11 @@ def test_main_measures_each_source_against_shared_baseline(monkeypatch, tmp_path
         {'use_tools': True, 'enable_news': False, 'enable_weather': True},
     ]
     set_seed.assert_called_once_with(run.SEED)
+    require_external_data = not selection_flags
+    assert run.select_contexts.call_args.kwargs['require_external_data'] is require_external_data
     batch = run.load_runs(tmp_path)[0]
     assert batch.metadata['seed'] == run.SEED
+    assert batch.metadata['require_external_data'] is require_external_data
     results = batch.results
     assert [(result.external_source, result.contribution) for result in results] == [
         ('news', run.Contribution.QUALIFIES), ('weather', run.Contribution.UNRESOLVED),
