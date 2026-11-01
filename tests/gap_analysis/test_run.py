@@ -78,6 +78,8 @@ def test_main_measures_each_source_against_shared_baseline(monkeypatch, tmp_path
     """
     Save a separate judgment for each external source.
     """
+    set_seed = Mock()
+    monkeypatch.setattr(run, 'set_seed', set_seed)
     monkeypatch.setattr(run, 'select_contexts', Mock(return_value=[pair.core_context]))
     monkeypatch.setattr(run, 'construct_gap_questions', Mock(return_value=[pair.question]))
     assistant = Mock()
@@ -97,7 +99,10 @@ def test_main_measures_each_source_against_shared_baseline(monkeypatch, tmp_path
         {'use_tools': True, 'enable_news': True, 'enable_weather': False},
         {'use_tools': True, 'enable_news': False, 'enable_weather': True},
     ]
-    results = run.load_runs(tmp_path)[0].results
+    set_seed.assert_called_once_with(run.SEED)
+    batch = run.load_runs(tmp_path)[0]
+    assert batch.metadata['seed'] == run.SEED
+    results = batch.results
     assert [(result.external_source, result.contribution) for result in results] == [
         ('news', run.Contribution.QUALIFIES), ('weather', run.Contribution.UNRESOLVED),
     ]

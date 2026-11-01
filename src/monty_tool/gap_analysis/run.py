@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from transformers import set_seed
+
 from monty_tool.gap_analysis.answering import (
     MODEL_CHOICES,
     answer_question,
@@ -33,7 +35,7 @@ from monty_tool.gap_analysis.templates import TEMPLATES
 from monty_tool.llm.client import DEFAULT_BEDROCK_MODEL_ID, BedrockQueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
 from monty_tool.llm.tools import GraphSearchArguments
-from monty_tool.utils.versions import FrozenModel
+from monty_tool.utils.versions import SEED, FrozenModel
 
 
 def run_pair(
@@ -194,6 +196,9 @@ def main(argv: list[str] | None = None) -> int:
         for context in contexts
         for question in construct_gap_questions(context, TEMPLATES)
     ]
+    seed = SEED if args.answer_model != 'bedrock' or args.judge_model != 'bedrock' else None
+    if seed is not None:
+        set_seed(seed)
     assistant = make_answerer(args.answer_model)
     assistant.max_tool_calls = args.max_tool_calls
     judge_assistant = (
@@ -208,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     metadata = {
         'started_at': started.isoformat(),
+        'seed': seed,
         'answer_model': _model_metadata(args.answer_model),
         'judge_model': _model_metadata(args.judge_model),
         'judge_method': (
