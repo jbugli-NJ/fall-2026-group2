@@ -106,8 +106,19 @@ def test_saved_runs_accumulate_without_overwriting(tmp_path, pair):
 
 
 @pytest.mark.parametrize('selection_flags', [[], ['--no-require-external-data']])
+@pytest.mark.parametrize('source_flags, sources', [
+    ([], ['news', 'weather', 'shakemap_footprints']),
+    (['--external-sources', 'shakemap_footprints'], ['shakemap_footprints']),
+    (['--external-sources', 'news', 'weather'], ['news', 'weather']),
+    (['--external-sources', 'shakemap_footprints', 'shakemap_footprints'], ['shakemap_footprints']),
+])
 def test_main_measures_each_source_against_shared_baseline(
-    monkeypatch, tmp_path, pair, selection_flags,
+    monkeypatch,
+    tmp_path,
+    pair,
+    selection_flags,
+    source_flags,
+    sources,
 ):
     """
     Save a separate judgment for each external source.
@@ -121,32 +132,52 @@ def test_main_measures_each_source_against_shared_baseline(
     assistant.ask.return_value = pair.core.response
     monkeypatch.setattr(run, 'make_answerer', Mock(return_value=assistant))
     judge = Mock()
-    judge.judge.side_effect = [run.Contribution.QUALIFIES, run.Contribution.UNRESOLVED]
+    contributions = {
+        'news': run.Contribution.QUALIFIES,
+        'weather': run.Contribution.UNRESOLVED,
+        'shakemap_footprints': run.Contribution.EXTENDS_COVERAGE,
+    }
+    judge.judge.side_effect = [contributions[source] for source in sources]
     monkeypatch.setattr(run, 'LocalContributionJudge', Mock(return_value=judge))
 
     assert run.main([
         '--answer-model', run.MODEL_CHOICES[0], '--judge-model', run.MODEL_CHOICES[0],
         '--output-dir', str(tmp_path),
         *selection_flags,
+        *source_flags,
     ]) == 0
 
     assert [call.kwargs for call in assistant.ask.call_args_list] == [
-        {'use_tools': True, 'enable_news': False, 'enable_weather': False, 'enable_external_footprints': False},
-        {'use_tools': True, 'enable_news': True, 'enable_weather': False, 'enable_external_footprints': False},
-        {'use_tools': True, 'enable_news': False, 'enable_weather': True, 'enable_external_footprints': False},
+        {
+            'use_tools': True,
+            'enable_news': source == 'news',
+            'enable_weather': source == 'weather',
+            'enable_external_footprints': source == 'shakemap_footprints',
+        }
+        for source in [None, *sources]
     ]
     set_seed.assert_called_once_with(run.SEED)
     require_external_data = not selection_flags
     select_contexts.assert_called_once_with(
-        run.GraphSearchArguments(), 1, require_external_data=require_external_data,
+        run.GraphSearchArguments(),
+        1,
+        require_external_data=require_external_data,
+        external_sources=sources,
     )
     batch = run.load_runs(tmp_path)[0]
+    assert batch.metadata['external_sources'] == sources
+    assert batch.metadata['comparisons'] == [f'core_vs_{source}' for source in sources]
     assert batch.metadata['seed'] == run.SEED
     assert batch.metadata['require_external_data'] is require_external_data
     results = batch.results
     assert [(result.external_source, result.contribution) for result in results] == [
-        ('news', run.Contribution.QUALIFIES), ('weather', run.Contribution.UNRESOLVED),
+        (source, contributions[source]) for source in sources
     ]
+    saved = json.loads(tmp_path.joinpath('results.json').read_text())
+    assert {
+        counts['external_source'] for counts in saved['summary'][0]['results']
+    } == set(sources)
+    assert tmp_path.joinpath('summary.svg').is_file()
 
 
 def test_improvement_rate_excludes_confirmation_and_failed_evaluations(pair):

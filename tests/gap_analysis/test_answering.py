@@ -40,7 +40,12 @@ def test_model_error_is_saved(pair):
 
 
 @pytest.mark.parametrize('require_external_data', [True, False])
-def test_event_selection_uses_one_graph_query(monkeypatch, require_external_data):
+@pytest.mark.parametrize('sources', [None, ['news', 'weather'], ['shakemap_footprints']])
+def test_event_selection_uses_one_graph_query(
+    monkeypatch,
+    require_external_data,
+    sources,
+):
     """
     Pass the event limit and external data requirement to the selection query.
     """
@@ -50,11 +55,17 @@ def test_event_selection_uses_one_graph_query(monkeypatch, require_external_data
     )
     monkeypatch.setattr(answering, 'get_graph_db_driver', lambda: nullcontext(driver))
     assert answering.select_contexts(
-        GraphSearchArguments(), 2, require_external_data=require_external_data,
+        GraphSearchArguments(),
+        2,
+        require_external_data=require_external_data,
+        external_sources=sources,
     ) == [{'event_id': 'e'}]
     driver.execute_query.assert_called_once()
     assert driver.execute_query.call_args.kwargs['parameters_']['limit'] == 2
     assert (
         driver.execute_query.call_args.kwargs['parameters_']['require_external_data']
         is require_external_data
+    )
+    assert driver.execute_query.call_args.kwargs['parameters_']['external_sources'] == (
+        ['news', 'weather', 'shakemap_footprints'] if sources is None else sources
     )
