@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 from typing import Any, cast
 
 import boto3
@@ -33,10 +34,12 @@ def _system_prompt(use_tools: bool, enable_news: bool, enable_weather: bool) -> 
     """
     if not use_tools:
         return (
+            f"Today's date is {date.today().isoformat()}. "
             "You answer questions about disaster records using your own knowledge. "
             "Answer in the user's language."
         )
     return (
+        f"Today's date is {date.today().isoformat()}. "
         "You answer questions about disaster records using evidence from the available tools. "
         "Use graph search to find events and their IDs to retrieve details and related records. "
         "Use response tools for IFRC events and appeals. "
