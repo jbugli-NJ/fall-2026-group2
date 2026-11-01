@@ -24,6 +24,7 @@ class QueryAssistantProtocol(Protocol):
         use_tools: bool = True,
         enable_news: bool = True,
         enable_weather: bool = True,
+        enable_external_footprints: bool = True,
     ) -> QueryAssistantResponse:
         """
         Answer a question and return the tool results.

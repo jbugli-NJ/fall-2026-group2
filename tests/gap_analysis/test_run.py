@@ -131,9 +131,9 @@ def test_main_measures_each_source_against_shared_baseline(
     ]) == 0
 
     assert [call.kwargs for call in assistant.ask.call_args_list] == [
-        {'use_tools': True, 'enable_news': False, 'enable_weather': False},
-        {'use_tools': True, 'enable_news': True, 'enable_weather': False},
-        {'use_tools': True, 'enable_news': False, 'enable_weather': True},
+        {'use_tools': True, 'enable_news': False, 'enable_weather': False, 'enable_external_footprints': False},
+        {'use_tools': True, 'enable_news': True, 'enable_weather': False, 'enable_external_footprints': False},
+        {'use_tools': True, 'enable_news': False, 'enable_weather': True, 'enable_external_footprints': False},
     ]
     set_seed.assert_called_once_with(run.SEED)
     require_external_data = not selection_flags
