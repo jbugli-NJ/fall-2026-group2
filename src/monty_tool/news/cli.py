@@ -258,7 +258,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         except Exception as exc:
             print(json.dumps({
                 "stop_reason": "error", "event_id": job.event.item_id,
-                "error_type": type(exc).__name__, "saved": saved,
+                "error_type": type(exc).__name__, "error": str(exc), "saved": saved,
                 "local_snapshot": str(snapshot) if snapshot is not None else None,
             }, ensure_ascii=False, indent=2))
             return 1
