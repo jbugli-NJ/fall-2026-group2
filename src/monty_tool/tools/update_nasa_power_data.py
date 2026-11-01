@@ -4,6 +4,8 @@ Update NASA POWER weather results using Montandon records stored in S3.
 
 # Imports
 
+import argparse
+from datetime import date
 import gzip
 import logging
 from collections.abc import Iterator
@@ -70,9 +72,11 @@ def _new_point_items(
     bucket: S3Bucket,
     path: Path,
     existing_ids: set[str],
+    from_date: date | None = None,
+    to_date: date | None = None,
     ) -> Iterator[MontandonItem]:
     """
-    Download and validate raw records, yielding records with point geometry.
+    Yield new point records whose start dates fall within the inclusive bounds.
     """
     keys = sorted(
         obj.key
@@ -95,14 +99,33 @@ def _new_point_items(
                 ) from error
             if not isinstance(item.geometry, PointGeometry) or item.id in seen_ids:
                 continue
+            start_date = item.properties.start_datetime.date()
+            if from_date is not None and start_date < from_date:
+                continue
+            if to_date is not None and start_date > to_date:
+                continue
             seen_ids.add(item.id)
             yield item
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     """
     Collect new point-record weather and upload a checkpoint after each batch.
     """
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        '--from-date', type=date.fromisoformat,
+        help='Select records starting on or after this date (YYYY-MM-DD).',
+    )
+    parser.add_argument(
+        '--to-date', type=date.fromisoformat,
+        help='Select records starting on or before this date (YYYY-MM-DD).',
+    )
+    args = parser.parse_args(argv)
+    if args.from_date is not None and args.to_date is not None:
+        if args.from_date > args.to_date:
+            parser.error('--from-date must be on or before --to-date.')
+
     bucket_name = get_env_bucket_name()
     bucket = get_bucket(bucket_name)
     with TemporaryDirectory() as tmp_dir:
@@ -111,7 +134,10 @@ def main() -> None:
         existing_ids = _download_existing(bucket, weather_path)
         logger.info(f'Loaded {len(existing_ids)} existing NASA POWER results.')
 
-        items = _new_point_items(bucket, tmp_path.joinpath('montandon.jsonl.gz'), existing_ids)
+        items = _new_point_items(
+            bucket, tmp_path.joinpath('montandon.jsonl.gz'), existing_ids,
+            from_date=args.from_date, to_date=args.to_date,
+        )
         results_by_query: dict[WeatherQueryKey, WeatherResult] = {}
 
         for i, batch in enumerate(batched(items, BATCH_SIZE)):

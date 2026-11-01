@@ -17,7 +17,9 @@ from monty_tool.weather.schemas import WeatherResult
 
 # Test object helpers
 
-def _item(item_id: str, *, point: bool = True) -> MontandonItem:
+def _item(
+    item_id: str, *, point: bool = True, start_date: str = '2024-01-10',
+) -> MontandonItem:
     """
     Build a Montandon record with optional point geometry.
     """
@@ -32,7 +34,7 @@ def _item(item_id: str, *, point: bool = True) -> MontandonItem:
             'title': 'Flood',
             'description': 'River flooding.',
             'datetime': '2024-01-10T00:00:00Z',
-            'start_datetime': '2024-01-10T00:00:00Z',
+            'start_datetime': f'{start_date}T00:00:00Z',
             'end_datetime': '2024-01-12T00:00:00Z',
             'monty:corr_id': 'correlation-1',
             'monty:hazard_codes': ['FL'],
@@ -66,6 +68,45 @@ def test_new_point_items_filters_existing_and_non_point_records(
     assert [item.id for item in results] == ['new']
 
 
+@pytest.mark.parametrize(('from_date', 'to_date', 'expected'), [
+    (None, None, ['9', '10', '11', '12']),
+    (date(2024, 1, 10), None, ['10', '11', '12']),
+    (None, date(2024, 1, 11), ['9', '10', '11']),
+    (date(2024, 1, 10), date(2024, 1, 11), ['10', '11']),
+])
+def test_new_point_items_filters_start_dates(monkeypatch, tmp_path, from_date, to_date, expected):
+    """
+    Select records by start date with inclusive, optional bounds.
+    """
+    items = [_item(str(day), start_date=f'2024-01-{day:02d}') for day in range(9, 13)]
+    bucket = Mock()
+    bucket.objects.filter.return_value = [
+        SimpleNamespace(key=RAW_BUCKET_PREFIX + 'events.jsonl.gz'),
+    ]
+    monkeypatch.setattr(tool, 'download_object', Mock())
+    monkeypatch.setattr(tool, 'read_gzip', lambda path: (
+        item.model_dump(mode='json', by_alias=True) for item in items
+    ))
+
+    results = tool._new_point_items(
+        bucket, tmp_path / 'raw.jsonl.gz', set(), from_date=from_date, to_date=to_date,
+    )
+
+    assert [item.id for item in results] == expected
+
+
+def test_reversed_date_bounds_rejected_before_s3_access(monkeypatch):
+    """
+    Reject an inverted date range before accessing S3.
+    """
+    bucket = Mock()
+    monkeypatch.setattr(tool, 'get_bucket', bucket)
+    with pytest.raises(SystemExit) as error:
+        tool.main(['--from-date', '2024-01-11', '--to-date', '2024-01-10'])
+    assert error.value.code == 2
+    bucket.assert_not_called()
+
+
 def test_uploads_completed_batch_before_later_failure(monkeypatch: pytest.MonkeyPatch):
     """
     Confirms the first 500 results are uploaded before a later batch fails.
@@ -92,8 +133,11 @@ def test_uploads_completed_batch_before_later_failure(monkeypatch: pytest.Monkey
     )
 
     with pytest.raises(RuntimeError, match='simulated failure'):
-        tool.main()
+        tool.main(['--from-date', '2024-01-01', '--to-date', '2024-01-31'])
 
+    assert tool._new_point_items.call_args.kwargs == {
+        'from_date': date(2024, 1, 1), 'to_date': date(2024, 1, 31),
+    }
     assert [len(call.args[0]) for call in fetch.call_args_list] == [500, 1]
     assert (
         fetch.call_args_list[0].kwargs['results_by_query']

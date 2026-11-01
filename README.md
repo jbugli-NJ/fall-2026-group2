@@ -135,6 +135,8 @@ export AWS_BUCKET_PREFIX="my.name@example.com/"
 uv run update-nasa-power-data
 ```
 
+Use `--from-date YYYY-MM-DD --to-date YYYY-MM-DD` to filter selected records by start date.
+
 ### Building a local network from S3 data
 
 Tools are available to populate the local Neo4j instance with saved data in an S3 bucket.
