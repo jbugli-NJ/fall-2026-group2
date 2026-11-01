@@ -275,7 +275,7 @@ class BedrockQueryAssistant:
             'modelId': self.model_id,
             'messages': messages,
             'system': system,
-            'inferenceConfig': {'maxTokens': max_new_tokens, 'temperature': 0.0},
+            'inferenceConfig': {'maxTokens': max_new_tokens, 'temperature': 1.0},
         }
         if tool_definitions is not None:
             request['toolConfig'] = {
