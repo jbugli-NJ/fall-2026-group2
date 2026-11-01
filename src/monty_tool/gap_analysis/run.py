@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from huggingface_hub import accept_access_request
 from transformers import set_seed
 
 from monty_tool.gap_analysis.answering import (
@@ -55,10 +56,14 @@ def run_pair(
         question=question,
         core_context=core_context,
         core=core if core is not None else answer_question(
-            assistant, question, external_source=None,
+            assistant=assistant,
+            question=question,
+            external_source=None,
         ),
         external=answer_question(
-            assistant, question, external_source=external_source,
+            assistant=assistant,
+            question=question,
+            external_source=external_source,
         ),
     )
     if pair.core.error is None and pair.external.error is None:
@@ -244,11 +249,18 @@ def main(argv: list[str] | None = None) -> int:
             f'{question.event_id} / {question.template_id}'
         )
         core = answer_question(
-            assistant, question, external_source=None,
+            assistant,
+            question,
+            external_source=None,
         )
         for external_source in EXTERNAL_SOURCES:
             current_run.results.append(run_pair(
-                question, context, assistant, judge, external_source=external_source, core=core,
+                question=question,
+                core_context=context,
+                assistant=assistant,
+                judge=judge,
+                external_source=external_source,
+                core=core,
             ))
             save_results(output_dir, runs)
     print(f'Results: {output_dir}')
