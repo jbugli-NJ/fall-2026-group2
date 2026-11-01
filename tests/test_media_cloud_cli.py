@@ -380,6 +380,7 @@ def test_api_error_stops_without_fake_success(environment, capsys):
     assert cli.main([*args, *EXECUTE]) == 1
     output = json.loads(capsys.readouterr().out)
     assert output["stop_reason"] == "error"
+    assert output["error"] == "offline test"
     assert output["saved"] == []
 
 
