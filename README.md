@@ -50,7 +50,7 @@ Data tools use a shared S3 bucket and prefix. Configure these before running the
 S3 folders are object key prefixes. Surrounding whitespace and slashes are trimmed,
 and one trailing slash is added; nested paths are supported. If `AWS_BUCKET_PREFIX`
 is unset, blank, or only slashes, the tools log a warning and fall back to
-`aidan.carlisle@gwu.edu/`. Set it before launching a tool because paths are resolved
+`shared/group2/`. Set it before launching a tool because paths are resolved
 when the shared resources module loads. `AWS_BUCKET` still defaults to `dats-capstone`.
 
 ### Bedrock authentication
