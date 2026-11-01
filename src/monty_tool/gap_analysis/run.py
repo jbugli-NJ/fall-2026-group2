@@ -88,9 +88,17 @@ def summarize(results: list[PairedResult]) -> dict[str, Any]:
         counts = Counter(
             pair.contribution.value for pair in pairs if pair.contribution is not None
         )
+        evaluated = sum(counts.values())
+        improved = sum(counts[category.value] for category in (
+            Contribution.FILLS_FIELD, Contribution.EXTENDS_COVERAGE, Contribution.QUALIFIES,
+        ))
         summary[f'{template_id} / {source}'] = {
+            'template_id': template_id,
+            'external_source': source,
             'attempted': len(pairs),
-            'evaluated': sum(counts.values()),
+            'evaluated': evaluated,
+            'improved': improved,
+            'improvement_rate': improved / evaluated if evaluated else None,
             'answer_failures': sum(
                 pair.core.error is not None or pair.external.error is not None
                 for pair in pairs
@@ -122,15 +130,40 @@ def load_runs(output_dir: Path) -> list[AnalysisRun]:
     return [AnalysisRun.model_validate(record) for record in records]
 
 
+def summarize_runs(runs: list[AnalysisRun]) -> list[dict[str, Any]]:
+    """
+    Summarize the current rubric separately for each answer and judge model.
+    """
+    groups: dict[tuple[str, str], list[PairedResult]] = {}
+    for batch in runs:
+        if batch.metadata.get('rubric_version') != RUBRIC_VERSION:
+            continue
+        answer = batch.metadata.get('answer_model', {})
+        judge = batch.metadata.get('judge_model', {})
+        models = (
+            answer.get('id', 'unknown'), judge.get('id', 'unknown'),
+        )
+        groups.setdefault(models, []).extend(batch.results)
+    return [
+        {
+            'answer_model': {'id': answer_id},
+            'judge_model': {'id': judge_id},
+            'results': list(summarize(results).values()),
+        }
+        for (answer_id, judge_id), results in sorted(groups.items())
+    ]
+
+
 def save_results(output_dir: Path, runs: list[AnalysisRun]) -> None:
     """
-    Save all invocations, combined counts, and the summary SVG for an analysis.
+    Save all runs and summarize those using the current rubric version.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    summary = summarize([pair for batch in runs for pair in batch.results])
+    summary = summarize_runs(runs)
     payload = {
         'runs': [batch.model_dump(mode='json') for batch in runs],
         'summary': summary,
+        'summary_rubric_version': RUBRIC_VERSION,
     }
     pending_path = output_dir.joinpath('results.json.tmp')
     pending_path.write_text(

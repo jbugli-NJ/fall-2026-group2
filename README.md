@@ -228,4 +228,6 @@ Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
 Outputs accumulate under `benchmarks/gap_analysis/`:
 
 - `results.json`: each invocation's settings, answers, evidence, and combined counts by external source.
-- `summary.svg`: classification and failure counts by question template and source.
+- `summary.svg`: improvement rates by question type and external source, using separate model markers.
+
+Summaries use the current rubric version and answering/judging model combinations.
