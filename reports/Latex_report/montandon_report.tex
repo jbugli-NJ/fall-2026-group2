@@ -2,6 +2,11 @@
 \usepackage[margin=1in]{geometry}
 \usepackage[hidelinks]{hyperref}
 \usepackage{tabularx}
+\usepackage{array}
+\usepackage{booktabs}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 
 \begin{document}
 
@@ -92,89 +97,122 @@ graph construction, and the query setup.
 This project combines disaster records obtained through Montandon with
 selected external data sources. Montandon records were obtained through its
 API using a token issued through IFRC GO. Prepared datasets used to build
-the graph are stored in S3 and loaded into Neo4j. The table summarizes
-each source's coverage,  date range in our project files,
-licence or use terms, and graph mapping.
+the graph are stored in S3 and loaded into Neo4j. The summary below shows
+what each source covers, date range in our project files, and how we access it.
 
-\begin{table}[htbp]
-    \centering
-    \footnotesize
-    \begin{tabularx}{\textwidth}{@{}p{2.3cm}X p{2.4cm}p{2.5cm}X@{}}
-    \hline
-    Source (origin) & What it covers & Date range in project files &
-    Access / use terms &  How it enters the graph \\
-    \hline
+\par\medskip
+\begingroup
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\noindent
+\begin{tabularx}{\linewidth}{@{}L{2.15cm}Y L{3.7cm}L{2.35cm}@{}}
+\toprule
+\textbf{Source} & \textbf{What it covers} &
+\textbf{Dates in project files} & \textbf{Access} \\
+\midrule
 
-    EM-DAT (Montandon) &
-    Disaster events and reported impacts &
-    1900-01-01--2026-08-28 &
-    Montandon API token (issued through IFRC GO) &
-    \texttt{Event} and \texttt{Impact} nodes store the records;
-    \texttt{IMPACT\_OF} links impacts to events \\
-    \hline
+\multicolumn{4}{@{}l}{\textit{Montandon collections}} \\
+\addlinespace[0.4em]
 
-    GDACS (Montandon) &
-    Disaster alerts and event information &
-    2000-01-01--2026-09-11 &
-    Montandon API token (issued through IFRC GO); Free to use with acknowledgement of GDACS &
-    \texttt{Event} nodes store the records and link to country,
-    hazard, and date nodes \\
-    \hline
+\href{https://doc.emdat.be/docs/data-accessibility/}{EM-DAT} &
+Disaster events and reported impacts &
+\mbox{01/01/1900--08/28/2026} &
+Montandon API token \\
+\addlinespace[0.6em]
 
-    IFRC event collection (Montandon) &
-    Disaster-response events and impacts &
-    Events: 1970-01-01--2026-08-26;
-    impacts: 1997-11-10--2026-08-10 &
-    Montandon API token (issued through IFRC GO) &
-    \texttt{Event} and \texttt{Impact} nodes store the records;
-    \texttt{IMPACT\_OF} links impacts to events \\
-    \hline
+\href{https://www.gdacs.org/Documents/2025/GDACS_API_quickstart_v2.pdf}{GDACS} &
+Disaster alerts and event information &
+\mbox{01/01/2000--09/11/2026} &
+Montandon API token \\
+\addlinespace[0.6em]
 
-    IFRC GO (external) &
-    Emergency events and appeals &
-    Events: 1919-01-01--2026-09-11;
-    appeals: 1919-01-01--2026-09-02 &
-    Public IFRC GO API &
-    \texttt{GOEvent} and \texttt{GOAppeal} nodes;
-    \texttt{IN\_COUNTRY} and \texttt{FOR\_EVENT} relationships \\
-    \hline
+\href{https://montandondata.org/methodology/data-sources.html}{IFRC event collection} &
+Disaster-response events and impacts &
+\textbullet\ Events\par
+\mbox{01/01/1970--08/26/2026}\par
+\textbullet\ Impacts\par
+\mbox{11/10/1997--08/10/2026} &
+Montandon API token \\
+\midrule
 
-    NASA POWER (external) &
-    Daily temperature, precipitation, and wind data for locations
-    associated with Montandon records &
-    2021-09-15--2026-09-13 &
-    Free access; cite NASA POWER &
-    Daily records are matched by \texttt{item\_id} and summarized
-    as weather properties on \texttt{MontandonItem} nodes \\
-    \hline
+\multicolumn{4}{@{}l}{\textit{External sources}} \\
+\addlinespace[0.4em]
 
-    Media Cloud (external) &
-    News article metadata, with article text retrieved separately
-    from publisher websites &
-    \textemdash &
-    Media Cloud account and API key &
-    \texttt{NewsArticle} nodes store article information and link
-    to \texttt{Event} nodes through \texttt{VERIFIED\_FOR} \\
-    \hline
+\href{https://go.ifrc.org/}{IFRC GO} &
+Emergency events and response-funding appeals &
+\textbullet\ Events\par
+\mbox{01/01/1919--09/11/2026}\par
+\textbullet\ Appeals\par
+\mbox{01/01/1919--09/02/2026} &
+IFRC GO API \\
+\addlinespace[0.6em]
 
-    Geospatial data (external) &
-    &
-    &
-    &
-    \\
-    \hline
-    \end{tabularx}
-    \end{table}
+\href{https://power.larc.nasa.gov/}{NASA POWER} &
+Daily temperature, precipitation, and wind data for locations
+associated with Montandon records &
+\mbox{09/15/2021--09/13/2026} &
+NASA POWER API \\
+\addlinespace[0.6em]
 
-    Source-access and citation information is documented by
-    \href{https://montandondata.org/get-started.html}{Montandon},
-    \href{https://doc.emdat.be/docs/data-accessibility/}{EM-DAT},
-    \href{https://www.gdacs.org/Documents/2025/GDACS_API_quickstart_v2.pdf}{GDACS},
-    \href{https://go.ifrc.org/terms-and-conditions}{IFRC GO},
-    \href{https://power.larc.nasa.gov/docs/referencing/}{NASA POWER},
-    \href{https://www.mediacloud.org/legal/media-cloud-terms-of-use}{Media Cloud}.
+\href{https://www.mediacloud.org/}{MEDIA CLOUD} &
+News article metadata; article text is retrieved separately
+from publisher websites &
+\textemdash &
+Account and API key \\
+\bottomrule
+\end{tabularx}
+
+\par\medskip
+\noindent\emph{Note.} Source names link to
+the corresponding provider documentation.
+\par
+\endgroup
 
 
+\subsection{Neo4j Graph Model}
+% TODO: Add the explanation of the Neo4j node and relationship model.
+
+\subsection{Source Integration and Graph Links}
+
+The graph integrates these sources through the following nodes and relationships:
+
+{\small
+\setlength{\leftmargini}{1.5em}
+\begin{itemize}
+    \setlength{\itemsep}{0.45em}
+    \setlength{\parsep}{0pt}
+
+    \item \emph{EM-DAT and IFRC event collection.}
+    Event and impact records are stored as \texttt{Event} and
+    \texttt{Impact} nodes. \texttt{IMPACT\_OF} links each impact
+    to its event.
+
+    \item \emph{GDACS.}
+    Event records are stored as \texttt{Event} nodes and connected
+    to country, hazard, and date information.
+
+    \item \emph{IFRC GO.}
+    \texttt{GOEvent} and \texttt{GOAppeal} nodes represent emergency
+    events and appeals. \texttt{IN\_COUNTRY} and
+    \texttt{FOR\_EVENT} link them to related records.
+
+    \item \emph{NASA POWER.}
+    Weather records are matched by \texttt{item\_id} and summarized
+    as properties on existing \texttt{MontandonItem} nodes.
+
+    \item \emph{MEDIA CLOUD.}
+    Articles classified as directly covering the same disaster
+    event are stored as \texttt{NewsArticle} nodes.
+    \texttt{VERIFIED\_FOR} links each article to its
+    corresponding \texttt{Event} node.
+\end{itemize}
+}
+
+\subsection{Gap Analysis Method}
+This subsection will describe how disaster questions are constructed and how answers with and without external data are compared.
+
+\subsection{Evaluation Method}
+This subsection will describe the event sample, evaluation criteria, and how the gap-analysis results are checked.
 
 
 \section{Results and Discussion}
