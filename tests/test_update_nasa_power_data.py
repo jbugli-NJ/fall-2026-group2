@@ -123,7 +123,8 @@ def test_uploads_completed_batch_before_later_failure(monkeypatch: pytest.Monkey
     monkeypatch.setattr(tool, 'get_env_bucket_name', lambda: 'test-bucket')
     monkeypatch.setattr(tool, 'get_bucket', lambda name: bucket)
     monkeypatch.setattr(tool, '_download_existing', Mock(return_value=set()))
-    monkeypatch.setattr(tool, '_new_point_items', Mock(return_value=iter(items)))
+    new_point_items = Mock(return_value=iter(items))
+    monkeypatch.setattr(tool, '_new_point_items', new_point_items)
     fetch = Mock(side_effect=[results, RuntimeError('simulated failure')])
     monkeypatch.setattr(tool, 'pull_event_weather', fetch)
     uploads = []
@@ -135,7 +136,8 @@ def test_uploads_completed_batch_before_later_failure(monkeypatch: pytest.Monkey
     with pytest.raises(RuntimeError, match='simulated failure'):
         tool.main(['--from-date', '2024-01-01', '--to-date', '2024-01-31'])
 
-    assert tool._new_point_items.call_args.kwargs == {
+    assert new_point_items.call_args is not None
+    assert new_point_items.call_args.kwargs == {
         'from_date': date(2024, 1, 1), 'to_date': date(2024, 1, 31),
     }
     assert [len(call.args[0]) for call in fetch.call_args_list] == [500, 1]
