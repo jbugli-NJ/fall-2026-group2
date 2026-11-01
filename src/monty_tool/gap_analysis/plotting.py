@@ -41,7 +41,6 @@ def build_summary_plot(summary: list[dict[str, Any]]) -> Figure:
             y -= row_spacing
         y -= 0.8
     positions = {(template, source): row_y for template, source, row_y in rows}
-    judges = {group['judge_model']['id'] for group in summary}
     legend_rows = (model_count + 1) // 2
     bottom_space = 1.1 + legend_rows * 0.5
     height = max(5.0, (rows[0][2] - rows[-1][2] + 1.5) * 0.65 + bottom_space + 0.7)
@@ -84,9 +83,7 @@ def build_summary_plot(summary: list[dict[str, Any]]) -> Figure:
                 xytext=(-9 if rate >= 0.9 else 9, 0), textcoords='offset points',
                 ha='right' if rate >= 0.9 else 'left', va='center', color=color, fontsize=10,
             )
-        label = group['answer_model']['id']
-        if len(judges) > 1:
-            label += f"\nJudge: {group['judge_model']['id']}"
+        label = f"{group['answer_model']['id']}\nJudge: {group['judge_model']['id']}"
         axes.scatter(
             x_values, y_values, s=85, color=color,
             marker=markers[index % len(markers)], label=label, zorder=3,
@@ -105,6 +102,5 @@ def build_summary_plot(summary: list[dict[str, Any]]) -> Figure:
         spine.set_visible(False)
     figure.legend(
         loc='lower center', ncol=2, frameon=False, fontsize=9,
-        title=f'Judge: {next(iter(judges))}' if len(judges) == 1 else None,
     )
     return figure
