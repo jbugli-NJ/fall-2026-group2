@@ -12,6 +12,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 
 # Logger
 
@@ -46,6 +48,8 @@ def get_env_bucket_prefix() -> str:
 
 
 # Bucket resources
+
+load_dotenv()
 
 BUCKET_DATA_PREFIX = get_env_bucket_prefix()
 

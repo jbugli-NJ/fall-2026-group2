@@ -9,6 +9,7 @@ import importlib.util
 import json
 import logging
 
+import dotenv
 import pytest
 
 from monty_tool.tools import resources
@@ -58,17 +59,20 @@ def test_get_env_bucket_prefix_warns_on_default(monkeypatch, caplog, value):
     assert 'Defaulting to aidan.carlisle@gwu.edu/' in caplog.text
 
 
-def test_bucket_paths_use_configured_prefix(monkeypatch):
+def test_bucket_paths_use_configured_prefix(monkeypatch, tmp_path):
     """
-    Check derived paths in an isolated import without changing shared constants.
+    Use the direct environment prefix for all paths, overriding dotenv.
     """
-    monkeypatch.setenv('AWS_BUCKET_PREFIX', 'team/weather-test')
+    monkeypatch.setenv('AWS_BUCKET_PREFIX', 'team/environment-test')
+    env_path = tmp_path / '.env'
+    env_path.write_text('AWS_BUCKET_PREFIX=team/dotenv-test\n')
+    load_dotenv = dotenv.load_dotenv
+    monkeypatch.setattr(dotenv, 'load_dotenv', lambda: load_dotenv(env_path))
     spec = importlib.util.spec_from_file_location('isolated_resources', resources.__file__)
     assert spec is not None and spec.loader is not None
     configured = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(configured)
 
-    prefix = 'team/weather-test/'
     expected_suffixes = {
         'BUCKET_DATA_PREFIX': '',
         'RAW_BUCKET_PREFIX': 'raw/',
@@ -84,7 +88,25 @@ def test_bucket_paths_use_configured_prefix(monkeypatch):
         'GO_APPEAL_NODE_DATA_BUCKET_KEY': 'node_data/go_appeal/appeal.jsonl.gz',
     }
     for name, suffix in expected_suffixes.items():
-        assert getattr(configured, name) == prefix + suffix
+        assert getattr(configured, name) == 'team/environment-test/' + suffix
+
+
+def test_bucket_paths_load_dotenv_before_initialization(monkeypatch, tmp_path):
+    """
+    Load the dotenv prefix before initializing bucket paths.
+    """
+    monkeypatch.delenv('AWS_BUCKET_PREFIX', raising=False)
+    env_path = tmp_path / '.env'
+    env_path.write_text('AWS_BUCKET_PREFIX=team/dotenv-test\n')
+    load_dotenv = dotenv.load_dotenv
+    monkeypatch.setattr(dotenv, 'load_dotenv', lambda: load_dotenv(env_path))
+    spec = importlib.util.spec_from_file_location('isolated_resources', resources.__file__)
+    assert spec is not None and spec.loader is not None
+    configured = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(configured)
+
+    assert configured.BUCKET_DATA_PREFIX == 'team/dotenv-test/'
+    assert configured.RAW_BUCKET_PREFIX == 'team/dotenv-test/raw/'
 
 
 def test_read_gzip_reads_jsonl_records(tmp_path):
