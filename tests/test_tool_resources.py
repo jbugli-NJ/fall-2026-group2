@@ -54,9 +54,9 @@ def test_get_env_bucket_prefix_warns_on_default(monkeypatch, caplog, value):
     else:
         monkeypatch.setenv('AWS_BUCKET_PREFIX', value)
     with caplog.at_level(logging.WARNING):
-        assert get_env_bucket_prefix() == 'aidan.carlisle@gwu.edu/'
+        assert get_env_bucket_prefix() == 'shared/group2/'
     assert 'AWS_BUCKET_PREFIX is unset or blank' in caplog.text
-    assert 'Defaulting to aidan.carlisle@gwu.edu/' in caplog.text
+    assert 'Defaulting to shared/group2/' in caplog.text
 
 
 def test_bucket_paths_use_configured_prefix(monkeypatch, tmp_path):
