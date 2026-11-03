@@ -60,14 +60,20 @@ def test_external_access_controls_event_and_impact_weather(graph_driver, enable_
     """
     Preserve core impact values while exposing weather only in external mode.
     """
-    row = {'weather': {'source': 'external'}, 'impacts': [{'impact_value': 12, 'weather': {}}]}
+    row = {
+        'weather': {'source': 'external'},
+        'footprints': [{'source': 'CEMS'}],
+        'external_footprints': [{'source': 'USGS'}],
+        'impacts': [{'impact_value': 12, 'weather': {}}],
+    }
     graph_driver.execute_query.return_value = ([Mock(data=Mock(return_value=row))], None, None)
 
     result = tools.QueryTools(enable_external=enable_external).execute(
         'get_disaster_context', {'event_id': 'event-1'},
     )
 
-    assert result['rows'] == [row if enable_external else {'impacts': [{'impact_value': 12}]}]
+    core = {'footprints': [{'source': 'CEMS'}], 'impacts': [{'impact_value': 12}]}
+    assert result['rows'] == [row if enable_external else core]
 
 
 @pytest.mark.parametrize('metric', ['elevation', 'mean_temperature', 'precipitation_total'])

@@ -42,7 +42,8 @@ def _system_prompt(use_tools: bool, enable_external: bool) -> str:
         "IFRC events and appeals. Base factual statements on tool results and identify "
         "information that remains unavailable. Answer in the user's language. "
         + (
-            "get_disaster_context includes stored weather. Use get_event_news for relevant "
+            "get_disaster_context includes stored weather and USGS ShakeMap footprints under "
+            "external_footprints. Use get_event_news for relevant "
             "stored articles. Distinguish Montandon records from external evidence."
             if enable_external else "The available tools expose Montandon records and impacts."
         )
