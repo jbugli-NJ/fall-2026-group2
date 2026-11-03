@@ -50,7 +50,7 @@ Data tools use a shared S3 bucket and prefix. Configure these before running the
 S3 folders are object key prefixes. Surrounding whitespace and slashes are trimmed,
 and one trailing slash is added; nested paths are supported. If `AWS_BUCKET_PREFIX`
 is unset, blank, or only slashes, the tools log a warning and fall back to
-`aidan.carlisle@gwu.edu/`. Set it before launching a tool because paths are resolved
+`shared/group2/`. Set it before launching a tool because paths are resolved
 when the shared resources module loads. `AWS_BUCKET` still defaults to `dats-capstone`.
 
 ### Bedrock authentication
@@ -134,6 +134,8 @@ export AWS_BUCKET="my-bucket"
 export AWS_BUCKET_PREFIX="my.name@example.com/"
 uv run update-nasa-power-data
 ```
+
+Use `--from-date YYYY-MM-DD --to-date YYYY-MM-DD` to filter selected records by start date.
 
 ### Building a local network from S3 data
 
@@ -225,7 +227,12 @@ Choose local models or `bedrock` independently for answering and judging.
 Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
 `--event-limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
 
+By default, events must have stored external data to be included.
+Use `--no-require-external-data` to disable that filter.
+
 Outputs accumulate under `benchmarks/gap_analysis/`:
 
-- `results.json`: each invocation's settings, answers, evidence, and combined counts.
-- `summary.svg`: classification and failure counts by question template.
+- `results.json`: each invocation's settings, answers, evidence, and combined counts by external source.
+- `summary.svg`: improvement rates by question type and external source, using separate model markers.
+
+Summaries use the current rubric version and answering/judging model combinations.

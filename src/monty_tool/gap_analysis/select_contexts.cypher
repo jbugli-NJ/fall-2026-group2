@@ -4,6 +4,18 @@ WHERE ($country_code IS NULL OR EXISTS {
       })
   AND ($from_date IS NULL OR date(event.start_datetime) >= $from_date)
   AND ($to_date IS NULL OR date(event.start_datetime) <= $to_date)
+  AND (NOT $require_external_data OR (
+        (NOT ('weather' IN $external_sources) OR event.weather_source IS NOT NULL OR EXISTS {
+          MATCH (impact:Impact)-[:IMPACT_OF]->(event)
+          WHERE impact.weather_source IS NOT NULL
+        })
+        AND (NOT ('news' IN $external_sources) OR EXISTS {
+          MATCH (:NewsArticle)-[:VERIFIED_FOR]->(event)
+        })
+        AND (NOT ('shakemap_footprints' IN $external_sources) OR EXISTS {
+          MATCH (:Footprint {origin: 'external'})-[:FOOTPRINT_OF]->(event)
+        })
+      ))
 WITH event
 ORDER BY event.start_datetime DESC, event.id ASC
 SKIP $offset

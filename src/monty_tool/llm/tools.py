@@ -34,17 +34,33 @@ _WEATHER_FILTERS = {
 }
 
 
-def _core_data(value: Any) -> Any:
+def _filter_sources(
+    value: Any,
+    *,
+    enable_weather: bool,
+    enable_external_footprints: bool,
+) -> Any:
     """
-    Remove external data fields recursively from tool results.
+    Remove disabled external sources recursively, preserving Montandon footprints.
     """
     if isinstance(value, dict):
         return {
-            key: _core_data(item) for key, item in value.items()
-            if key not in {'weather', 'external_footprints'} and not key.startswith('weather_')
+            key: _filter_sources(
+                item,
+                enable_weather=enable_weather,
+                enable_external_footprints=enable_external_footprints,
+            ) for key, item in value.items()
+            if (enable_weather or (key != 'weather' and not key.startswith('weather_')))
+            and (enable_external_footprints or key != 'external_footprints')
         }
     if isinstance(value, list):
-        return [_core_data(item) for item in value]
+        return [
+            _filter_sources(
+                item,
+                enable_weather=enable_weather,
+                enable_external_footprints=enable_external_footprints,
+            ) for item in value
+        ]
     return value
 
 type CypherTemplateFile = Literal[
@@ -221,12 +237,21 @@ class QueryTools:
     Graph and news tools available to QueryAssistant.
     """
 
-    def __init__(self, max_tool_calls: int = 10, *, enable_external: bool = True):
+    def __init__(
+        self,
+        max_tool_calls: int = 10,
+        *,
+        enable_news: bool = True,
+        enable_weather: bool = True,
+        enable_external_footprints: bool = True,
+    ):
         if max_tool_calls < 1:
             raise ValueError("max_tool_calls must be at least 1.")
 
         self.max_tool_calls = max_tool_calls
-        self.enable_external = enable_external
+        self.enable_news = enable_news
+        self.enable_weather = enable_weather
+        self.enable_external_footprints = enable_external_footprints
         self.tool_call_count = 0
         definitions = [
             {
@@ -306,9 +331,13 @@ class QueryTools:
                 "function": {
                     "name": "get_disaster_context",
                     "description": (
-                        "Fetch impacts, stored weather, and hazard footprints for an event_id from "
-                        "search_disaster_events, including counts, temperature extremes, precipitation, "
-                        "wind speed, and mapped or modelled affected areas when available."
+                        "Fetch the Montandon record, impacts, and Montandon hazard footprints "
+                        "for an event_id from search_disaster_events."
+                        + (" Includes stored weather when available." if enable_weather else "")
+                        + (
+                            " Includes USGS ShakeMap footprints under external_footprints when available."
+                            if enable_external_footprints else ""
+                        )
                     ),
                     "parameters": {
                         "type": "object",
@@ -457,11 +486,12 @@ class QueryTools:
                 },
             },
         ]
-        if not enable_external:
+        if not enable_news:
             definitions = [
                 definition for definition in definitions
                 if definition['function']['name'] != 'get_event_news'
             ]
+        if not enable_weather:
             for definition in definitions:
                 function = definition['function']
                 if function['name'] == 'search_disaster_events':
@@ -470,10 +500,6 @@ class QueryTools:
                     function['description'] = (
                         'Find up to 10 newest matching disaster events. Dates filter event starts. '
                         'Use get_disaster_context for recorded impacts.'
-                    )
-                elif function['name'] == 'get_disaster_context':
-                    function['description'] = (
-                        'Fetch the Montandon record, impacts, and Montandon hazard footprints for an event_id.'
                     )
         self.definitions = definitions
 
@@ -506,8 +532,12 @@ class QueryTools:
             "status": "ok",
             "rows": [_json_value(record.data()) for record in records],
         }
-        if not self.enable_external:
-            result = _core_data(result)
+        if not self.enable_weather or not self.enable_external_footprints:
+            result = _filter_sources(
+                result,
+                enable_weather=self.enable_weather,
+                enable_external_footprints=self.enable_external_footprints,
+            )
         if isinstance(args, GraphSearchArguments):
             result["rows"] = result["rows"][:10]
             result["pagination"] = {
@@ -535,11 +565,13 @@ class QueryTools:
             }
 
         self.tool_call_count += 1
-        if not self.enable_external and (
-            name == 'get_event_news'
-            or (name == 'search_disaster_events' and _WEATHER_FILTERS.intersection(arguments))
+        if name == 'get_event_news' and not self.enable_news:
+            return {'status': 'error', 'message': 'News access is disabled.'}
+        if (
+            name == 'search_disaster_events' and not self.enable_weather
+            and _WEATHER_FILTERS.intersection(arguments)
         ):
-            return {'status': 'error', 'message': 'External news and weather access is disabled.'}
+            return {'status': 'error', 'message': 'Weather access is disabled.'}
         try:
             if name == "search_disaster_events":
                 return self._run_graph_query(

@@ -33,6 +33,7 @@ from monty_tool.news.s3_storage import (
     upload_media_cloud_snapshot,
 )
 from monty_tool.news.verification import EventJudge, JudgeResult, make_qwen_event_judge
+from monty_tool.tools.resources import get_env_bucket_prefix
 from monty_tool.utils.versions import FrozenModel
 
 
@@ -98,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/media-cloud"))
     parser.add_argument("--refresh", action="store_true", help="Collect again and replace the event's current snapshot.")
     parser.add_argument("--s3-upload", action="store_true", help="Use S3 current snapshots for reuse and upload new results.")
-    parser.add_argument("--s3-prefix", help="Upload folder; otherwise uses explicit AWS_BUCKET_PREFIX.")
+    parser.add_argument("--s3-prefix", help="Upload folder; defaults to AWS_BUCKET_PREFIX or shared/group2/.")
     return parser
 
 
@@ -122,15 +123,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--collection must be a collection name, not a path.")
 
     bucket_name = os.getenv("AWS_BUCKET", "").strip()
-    raw_prefix = os.getenv("AWS_BUCKET_PREFIX", "").strip().strip("/")
+    raw_prefix = get_env_bucket_prefix().rstrip("/")
     upload_prefix = (args.s3_prefix if args.s3_prefix is not None else raw_prefix).strip().strip("/")
     needs_s3 = args.cache_dir is None or args.s3_upload
     if needs_s3 and not bucket_name:
         parser.error("Set AWS_BUCKET explicitly for S3 access.")
-    if args.cache_dir is None and args.s3_source_key is None and not raw_prefix:
-        parser.error("Set AWS_BUCKET_PREFIX or provide --s3-source-key for S3 input.")
     if args.s3_upload and not upload_prefix:
-        parser.error("S3 upload requires --s3-prefix or explicit AWS_BUCKET_PREFIX.")
+        parser.error("--s3-prefix must not be blank.")
 
     bucket: S3Bucket | None = get_bucket(bucket_name) if needs_s3 else None
     source_context = (
@@ -258,7 +257,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         except Exception as exc:
             print(json.dumps({
                 "stop_reason": "error", "event_id": job.event.item_id,
-                "error_type": type(exc).__name__, "saved": saved,
+                "error_type": type(exc).__name__, "error": str(exc), "saved": saved,
                 "local_snapshot": str(snapshot) if snapshot is not None else None,
             }, ensure_ascii=False, indent=2))
             return 1
