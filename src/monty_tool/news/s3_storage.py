@@ -1,5 +1,6 @@
 """Transfer disaster input and Media Cloud snapshots through S3."""
 import json
+import logging
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,9 @@ from monty_tool.tools.resources import RAW_BUCKET_PREFIX
 if TYPE_CHECKING:
     from monty_tool.news.history import MediaCloudRunSettings
     from monty_tool.news.runner import MediaCloudJobRun
+
+
+logger = logging.getLogger(__name__)
 
 
 def current_snapshot_path(output_dir: Path, *, collection: str, event_id: str) -> Path:
@@ -157,5 +161,9 @@ def iter_media_cloud_snapshots(
                 prefix=prefix, collection=run.job.event.collection, event_id=run.job.event.item_id,
             )
             if key != expected_key:
-                raise ValueError(f"Media Cloud snapshot event does not match its key: {key}")
+                logger.debug(
+                    "Skipping Media Cloud snapshot whose event does not match its key: %s (expected %s)",
+                    key, expected_key,
+                )
+                continue
             yield key, run
