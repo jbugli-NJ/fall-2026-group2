@@ -219,15 +219,20 @@ A draft pipeline is available to compare answer coverage using Montandon alone v
 uv run run-gap-analysis \
   --answer-model Qwen/Qwen3-1.7B \
   --judge-model bedrock \
-  --country-code JPN --from-date 2024-01-01 --to-date 2024-01-31 \
-  --event-limit 1
+  --country-code JPN --hazard-code GH0001 \
+  --from-date 2000-01-01 --to-date 2025-12-31 --limit 1
 ```
 
 Choose local models or `bedrock` independently for answering and judging.
 Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
-`--event-limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
 
-By default, events must have stored external data to be included.
+Questions support EAP planning by country and hazard, using past disasters as evidence.
+`--hazard-code` accepts an exact Montandon hazard code; country and hazard filters are optional.
+`--limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
+Date filters bound historical disaster event start dates.
+
+By default, each country and hazard must have stored data for every selected external source.
+Different historical events can provide different sources.
 Use `--no-require-external-data` to disable that filter.
 
 Outputs accumulate under `benchmarks/gap_analysis/`:

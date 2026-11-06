@@ -16,8 +16,11 @@ def pair():
         duration_seconds=0,
     )
     return PairedResult(
-        question=GapQuestion(event_id='e', template_id='impacts', question='Impacts?'),
-        core_context={'event_id': 'e'},
+        question=GapQuestion(
+            country_code='JPN', hazard_code='GH0001',
+            template_id='impacts', question='Impacts?',
+        ),
+        core_context={'country_code': 'JPN', 'hazard_code': 'GH0001'},
         core=attempt,
         external=attempt,
         contribution=Contribution.QUALIFIES,

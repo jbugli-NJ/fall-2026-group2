@@ -12,7 +12,7 @@ from monty_tool.llm.classification import classify_labels
 from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 
 
-RUBRIC_VERSION = 'source-contribution-v1'
+RUBRIC_VERSION = 'source-contribution-v2'
 LABELS = {
     'A': Contribution.FILLS_FIELD,
     'B': Contribution.EXTENDS_COVERAGE,
@@ -31,7 +31,7 @@ LABEL_SCHEMA = json.dumps(
     }
 )
 RUBRIC = """
-Compare two answers to the same disaster question: one with access to Montandon
+Compare two answers to the same question: one with access to Montandon
 records alone, and one with additional access to an external source. Determine
 whether evidence from that source improves the answer. The supplied material
 describes the source and includes both answers and their retrieved evidence.
