@@ -70,8 +70,8 @@ def search_media_cloud_page(
             },
             timeout=30,
         )
-    except requests.RequestException:
-        raise RuntimeError("Media Cloud request failed.") from None
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Media Cloud request failed ({type(exc).__name__}).") from None
 
     if response.status_code != 200:
         raise RuntimeError(f"Media Cloud HTTP {response.status_code}")
