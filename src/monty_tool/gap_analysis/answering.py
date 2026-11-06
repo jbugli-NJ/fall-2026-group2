@@ -18,6 +18,7 @@ from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
 from monty_tool.llm.tools import DisasterEventSearchArguments
 from monty_tool.network.resources import get_graph_db_driver
+from monty_tool.static_codes import HAZARD_NAME_FALLBACKS
 from monty_tool.utils.versions import FrozenModel
 
 
@@ -93,7 +94,10 @@ def construct_gap_questions(
         key: context[key] for key in ('country_code', 'hazard_code')
     }
     country = pycountry.countries.get(alpha_3=question_params['country_code'])
-    hazard_names = dict(hazard_code_lookup().select('hazard_code', 'hazard_label').iter_rows())
+    hazard_names = {
+        **HAZARD_NAME_FALLBACKS,
+        **dict(hazard_code_lookup().select('hazard_code', 'hazard_label').iter_rows()),
+    }
     labels = {
         'country': (
             f"{country.name} ({question_params['country_code']})"
