@@ -143,6 +143,7 @@ def test_main_measures_each_source_against_shared_baseline(
     assert run.main([
         '--answer-model', run.MODEL_CHOICES[0], '--judge-model', run.MODEL_CHOICES[0],
         '--output-dir', str(tmp_path),
+        '--country-code', 'JPN', '--hazard-code', 'GH0001', '--limit', '2',
         *selection_flags,
         *source_flags,
     ]) == 0
@@ -159,8 +160,8 @@ def test_main_measures_each_source_against_shared_baseline(
     set_seed.assert_called_once_with(run.SEED)
     require_external_data = not selection_flags
     select_contexts.assert_called_once_with(
-        run.GraphSearchArguments(),
-        1,
+        run.DisasterEventSearchArguments(country_code='JPN', hazard_code='GH0001'),
+        2,
         require_external_data=require_external_data,
         external_sources=sources,
     )
@@ -168,6 +169,8 @@ def test_main_measures_each_source_against_shared_baseline(
     assert batch.metadata['external_sources'] == sources
     assert batch.metadata['comparisons'] == [f'core_vs_{source}' for source in sources]
     assert batch.metadata['seed'] == run.SEED
+    assert batch.metadata['limit'] == 2
+    assert batch.metadata['contexts'] == [pair.core_context]
     assert batch.metadata['require_external_data'] is require_external_data
     results = batch.results
     assert [(result.external_source, result.contribution) for result in results] == [
@@ -194,3 +197,21 @@ def test_improvement_rate_excludes_confirmation_and_failed_evaluations(pair):
     assert counts['judge_failures'] == 1
     failed_counts = run.summarize([results[-1]])['impacts / combined']
     assert failed_counts['improvement_rate'] is None
+
+
+def test_load_filters_before_validation(tmp_path, pair):
+    """
+    Skip obsolete or unversioned runs before validating current runs.
+    """
+    current = AnalysisRun(
+        metadata={'rubric_version': run.RUBRIC_VERSION}, results=[pair],
+    )
+    tmp_path.joinpath('results.json').write_text(json.dumps({'runs': [
+        {
+            'metadata': {'rubric_version': 'source-contribution-v1'},
+            'results': [{'question': {'event_id': 'e'}}],
+        },
+        {'results': [{}]},
+        current.model_dump(mode='json'),
+    ]}))
+    assert run.load_runs(tmp_path) == [current]

@@ -63,7 +63,7 @@ def test_bedrock_judge_reads_label_and_rejects_incomplete_response(
     request = assistant.client.converse.call_args.kwargs
     assert request['system'] == [{'text': judging.RUBRIC}]
     payload = json.loads(request['messages'][0]['content'][0]['text'])
-    assert payload['core_context'] == {'event_id': 'e'}
+    assert payload['core_context'] == pair.core_context
     assert payload['external_source'] == source
     assert payload['external_source_evidence'] == evidence
     response['stopReason'] = 'max_tokens'

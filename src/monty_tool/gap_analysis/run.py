@@ -35,7 +35,7 @@ from monty_tool.gap_analysis.schemas import (
 from monty_tool.gap_analysis.templates import TEMPLATES
 from monty_tool.llm.client import DEFAULT_BEDROCK_MODEL_ID, BedrockQueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
-from monty_tool.llm.tools import GraphSearchArguments
+from monty_tool.llm.tools import DisasterEventSearchArguments
 from monty_tool.utils.versions import SEED, FrozenModel
 
 
@@ -120,14 +120,17 @@ def summarize(results: list[PairedResult]) -> dict[str, Any]:
 
 def load_runs(output_dir: Path) -> list[AnalysisRun]:
     """
-    Read the invocations already saved in the analysis results file.
+    Filter saved runs to the current rubric, then validate them.
     """
     path = output_dir.joinpath('results.json')
     if not path.exists():
         return []
     payload = json.loads(path.read_text())
-    records = payload['runs'] if 'runs' in payload else [payload]
-    return [AnalysisRun.model_validate(record) for record in records]
+    return [
+        AnalysisRun.model_validate(record)
+        for record in payload['runs']
+        if record.get('metadata', {}).get('rubric_version') == RUBRIC_VERSION
+    ]
 
 
 def summarize_runs(runs: list[AnalysisRun]) -> list[dict[str, Any]]:
@@ -191,9 +194,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--answer-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--judge-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--country-code')
+    parser.add_argument('--hazard-code', help='Exact Montandon hazard code.')
     parser.add_argument('--from-date')
     parser.add_argument('--to-date')
-    parser.add_argument('--event-limit', type=_positive_int, default=1)
+    parser.add_argument(
+        '--limit', type=_positive_int, default=1,
+        help='Maximum number of country and hazard combinations (default: 1).',
+    )
     parser.add_argument(
         '--external-sources',
         nargs='+',
@@ -205,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--require-external-data',
         action=argparse.BooleanOptionalAction,
         default=True,
-        help='Filters events to require stored external data (default: enabled).',
+        help='Require stored data for every selected source (default: enabled).',
     )
     parser.add_argument('--max-tool-calls', type=_positive_int, default=10)
     parser.add_argument(
@@ -237,17 +244,18 @@ def main(argv: list[str] | None = None) -> int:
     started = datetime.now(timezone.utc)
     output_dir = args.output_dir
     runs = load_runs(output_dir)
-    filters = GraphSearchArguments(
-        country_code=args.country_code, from_date=args.from_date, to_date=args.to_date,
+    filters = DisasterEventSearchArguments(
+        country_code=args.country_code, hazard_code=args.hazard_code,
+        from_date=args.from_date, to_date=args.to_date,
     )
     contexts = select_contexts(
         filters,
-        args.event_limit,
+        args.limit,
         require_external_data=args.require_external_data,
         external_sources=external_sources,
     )
     if not contexts:
-        parser.error('No disaster events matched the selection.')
+        parser.error('No countries and hazards matched the selection.')
     questions = [
         (question, context)
         for context in contexts
@@ -280,9 +288,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         'max_tool_calls': args.max_tool_calls,
         'selection': filters.model_dump(mode='json'),
-        'event_limit': args.event_limit,
+        'limit': args.limit,
         'require_external_data': args.require_external_data,
-        'event_ids': [context['event_id'] for context in contexts],
+        'contexts': contexts,
         'templates': [template.model_dump() for template in TEMPLATES],
         'rubric_version': RUBRIC_VERSION,
         'rubric': RUBRIC,
@@ -299,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     for index, (question, context) in enumerate(questions, 1):
         print(
             f'{index}/{len(questions)}: '
-            f'{question.event_id} / {question.template_id}'
+            f'{question.country_code} / {question.hazard_code} / {question.template_id}'
         )
         core = answer_question(
             assistant,

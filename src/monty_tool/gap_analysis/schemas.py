@@ -26,7 +26,7 @@ class Contribution(StrEnum):
 
 class QuestionTemplate(BaseModel):
     """
-    A gap analysis question template with placeholders for event details.
+    A gap analysis question template with country and hazard placeholders.
     """
     id: str = Field(min_length=1)
     question: str = Field(min_length=1)
@@ -34,9 +34,10 @@ class QuestionTemplate(BaseModel):
 
 class GapQuestion(BaseModel):
     """
-    A question generated for a specific disaster event.
+    A question generated for EAP planning in a country for a hazard.
     """
-    event_id: str
+    country_code: str
+    hazard_code: str
     template_id: str
     question: str
 
