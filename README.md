@@ -229,6 +229,7 @@ Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
 Questions support EAP planning by country and hazard, using past disasters as evidence.
 `--hazard-code` accepts an exact Montandon hazard code; country and hazard filters are optional.
 `--limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
+Hazards without a known name are skipped before applying the limit.
 Date filters bound historical disaster event start dates.
 
 By default, each country and hazard must have stored data for every selected external source.

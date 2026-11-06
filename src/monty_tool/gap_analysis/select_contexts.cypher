@@ -2,6 +2,7 @@ MATCH (event:Event)-[:IN_COUNTRY]->(country:Country)
 MATCH (event)-[:HAS_HAZARD]->(hazard:Hazard)
 WHERE ($country_code IS NULL OR country.code = $country_code)
   AND ($hazard_code IS NULL OR hazard.code = $hazard_code)
+  AND hazard.code IN $named_hazard_codes
   AND ($from_date IS NULL OR date(event.start_datetime) >= $from_date)
   AND ($to_date IS NULL OR date(event.start_datetime) <= $to_date)
 WITH country, hazard, collect(DISTINCT event) AS events,

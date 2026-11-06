@@ -72,3 +72,7 @@ def test_country_hazard_selection_uses_one_graph_query(
 
     assert driver.execute_query.call_args.kwargs['parameters_']['country_code'] == 'JPN'
     assert driver.execute_query.call_args.kwargs['parameters_']['hazard_code'] == 'GH0001'
+    named_codes = driver.execute_query.call_args.kwargs['parameters_']['named_hazard_codes']
+    assert 'GH0001' in named_codes
+    assert 'GH009' in named_codes
+    assert 'unknown-code' not in named_codes

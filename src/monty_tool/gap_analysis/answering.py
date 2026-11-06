@@ -37,6 +37,20 @@ MODEL_CHOICES = tuple(model.value for model in LOCAL_MODELS) + ('bedrock',)
 
 # Helpers
 
+def _hazard_names() -> dict[str, str]:
+    """
+    Resolve nonempty hazard names, preferring the hazard code table over static fallbacks.
+    """
+    return {
+        **HAZARD_NAME_FALLBACKS,
+        **{
+            code: name
+            for code, name in hazard_code_lookup().select('hazard_code', 'hazard_label').iter_rows()
+            if name and name.strip()
+        },
+    }
+
+
 def make_answerer(model: str) -> AnyQueryAssistant:
     """
     Load the selected local or Bedrock assistant.
@@ -59,6 +73,7 @@ def select_contexts(
     Select country–hazard pairs from historical events, up to the supplied limit.
     By default, each pair must have evidence for every selected external source.
     Different events within the pair may supply different sources.
+    Hazards without a name are skipped before applying the limit and offset.
     """
     if limit < 1:
         raise ValueError('Limit must be positive.')
@@ -71,6 +86,7 @@ def select_contexts(
             query,
             parameters_={
                 **filters.model_dump(),
+                'named_hazard_codes': list(_hazard_names()),
                 'limit': limit,
                 'require_external_data': require_external_data,
                 'external_sources': (
@@ -88,25 +104,21 @@ def construct_gap_questions(
     templates: list[QuestionTemplate],
 ) -> list[GapQuestion]:
     """
-    Fill questions for a country and hazard, using events as historical evidence.
+    Fill questions for a named hazard; skip contexts without a hazard name.
     """
     question_params = {
         key: context[key] for key in ('country_code', 'hazard_code')
     }
+    hazard_name = _hazard_names().get(question_params['hazard_code'])
+    if hazard_name is None:
+        return []
     country = pycountry.countries.get(alpha_3=question_params['country_code'])
-    hazard_names = {
-        **HAZARD_NAME_FALLBACKS,
-        **dict(hazard_code_lookup().select('hazard_code', 'hazard_label').iter_rows()),
-    }
     labels = {
         'country': (
             f"{country.name} ({question_params['country_code']})"
             if country else question_params['country_code']
         ),
-        'hazard': (
-            f"{hazard_names[question_params['hazard_code']]} ({question_params['hazard_code']})"
-            if question_params['hazard_code'] in hazard_names else question_params['hazard_code']
-        ),
+        'hazard': f"{hazard_name} ({question_params['hazard_code']})",
     }
     scope = ''
     if context.get('from_date') or context.get('to_date'):
