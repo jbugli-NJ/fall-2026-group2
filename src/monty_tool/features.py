@@ -18,12 +18,12 @@ import polars as pl
 
 HAZARD_PROFILES_PATH = files('monty_tool.resources') / 'hazard_profiles.csv'
 
-# Source-data typos seen in the wild, mapped to the code the crosswalk knows.
+# Source-data typos seen in the wild, mapped to the code the hazard code table knows.
 HAZARD_CODE_FIXUPS = {
     'nat-gem-ear-gro': 'nat-geo-ear-gro',
 }
 
-# Every vocabulary column in the crosswalk that can appear in `monty:hazard_codes`.
+# Every vocabulary column in the hazard code table that can appear in `monty:hazard_codes`.
 HAZARD_CODE_COLUMNS = ('undrr_2025_key', 'undrr_key', 'glide_code', 'emdat_key')
 
 # `monty:impact_detail.type` values worth pivoting into their own columns.
@@ -44,7 +44,7 @@ _WHITESPACE = re.compile(r'\s+')
 
 def load_hazard_profiles() -> pl.DataFrame:
     """
-    Load the vendored hazard-code crosswalk.
+    Load the vendored hazard code table.
     """
     return pl.read_csv(str(HAZARD_PROFILES_PATH))
 
@@ -71,7 +71,7 @@ def hazard_code_lookup() -> pl.DataFrame:
 def add_hazard_features(frame: pl.DataFrame) -> pl.DataFrame:
     """
     Add `hazard_cluster`, `hazard_family`, and `hazard_label` from the first
-    code in `monty:hazard_codes` that the crosswalk recognises, after
+    code in `monty:hazard_codes` that the hazard code table recognises, after
     applying known typo fixups. Also adds `hazard_code_primary`, the code
     that was matched, and `n_hazard_codes`.
     """

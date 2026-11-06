@@ -2,7 +2,7 @@
 
 ## `hazard_profiles.csv`
 
-The hazard-code crosswalk used by the Montandon ETL, copied verbatim from
+The hazard code table used by the Montandon ETL, copied verbatim from
 [`IFRCGo/montandon-etl`](https://github.com/IFRCGo/montandon-etl) at
 `libs/pystac-monty/pystac_monty/HazardProfiles.csv` (pystac-monty, Apache-2.0,
 copyright the authors). Maps UNDRR-ISC 2025 / UNDRR-ISC 2020 / GLIDE / EM-DAT

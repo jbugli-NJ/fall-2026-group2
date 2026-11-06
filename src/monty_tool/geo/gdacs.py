@@ -25,7 +25,7 @@ SOURCE = 'GDACS'
 POLYGON_TYPES = ('Polygon', 'MultiPolygon')
 
 # UNDRR code prefixes to (layer, label). Anything else with a polygon is
-# labelled from the hazard crosswalk.
+# labelled from the hazard code table.
 LAYERS = {
     'EN0205': ('burnt_area', 'Burnt area'),
     'MH06': ('flood_area', 'Flood area'),
