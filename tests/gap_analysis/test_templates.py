@@ -31,11 +31,15 @@ def test_templates_have_unique_ids(hazard_code, hazard_name):
         'country_code': 'JPN', 'hazard_code': hazard_code,
         'from_date': '2000-01-01', 'to_date': '2025-12-31',
     }, templates.TEMPLATES)
+    if hazard_name is None:
+        assert questions == []
+        return
+    assert len(questions) == len(templates.TEMPLATES)
     for question in questions:
         assert question.country_code == 'JPN'
         assert question.hazard_code == hazard_code
         assert 'Japan (JPN)' in question.question
-        hazard = f'{hazard_name} ({hazard_code})' if hazard_name else hazard_code
+        hazard = f'{hazard_name} ({hazard_code})'
         assert hazard in question.question
         assert '2000-01-01 through 2025-12-31' in question.question
         assert '{' not in question.question
