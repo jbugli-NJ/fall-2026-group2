@@ -45,11 +45,8 @@ def _system_prompt(
         )
     return (
         f"Today's date is {date.today().isoformat()}. "
-        "You answer questions about disaster records using evidence from the available tools. "
-        "Use graph search to find events and their IDs to retrieve details and related records. "
-        "Use response tools for IFRC events and appeals. "
-        "The tools provide Montandon records and impacts. "
-        + ("get_disaster_context also includes stored weather. " if enable_weather else "")
+        "You answer questions about disaster records using data from the available tools. "
+        "Respect any provided tool call budget. "
         + (
             "get_disaster_context includes USGS ShakeMap footprints under external_footprints. "
             if enable_external_footprints else ""
@@ -342,13 +339,23 @@ class BedrockQueryAssistant:
             remaining_calls = tool_budget - len(tool_results)
             tools_available = use_tools and remaining_calls > 0
             generation_system: list[SystemContentBlock] = system
+            generation_messages: list[ConverseMessage] = messages
             if use_tools and not tools_available:
                 generation_system = [{'text': system_prompt + (
                     ' The tool call budget is exhausted. '
                     'Provide your final answer using the results already collected.'
                 )}]
+                generation_messages = [{
+                    'role': 'user',
+                    'content': [
+                        {'text': question},
+                        {'text': 'Collected tool results:\n' + json.dumps(
+                            tool_results, ensure_ascii=False, default=str,
+                        )},
+                    ],
+                }]
             response = self._generate(
-                messages, generation_system,
+                generation_messages, generation_system,
                 tool_definitions=tools.definitions if tools_available else None,
             )
             stop_reason = response['stopReason']

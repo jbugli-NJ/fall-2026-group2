@@ -291,7 +291,7 @@ def test_bedrock_assistant_executes_tool_call(monkeypatch: pytest.MonkeyPatch):
 
 def test_bedrock_assistant_limits_calls(monkeypatch: pytest.MonkeyPatch):
     """
-    Skip calls beyond the budget and return an error for each skipped call.
+    Skip calls beyond the budget and answer from collected evidence without tools.
     """
     assistant, converse = _bedrock_assistant(monkeypatch)
     assistant.max_tool_calls = 1
@@ -309,10 +309,14 @@ def test_bedrock_assistant_limits_calls(monkeypatch: pytest.MonkeyPatch):
 
     execute.assert_called_once()
     assert len(result['tool_results']) == 1
-    returned = converse.call_args.kwargs['messages'][-1]['content']
-    assert [block['toolResult']['toolUseId'] for block in returned] == ['first', 'second']
-    assert returned[1]['toolResult']['status'] == 'error'
+    messages = converse.call_args.kwargs['messages']
+    assert len(messages) == 1
+    assert messages[0]['content'][0] == {'text': 'Question'}
+    evidence = messages[0]['content'][1]['text'].removeprefix('Collected tool results:\n')
+    assert json.loads(evidence) == result['tool_results']
+    assert all(set(block) == {'text'} for message in messages for block in message['content'])
     assert 'toolConfig' not in converse.call_args.kwargs
+    assert 'budget is exhausted' in converse.call_args.kwargs['system'][0]['text']
 
 
 @pytest.mark.parametrize('backend', ['local', 'bedrock'])
@@ -372,10 +376,11 @@ def test_each_question_uses_its_own_tool_configuration(
     ]
     assert 'get_event_news' not in {item['function']['name'] for item in core_definitions}
     assert ('get_event_news' in {item['function']['name'] for item in external_definitions}) == enable_news
-    prompt = (
-        generate.call_args.args[0][0]['content'] if backend == 'local'
-        else generate.call_args.args[1][0]['text']
-    )
-    assert ('stored weather' in prompt) == enable_weather
-    assert ('get_event_news' in prompt) == enable_news
-    assert ('external_footprints' in prompt) == enable_external_footprints
+    for definitions, weather_enabled in [
+        (core_definitions, False), (external_definitions, enable_weather),
+    ]:
+        search = next(
+            item['function'] for item in definitions
+            if item['function']['name'] == 'search_disaster_events'
+        )
+        assert ('min_precipitation_total' in search['parameters']['properties']) == weather_enabled

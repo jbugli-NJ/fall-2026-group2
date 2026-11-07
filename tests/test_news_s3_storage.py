@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import cast
 from unittest.mock import Mock
@@ -93,16 +94,25 @@ def test_iter_media_cloud_snapshots_downloads_and_reads(monkeypatch) -> None:
     read.assert_called_once()
 
 
-def test_iter_rejects_snapshot_stored_under_another_event(monkeypatch) -> None:
+@pytest.mark.parametrize('relative_key', [
+    'emdat-events/event-0.json',
+    'emdat-events/emdat-events/event-1.json',
+])
+def test_iter_skips_mismatched_snapshot_and_continues(monkeypatch, caplog, relative_key) -> None:
     bucket = Mock()
-    key = "test-owner/media_cloud_articles/current/emdat-events/event-1.json"
-    bucket.objects.filter.return_value = [SimpleNamespace(key=key)]
+    key = f"test-owner/media_cloud_articles/current/{relative_key}"
+    valid_key = "test-owner/media_cloud_articles/current/emdat-events/event-1.json"
+    bucket.objects.filter.return_value = [SimpleNamespace(key=key), SimpleNamespace(key=valid_key)]
     run = Mock()
     run.job.event.collection = "emdat-events"
-    run.job.event.item_id = "event-2"
+    run.job.event.item_id = "event-1"
     monkeypatch.setattr(s3_storage, "read_media_cloud_snapshot", Mock(return_value=run))
-    with pytest.raises(ValueError, match="does not match its key"):
-        list(s3_storage.iter_media_cloud_snapshots(bucket, prefix="test-owner"))
+    with caplog.at_level(logging.DEBUG, logger=s3_storage.__name__):
+        found = list(s3_storage.iter_media_cloud_snapshots(bucket, prefix="test-owner"))
+    assert found == [(valid_key, run)]
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.DEBUG
+    assert key in caplog.records[0].getMessage()
 
 
 def test_current_path_encodes_event_ids_without_path_traversal(tmp_path) -> None:
