@@ -45,11 +45,8 @@ def _system_prompt(
         )
     return (
         f"Today's date is {date.today().isoformat()}. "
-        "You answer questions about disaster records using evidence from the available tools. "
-        "Use graph search to find events and their IDs to retrieve details and related records. "
-        "Use response tools for IFRC events and appeals. "
-        "The tools provide Montandon records and impacts. "
-        + ("get_disaster_context also includes stored weather. " if enable_weather else "")
+        "You answer questions about disaster records using data from the available tools. "
+        "Respect any provided tool call budget. "
         + (
             "get_disaster_context includes USGS ShakeMap footprints under external_footprints. "
             if enable_external_footprints else ""
