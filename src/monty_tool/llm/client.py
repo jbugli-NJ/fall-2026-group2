@@ -342,13 +342,23 @@ class BedrockQueryAssistant:
             remaining_calls = tool_budget - len(tool_results)
             tools_available = use_tools and remaining_calls > 0
             generation_system: list[SystemContentBlock] = system
+            generation_messages: list[ConverseMessage] = messages
             if use_tools and not tools_available:
                 generation_system = [{'text': system_prompt + (
                     ' The tool call budget is exhausted. '
                     'Provide your final answer using the results already collected.'
                 )}]
+                generation_messages = [{
+                    'role': 'user',
+                    'content': [
+                        {'text': question},
+                        {'text': 'Collected tool results:\n' + json.dumps(
+                            tool_results, ensure_ascii=False, default=str,
+                        )},
+                    ],
+                }]
             response = self._generate(
-                messages, generation_system,
+                generation_messages, generation_system,
                 tool_definitions=tools.definitions if tools_available else None,
             )
             stop_reason = response['stopReason']
