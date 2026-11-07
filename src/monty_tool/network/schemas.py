@@ -52,6 +52,29 @@ class WeatherNodeData(TypedDict):
     item_id: str
     properties: WeatherNodeProperties
 
+
+class FootprintNodeData(TypedDict):
+    """
+    A hazard footprint summary, linked to the events sharing its source
+    Item's correlation ID. Outlines stay at `data_url`, not in the graph.
+    """
+    id: str
+    item_id: str
+    corr_id: str
+    source: str
+    origin: str
+    layer: str
+    label: str
+    detail: str
+    datetime: datetime
+    area_name: str | None
+    size_km: float | None
+    feature_count: int | None
+    severity_property: str | None
+    severity_levels: list[str]
+    data_url: str
+    source_url: str | None
+
 class BaseNodeData(TypedDict):
     """
     Properties shared by all source-record nodes in the graph.

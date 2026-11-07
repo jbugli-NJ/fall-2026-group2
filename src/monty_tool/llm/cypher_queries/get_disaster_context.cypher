@@ -2,6 +2,7 @@ MATCH (event:Event {id: $event_id})
 OPTIONAL MATCH (event)-[:IN_COUNTRY]->(country:Country)
 OPTIONAL MATCH (event)-[:HAS_HAZARD]->(hazard:Hazard)
 OPTIONAL MATCH (impact:Impact)-[:IMPACT_OF]->(event)
+OPTIONAL MATCH (footprint:Footprint)-[:FOOTPRINT_OF]->(event)
 RETURN event.id AS event_id,
        event.title AS title,
        event.description AS description,
@@ -37,6 +38,30 @@ RETURN event.id AS event_id,
          temperature_min_unit: event.weather_temperature_min_unit,
          wind_speed_unit: event.weather_wind_speed_unit
        } END AS weather,
+       collect(DISTINCT CASE WHEN footprint IS NULL OR footprint.origin <> 'montandon' THEN NULL ELSE {
+         source: footprint.source,
+         layer: footprint.layer,
+         label: footprint.label,
+         detail: footprint.detail,
+         area_name: footprint.area_name,
+         size_km: footprint.size_km,
+         feature_count: footprint.feature_count,
+         severity_property: footprint.severity_property,
+         severity_levels: footprint.severity_levels,
+         data_url: footprint.data_url
+       } END) AS footprints,
+       collect(DISTINCT CASE WHEN footprint IS NULL OR footprint.origin <> 'external' THEN NULL ELSE {
+         source: footprint.source,
+         layer: footprint.layer,
+         label: footprint.label,
+         detail: footprint.detail,
+         area_name: footprint.area_name,
+         size_km: footprint.size_km,
+         feature_count: footprint.feature_count,
+         severity_property: footprint.severity_property,
+         severity_levels: footprint.severity_levels,
+         data_url: footprint.data_url
+       } END) AS external_footprints,
        collect(DISTINCT country.code) AS country_codes,
        collect(DISTINCT hazard.code) AS hazard_codes,
        collect(DISTINCT CASE WHEN impact IS NULL THEN NULL ELSE {
