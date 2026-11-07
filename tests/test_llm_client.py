@@ -376,10 +376,11 @@ def test_each_question_uses_its_own_tool_configuration(
     ]
     assert 'get_event_news' not in {item['function']['name'] for item in core_definitions}
     assert ('get_event_news' in {item['function']['name'] for item in external_definitions}) == enable_news
-    prompt = (
-        generate.call_args.args[0][0]['content'] if backend == 'local'
-        else generate.call_args.args[1][0]['text']
-    )
-    assert ('stored weather' in prompt) == enable_weather
-    assert ('get_event_news' in prompt) == enable_news
-    assert ('external_footprints' in prompt) == enable_external_footprints
+    for definitions, weather_enabled in [
+        (core_definitions, False), (external_definitions, enable_weather),
+    ]:
+        search = next(
+            item['function'] for item in definitions
+            if item['function']['name'] == 'search_disaster_events'
+        )
+        assert ('min_precipitation_total' in search['parameters']['properties']) == weather_enabled
