@@ -140,11 +140,14 @@ class QueryAssistant:
             skip_special_tokens=False,
         )
         print("Raw model response:", repr(response))
-        return self.tokenizer.parse_response(
+        parsed = self.tokenizer.parse_response(
             response,
             prefix=inputs['input_ids'][0],
             tools=tool_definitions,
         )
+        parsed['input_tokens'] = prompt_length
+        parsed['output_tokens'] = output.shape[-1] - prompt_length
+        return parsed
 
     def ask(
         self,
@@ -175,6 +178,8 @@ class QueryAssistant:
             {"role": "user", "content": question},
         ]
         tool_results: list[dict[str, Any]] = []
+        input_tokens = 0
+        output_tokens = 0
         tool_budget = self.max_tool_calls if use_tools else 0
 
         while True:
@@ -196,6 +201,8 @@ class QueryAssistant:
                 generation_messages,
                 tool_definitions=tools.definitions if tools_available else None,
             )
+            input_tokens += response['input_tokens']
+            output_tokens += response['output_tokens']
             calls = [tool_call['function'] for tool_call in response.get('tool_calls', [])]
             if any(
                 not isinstance(call.get('name'), str)
@@ -214,6 +221,8 @@ class QueryAssistant:
                 return {
                     "answer": answer,
                     "tool_results": tool_results,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                 }
 
             # Execute only the requests that fit in the remaining budget.
@@ -333,6 +342,8 @@ class BedrockQueryAssistant:
             {'role': 'user', 'content': [{'text': question}]},
         ]
         tool_results: list[dict[str, Any]] = []
+        input_tokens = 0
+        output_tokens = 0
         tool_budget = self.max_tool_calls if use_tools else 0
 
         while True:
@@ -358,6 +369,8 @@ class BedrockQueryAssistant:
                 generation_messages, generation_system,
                 tool_definitions=tools.definitions if tools_available else None,
             )
+            input_tokens += response['usage']['inputTokens']
+            output_tokens += response['usage']['outputTokens']
             stop_reason = response['stopReason']
             if stop_reason not in ('end_turn', 'stop_sequence', 'tool_use'):
                 raise ValueError(f'Model response stopped with {stop_reason}.')
@@ -377,7 +390,10 @@ class BedrockQueryAssistant:
                 ).strip()
                 if not answer:
                     raise ValueError('Expected a final answer or a tool call.')
-                return {'answer': answer, 'tool_results': tool_results}
+                return {
+                    'answer': answer, 'tool_results': tool_results,
+                    'input_tokens': input_tokens, 'output_tokens': output_tokens,
+                }
 
             results: list[ContentBlock] = []
             for tool_call in calls:
