@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 from typing import Any, cast
 
 import boto3
@@ -27,26 +28,40 @@ from monty_tool.utils.versions import FrozenModel
 DEFAULT_BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 
 
-def _system_prompt(use_tools: bool, enable_external: bool) -> str:
+def _system_prompt(
+    use_tools: bool,
+    enable_news: bool,
+    enable_weather: bool,
+    enable_external_footprints: bool,
+) -> str:
     """
     Describe the evidence available for the current question.
     """
     if not use_tools:
         return (
+            f"Today's date is {date.today().isoformat()}. "
             "You answer questions about disaster records using your own knowledge. "
             "Answer in the user's language."
         )
     return (
-        "You answer questions about disaster records. Use graph search tools to find events, "
-        "then use returned event IDs for details or related records. Use response tools for "
-        "IFRC events and appeals. Base factual statements on tool results and identify "
-        "information that remains unavailable. Answer in the user's language. "
+        f"Today's date is {date.today().isoformat()}. "
+        "You answer questions about disaster records using evidence from the available tools. "
+        "Use graph search to find events and their IDs to retrieve details and related records. "
+        "Use response tools for IFRC events and appeals. "
+        "The tools provide Montandon records and impacts. "
+        + ("get_disaster_context also includes stored weather. " if enable_weather else "")
         + (
-            "get_disaster_context includes stored weather and USGS ShakeMap footprints under "
-            "external_footprints. Use get_event_news for relevant "
-            "stored articles. Distinguish Montandon records from external evidence."
-            if enable_external else "The available tools expose Montandon records and impacts."
+            "get_disaster_context includes USGS ShakeMap footprints under external_footprints. "
+            if enable_external_footprints else ""
         )
+        + ("get_event_news retrieves stored articles about an event. " if enable_news else "")
+        + "Before answering, assess whether the retrieved evidence addresses the question. "
+        "If relevant information is missing and an available tool could supply it, retrieve "
+        "that evidence before concluding it is unavailable. Perform relevant lookups now "
+        "rather than offering to do them later. "
+        "Base factual statements on the retrieved evidence, distinguish Montandon records "
+        "from external sources, and identify any information that remains unavailable. "
+        "Answer in the user's language."
     )
 
 
@@ -135,15 +150,29 @@ class QueryAssistant:
         )
 
     def ask(
-        self, question: str, *, use_tools: bool = True, enable_external: bool = True,
+        self,
+        question: str,
+        *,
+        use_tools: bool = True,
+        enable_news: bool = True,
+        enable_weather: bool = True,
+        enable_external_footprints: bool = True,
     ) -> QueryAssistantResponse:
         """
         Answer one question with optional access to graph query tools.
         """
         tools = QueryTools(
-            max_tool_calls=self.max_tool_calls, enable_external=enable_external,
+            max_tool_calls=self.max_tool_calls,
+            enable_news=enable_news,
+            enable_weather=enable_weather,
+            enable_external_footprints=enable_external_footprints,
         )
-        system_prompt = _system_prompt(use_tools, enable_external)
+        system_prompt = _system_prompt(
+            use_tools,
+            enable_news,
+            enable_weather,
+            enable_external_footprints,
+        )
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question},
@@ -263,7 +292,7 @@ class BedrockQueryAssistant:
             'modelId': self.model_id,
             'messages': messages,
             'system': system,
-            'inferenceConfig': {'maxTokens': max_new_tokens, 'temperature': 0.0},
+            'inferenceConfig': {'maxTokens': max_new_tokens, 'temperature': 1.0},
         }
         if tool_definitions is not None:
             request['toolConfig'] = {
@@ -279,15 +308,29 @@ class BedrockQueryAssistant:
         return self.client.converse(**request)
 
     def ask(
-        self, question: str, *, use_tools: bool = True, enable_external: bool = True,
+        self,
+        question: str,
+        *,
+        use_tools: bool = True,
+        enable_news: bool = True,
+        enable_weather: bool = True,
+        enable_external_footprints: bool = True,
     ) -> QueryAssistantResponse:
         """
         Answer one question with optional tool access.
         """
         tools = QueryTools(
-            max_tool_calls=self.max_tool_calls, enable_external=enable_external,
+            max_tool_calls=self.max_tool_calls,
+            enable_news=enable_news,
+            enable_weather=enable_weather,
+            enable_external_footprints=enable_external_footprints,
         )
-        system_prompt = _system_prompt(use_tools, enable_external)
+        system_prompt = _system_prompt(
+            use_tools,
+            enable_news,
+            enable_weather,
+            enable_external_footprints,
+        )
         system: list[SystemContentBlock] = [{'text': system_prompt}]
         messages: list[ConverseMessage] = [
             {'role': 'user', 'content': [{'text': question}]},

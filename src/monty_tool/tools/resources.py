@@ -12,6 +12,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 
 # Logger
 
@@ -39,13 +41,15 @@ def get_env_bucket_prefix() -> str:
     if prefix == '':
         logger.warning(
             'AWS_BUCKET_PREFIX is unset or blank! '
-            'Defaulting to aidan.carlisle@gwu.edu/'
+            'Defaulting to shared/group2/'
         )
-        return 'aidan.carlisle@gwu.edu/'
+        return 'shared/group2/'
     return prefix + '/'
 
 
 # Bucket resources
+
+load_dotenv()
 
 BUCKET_DATA_PREFIX = get_env_bucket_prefix()
 

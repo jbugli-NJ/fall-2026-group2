@@ -316,7 +316,16 @@ def test_bedrock_assistant_limits_calls(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.parametrize('backend', ['local', 'bedrock'])
-def test_each_question_uses_its_own_tool_configuration(monkeypatch, backend):
+@pytest.mark.parametrize('enable_news', [False, True])
+@pytest.mark.parametrize('enable_weather', [False, True])
+@pytest.mark.parametrize('enable_external_footprints', [False, True])
+def test_each_question_uses_its_own_tool_configuration(
+    monkeypatch,
+    backend,
+    enable_news,
+    enable_weather,
+    enable_external_footprints,
+):
     """
     Build tools for each question and pass that question's definitions to generation.
     """
@@ -332,13 +341,41 @@ def test_each_question_uses_its_own_tool_configuration(monkeypatch, backend):
     monkeypatch.setattr(client, 'QueryTools', factory)
     assistant.max_tool_calls = 3
 
-    assistant.ask('Core question', enable_external=False)
+    assistant.ask(
+        'Core question',
+        enable_news=False,
+        enable_weather=False,
+        enable_external_footprints=False,
+    )
     core_definitions = generate.call_args.kwargs['tool_definitions']
-    assistant.ask('External question')
+    assistant.ask(
+        'Source question',
+        enable_news=enable_news,
+        enable_weather=enable_weather,
+        enable_external_footprints=enable_external_footprints,
+    )
     external_definitions = generate.call_args.kwargs['tool_definitions']
 
     assert factory.call_args_list == [
-        call(max_tool_calls=3, enable_external=False), call(max_tool_calls=3, enable_external=True),
+        call(
+            max_tool_calls=3,
+            enable_news=False,
+            enable_weather=False,
+            enable_external_footprints=False,
+        ),
+        call(
+            max_tool_calls=3,
+            enable_news=enable_news,
+            enable_weather=enable_weather,
+            enable_external_footprints=enable_external_footprints,
+        ),
     ]
     assert 'get_event_news' not in {item['function']['name'] for item in core_definitions}
-    assert 'get_event_news' in {item['function']['name'] for item in external_definitions}
+    assert ('get_event_news' in {item['function']['name'] for item in external_definitions}) == enable_news
+    prompt = (
+        generate.call_args.args[0][0]['content'] if backend == 'local'
+        else generate.call_args.args[1][0]['text']
+    )
+    assert ('stored weather' in prompt) == enable_weather
+    assert ('get_event_news' in prompt) == enable_news
+    assert ('external_footprints' in prompt) == enable_external_footprints

@@ -10,6 +10,7 @@ from typing import Any, LiteralString, cast
 
 from neo4j import RoutingControl
 
+from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES, ExternalSourceName
 from monty_tool.gap_analysis.schemas import AnswerAttempt, GapQuestion, QuestionTemplate
 from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
@@ -44,9 +45,16 @@ def make_answerer(model: str) -> AnyQueryAssistant:
     )
 
 
-def select_contexts(filters: GraphSearchArguments, limit: int) -> list[dict[str, Any]]:
+def select_contexts(
+    filters: GraphSearchArguments,
+    limit: int,
+    *,
+    require_external_data: bool = True,
+    external_sources: list[ExternalSourceName] | None = None,
+) -> list[dict[str, Any]]:
     """
     Fetch the newest matching event records and their impacts, up to the supplied limit.
+    By default, require stored evidence for every selected external source.
     """
     if limit < 1:
         raise ValueError('Event limit must be positive.')
@@ -57,7 +65,14 @@ def select_contexts(filters: GraphSearchArguments, limit: int) -> list[dict[str,
     with get_graph_db_driver() as driver:
         records, _, _ = driver.execute_query(
             query,
-            parameters_={**filters.model_dump(), 'limit': limit},
+            parameters_={
+                **filters.model_dump(),
+                'limit': limit,
+                'require_external_data': require_external_data,
+                'external_sources': (
+                    list(EXTERNAL_SOURCES) if external_sources is None else external_sources
+                ),
+            },
             database_='neo4j',
             routing_=RoutingControl.READ,
         )
@@ -88,18 +103,23 @@ def answer_question(
     assistant: QueryAssistantProtocol,
     question: GapQuestion,
     *,
-    enable_external: bool,
+    external_source: ExternalSourceName | None,
 ) -> AnswerAttempt:
     """
-    Answer a gap analysis question with external data enabled or disabled.
+    Answer a question using the selected data sources.
     Return the answer, elapsed time, and any retrieval or model error.
+    Use external_source=None to restrict the answer to Montandon records.
     """
+    if external_source is not None and external_source not in EXTERNAL_SOURCES:
+        raise ValueError(f'Unknown external source: {external_source}')
     started = perf_counter()
     try:
         response = assistant.ask(
             question.question,
             use_tools=True,
-            enable_external=enable_external,
+            enable_news=external_source == 'news',
+            enable_weather=external_source == 'weather',
+            enable_external_footprints=external_source == 'shakemap_footprints',
         )
         attempt = AnswerAttempt(
             response=response,

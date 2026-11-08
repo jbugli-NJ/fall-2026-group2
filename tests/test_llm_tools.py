@@ -28,52 +28,106 @@ def graph_driver(monkeypatch):
 
 # Tests
 
-@pytest.mark.parametrize('enable_external', [False, True])
-def test_external_access_controls_tool_definitions(enable_external):
+@pytest.mark.parametrize('enable_news', [False, True])
+@pytest.mark.parametrize('enable_weather', [False, True])
+@pytest.mark.parametrize('enable_external_footprints', [False, True])
+def test_source_flags_control_tool_definitions(
+    enable_news,
+    enable_weather,
+    enable_external_footprints,
+):
     """
-    Advertise news and weather filters only when external access is enabled.
+    Expose tools and search filters only for enabled sources.
     """
     definitions = {
         item['function']['name']: item['function']
-        for item in tools.QueryTools(enable_external=enable_external).definitions
+        for item in tools.QueryTools(
+            enable_news=enable_news,
+            enable_weather=enable_weather,
+            enable_external_footprints=enable_external_footprints,
+        ).definitions
     }
-    assert ('get_event_news' in definitions) == enable_external
+    assert ('get_event_news' in definitions) == enable_news
     filters = definitions['search_disaster_events']['parameters']['properties']
-    assert ('min_elevation' in filters) == enable_external
+    assert ('min_elevation' in filters) == enable_weather
+    description = definitions['get_disaster_context']['description']
+    assert ('stored weather' in description) == enable_weather
+    assert ('USGS ShakeMap' in description) == enable_external_footprints
+    assert 'Montandon hazard footprints' in description
 
 
+@pytest.mark.parametrize('enable_news', [False, True])
+@pytest.mark.parametrize('enable_weather', [False, True])
+@pytest.mark.parametrize('enable_external_footprints', [False, True])
 @pytest.mark.parametrize('name, arguments', [
     ('get_event_news', {'event_id': 'event-1'}),
     ('search_disaster_events', {'min_elevation': 0}),
 ])
-def test_core_only_blocks_external_calls(graph_driver, name, arguments):
+def test_source_flags_control_tool_execution(
+    graph_driver,
+    enable_news,
+    enable_weather,
+    enable_external_footprints,
+    name,
+    arguments,
+):
     """
-    Reject external requests before querying the graph.
+    Reject calls for disabled sources before querying the graph.
     """
-    result = tools.QueryTools(enable_external=False).execute(name, arguments)
-    assert result['status'] == 'error'
-    graph_driver.execute_query.assert_not_called()
+    result = tools.QueryTools(
+        enable_news=enable_news,
+        enable_weather=enable_weather,
+        enable_external_footprints=enable_external_footprints,
+    ).execute(
+        name,
+        arguments,
+    )
+    allowed = enable_news if name == 'get_event_news' else enable_weather
+    assert result['status'] == ('ok' if allowed else 'error')
+    assert graph_driver.execute_query.called == allowed
 
 
-@pytest.mark.parametrize('enable_external', [False, True])
-def test_external_access_controls_event_and_impact_weather(graph_driver, enable_external):
+@pytest.mark.parametrize('enable_news', [False, True])
+@pytest.mark.parametrize('enable_weather', [False, True])
+@pytest.mark.parametrize('enable_external_footprints', [False, True])
+def test_source_flags_control_results(
+    graph_driver,
+    enable_news,
+    enable_weather,
+    enable_external_footprints,
+):
     """
-    Preserve core impact values while exposing weather only in external mode.
+    Filter each external source independently, including nested weather fields.
     """
     row = {
         'weather': {'source': 'external'},
+        'weather_mean_temperature': 25,
         'footprints': [{'source': 'CEMS'}],
         'external_footprints': [{'source': 'USGS'}],
         'impacts': [{'impact_value': 12, 'weather': {}}],
     }
     graph_driver.execute_query.return_value = ([Mock(data=Mock(return_value=row))], None, None)
 
-    result = tools.QueryTools(enable_external=enable_external).execute(
-        'get_disaster_context', {'event_id': 'event-1'},
+    result = tools.QueryTools(
+        enable_news=enable_news,
+        enable_weather=enable_weather,
+        enable_external_footprints=enable_external_footprints,
+    ).execute(
+        'get_disaster_context',
+        {'event_id': 'event-1'},
     )
 
     core = {'footprints': [{'source': 'CEMS'}], 'impacts': [{'impact_value': 12}]}
-    assert result['rows'] == [row if enable_external else core]
+    if enable_weather:
+        core.update(
+            weather=row['weather'],
+            weather_mean_temperature=25,
+            impacts=row['impacts'],
+        )
+    if enable_external_footprints:
+        core['external_footprints'] = row['external_footprints']
+    assert result['status'] == 'ok'
+    assert result['rows'] == [core]
 
 
 @pytest.mark.parametrize('metric', ['elevation', 'mean_temperature', 'precipitation_total'])

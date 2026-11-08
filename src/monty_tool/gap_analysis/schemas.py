@@ -3,10 +3,11 @@ Schemas for question templates, answer attempts, and paired results.
 """
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
+from monty_tool.gap_analysis.external_sources import ExternalSourceName
 from monty_tool.llm.schemas import QueryAssistantResponse
 
 
@@ -63,9 +64,15 @@ class AnswerAttempt(BaseModel):
 
 class PairedResult(BaseModel):
     """
-    Answers to the same question with and without external data, and their
-    contribution judgment.
+    Two answers to the same question and a judgment of what external data adds.
+
+    The core answer uses Montandon records alone. The external answer also has
+    access to the specified external source.
     """
+    external_source: ExternalSourceName | Literal['combined'] = Field(
+        default='combined', min_length=1,
+        validation_alias=AliasChoices('external_source', 'source'),
+    )
     question: GapQuestion
     core_context: dict[str, Any]
     core: AnswerAttempt

@@ -308,14 +308,14 @@ def test_exact_s3_run_is_reused_without_new_requests(environment, monkeypatch, t
     model.assert_not_called()
 
 
-def test_missing_s3_prefix_rejected_before_requests(environment, monkeypatch):
-    args, load, collect, _, get_bucket, _, _, _ = environment
+def test_s3_upload_uses_shared_default_prefix(environment, monkeypatch, capsys):
+    args, _, _, _, _, bucket, _, _ = environment
     monkeypatch.setenv("AWS_BUCKET", "test-bucket")
-    with pytest.raises(SystemExit):
-        cli.main([*args, *EXECUTE, "--s3-upload"])
-    load.assert_not_called()
-    collect.assert_not_called()
-    get_bucket.assert_not_called()
+    assert cli.main([*args, *EXECUTE, "--s3-upload"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    key = "shared/group2/media_cloud_articles/current/emdat-events/event-a.json"
+    assert output["saved"][0]["s3_key"] == key
+    assert bucket.upload_file.call_args.args[1] == key
 
 
 def test_upload_failure_preserves_local_snapshot(environment, monkeypatch, capsys):
@@ -380,6 +380,7 @@ def test_api_error_stops_without_fake_success(environment, capsys):
     assert cli.main([*args, *EXECUTE]) == 1
     output = json.loads(capsys.readouterr().out)
     assert output["stop_reason"] == "error"
+    assert output["error"] == "offline test"
     assert output["saved"] == []
 
 

@@ -1,26 +1,60 @@
 """
-Tests for the contribution summary chart.
+Tests for the improvement chart.
 """
 
-from matplotlib.patches import Rectangle
+# Imports
+
+import numpy as np
 
 from monty_tool.gap_analysis.plotting import build_summary_plot
-from monty_tool.gap_analysis.schemas import Contribution
 
 
-def test_chart_includes_every_category_and_failed_pairs():
+# Tests
+
+
+def test_chart_preserves_rates_and_separates_models():
     """
-    Verify chart segment sizes match category and failure counts.
+    Separate overlapping models, preserve zero rates, and omit failed evaluations.
     """
-    categories = {category.value: index for index, category in enumerate(Contribution, 1)}
-    total = sum(categories.values())
-    figure = build_summary_plot(
+    summary = [
         {
-            'impacts': {
-                'categories': categories, 'evaluated': total, 'attempted': total + 2,
-            },
-        }
-    )
-    assert [
-        bar.get_width() for bar in figure.axes[0].patches if isinstance(bar, Rectangle)
-    ] == [*categories.values(), 2]
+            'answer_model': {'id': 'model-a'}, 'judge_model': {'id': 'judge-a'},
+            'results': [
+                {'template_id': 'human_impacts', 'external_source': 'news',
+                 'attempted': 12, 'evaluated': 10, 'improvement_rate': 0.6},
+                {'template_id': 'human_impacts', 'external_source': 'weather',
+                 'attempted': 3, 'evaluated': 0, 'improvement_rate': None},
+            ],
+        },
+        {
+            'answer_model': {'id': 'model-b'}, 'judge_model': {'id': 'judge-b'},
+            'results': [
+                {'template_id': 'human_impacts', 'external_source': 'news',
+                 'attempted': 5, 'evaluated': 5, 'improvement_rate': 0.6},
+                {'template_id': 'human_impacts', 'external_source': 'weather',
+                 'attempted': 8, 'evaluated': 8, 'improvement_rate': 0.0},
+            ],
+        },
+    ]
+    figure = build_summary_plot(summary)
+    axes = figure.axes[0]
+    first, second = [np.asarray(points.get_offsets()) for points in axes.collections]
+    assert list(first[:, 0]) == [0.6]
+    assert list(second[:, 0]) == [0.6, 0.0]
+    assert first[0, 1] > second[0, 1]
+    texts = [text.get_text() for text in axes.texts]
+    assert '10 · 2' in texts
+    assert '0 · 3' in texts
+    assert 'No evaluations' in texts
+    assert [text.get_text() for text in figure.legends[0].get_texts()] == [
+        'model-a\nJudge: judge-a', 'model-b\nJudge: judge-b',
+    ]
+
+
+def test_empty_chart():
+    """
+    Render an empty summary without model points.
+    """
+    axes = build_summary_plot([]).axes[0]
+    assert not axes.collections
+    assert axes.texts[0].get_text() == 'No results'

@@ -24,7 +24,7 @@ def test_answer_requires_successful_retrieval(pair, statuses, failed):
         'answer': 'Answer',
         'tool_results': [{'result': {'status': status}} for status in statuses],
     }
-    result = answering.answer_question(assistant, pair.question, enable_external=False)
+    result = answering.answer_question(assistant, pair.question, external_source=None)
     assert (result.error is not None) == failed
     assert result.response == assistant.ask.return_value
 
@@ -35,19 +35,37 @@ def test_model_error_is_saved(pair):
     """
     assistant = Mock()
     assistant.ask.side_effect = ValueError('Model failed')
-    result = answering.answer_question(assistant, pair.question, enable_external=False)
+    result = answering.answer_question(assistant, pair.question, external_source=None)
     assert result.error == 'Model failed'
 
 
-def test_event_selection_uses_one_graph_query(monkeypatch):
+@pytest.mark.parametrize('require_external_data', [True, False])
+@pytest.mark.parametrize('sources', [None, ['news', 'weather'], ['shakemap_footprints']])
+def test_event_selection_uses_one_graph_query(
+    monkeypatch,
+    require_external_data,
+    sources,
+):
     """
-    Verify event selection makes one graph query with the requested limit.
+    Pass the event limit and external data requirement to the selection query.
     """
     driver = Mock()
     driver.execute_query.return_value = (
         [Mock(data=lambda: {'event_id': 'e'})], None, None,
     )
     monkeypatch.setattr(answering, 'get_graph_db_driver', lambda: nullcontext(driver))
-    assert answering.select_contexts(GraphSearchArguments(), 2) == [{'event_id': 'e'}]
+    assert answering.select_contexts(
+        GraphSearchArguments(),
+        2,
+        require_external_data=require_external_data,
+        external_sources=sources,
+    ) == [{'event_id': 'e'}]
     driver.execute_query.assert_called_once()
     assert driver.execute_query.call_args.kwargs['parameters_']['limit'] == 2
+    assert (
+        driver.execute_query.call_args.kwargs['parameters_']['require_external_data']
+        is require_external_data
+    )
+    assert driver.execute_query.call_args.kwargs['parameters_']['external_sources'] == (
+        ['news', 'weather', 'shakemap_footprints'] if sources is None else sources
+    )
