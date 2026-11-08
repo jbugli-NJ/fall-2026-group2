@@ -3,6 +3,8 @@ Judge prompts and local and Bedrock implementations for classifying contribution
 from external data.
 """
 
+# Imports
+
 import json
 from typing import Any
 
@@ -11,6 +13,8 @@ from monty_tool.gap_analysis.schemas import Contribution, PairedResult
 from monty_tool.llm.classification import classify_labels
 from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 
+
+# Rubric
 
 RUBRIC_VERSION = 'source-contribution-v2'
 LABELS = {
@@ -75,6 +79,8 @@ Reply with exactly one letter: A, B, C, D, E, F, or G.
 """.strip()
 
 
+# Judge prompts
+
 def judgment_messages(pair: PairedResult) -> list[dict[str, Any]]:
     """
     Generate input messages to judge a result pair.
@@ -88,11 +94,9 @@ def judgment_messages(pair: PairedResult) -> list[dict[str, Any]]:
             'content': json.dumps(
                 {
                     'external_source': pair.external_source,
-                    'external_source_evidence': (
-                        EXTERNAL_SOURCES[pair.external_source].evidence_description
-                        if pair.external_source in EXTERNAL_SOURCES
-                        else 'Evidence attributed to the external source in tool results.'
-                    ),
+                    'external_source_evidence': EXTERNAL_SOURCES[
+                        pair.external_source
+                    ].evidence_description,
                     'question': pair.question.model_dump(),
                     'core_context': pair.core_context,
                     'core_answer': pair.core.response,
@@ -104,6 +108,8 @@ def judgment_messages(pair: PairedResult) -> list[dict[str, Any]]:
         },
     ]
 
+
+# Judges
 
 class LocalContributionJudge:
     """

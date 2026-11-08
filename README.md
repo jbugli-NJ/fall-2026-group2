@@ -238,7 +238,11 @@ Use `--no-require-external-data` to disable that filter.
 
 Outputs accumulate under `benchmarks/gap_analysis/`:
 
-- `results.json`: each invocation's settings, answers, evidence, and combined counts by external source.
+- `results.json`: each invocation's settings, response S3 path, errors, timings, and other metadata.
+  tool-failure counts, and combined counts by external source.
 - `summary.svg`: improvement rates by question type and external source, using separate model markers.
 
 Summaries use the current rubric version and answering/judging model combinations.
+
+Full responses are uploaded to the selected bucket/prefix under `gap_analysis/responses/*.json`.
+Bucket paths are saved in the committed JSON file for potential reference.

@@ -2,8 +2,11 @@
 Command-line runner and result summaries for gap analysis.
 """
 
+# Imports
+
 import argparse
 from collections import Counter
+from collections.abc import Sequence
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -26,18 +29,22 @@ from monty_tool.gap_analysis.judging import (
 from monty_tool.gap_analysis.protocols import ContributionJudge
 from monty_tool.gap_analysis.plotting import build_summary_plot
 from monty_tool.gap_analysis.schemas import (
-    AnalysisRun,
     AnswerAttempt,
     Contribution,
     GapQuestion,
     PairedResult,
+    SavedAnalysisRun,
+    SavedPairedResult,
 )
 from monty_tool.gap_analysis.templates import TEMPLATES
+from monty_tool.gap_analysis.storage import save_attempt
 from monty_tool.llm.client import DEFAULT_BEDROCK_MODEL_ID, BedrockQueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
 from monty_tool.llm.tools import DisasterEventSearchArguments
 from monty_tool.utils.versions import SEED, FrozenModel
 
+
+# Paired evaluation
 
 def run_pair(
     question: GapQuestion,
@@ -74,7 +81,9 @@ def run_pair(
     return pair
 
 
-def summarize(results: list[PairedResult]) -> dict[str, Any]:
+# Results and summaries
+
+def summarize(results: Sequence[SavedPairedResult]) -> dict[str, Any]:
     """
     Count categories and failures for each question template and source.
     """
@@ -92,6 +101,10 @@ def summarize(results: list[PairedResult]) -> dict[str, Any]:
         improved = sum(counts[category.value] for category in (
             Contribution.FILLS_FIELD, Contribution.EXTENDS_COVERAGE, Contribution.QUALIFIES,
         ))
+        tool_failures = [
+            pair.core.tool_failure_count + pair.external.tool_failure_count
+            for pair in pairs
+        ]
         summary[f'{template_id} / {source}'] = {
             'template_id': template_id,
             'external_source': source,
@@ -104,13 +117,8 @@ def summarize(results: list[PairedResult]) -> dict[str, Any]:
                 for pair in pairs
             ),
             'judge_failures': sum(pair.judge_error is not None for pair in pairs),
-            'tool_failures': sum(
-                pair.core.tool_failures + pair.external.tool_failures for pair in pairs
-            ),
-            'pairs_with_tool_failures': sum(
-                bool(pair.core.tool_failures or pair.external.tool_failures)
-                for pair in pairs
-            ),
+            'tool_failures': sum(tool_failures),
+            'pairs_with_tool_failures': sum(count > 0 for count in tool_failures),
             'categories': {
                 category.value: counts[category.value] for category in Contribution
             },
@@ -118,7 +126,7 @@ def summarize(results: list[PairedResult]) -> dict[str, Any]:
     return summary
 
 
-def load_runs(output_dir: Path) -> list[AnalysisRun]:
+def load_runs(output_dir: Path) -> list[SavedAnalysisRun]:
     """
     Filter saved runs to the current rubric, then validate them.
     """
@@ -127,17 +135,17 @@ def load_runs(output_dir: Path) -> list[AnalysisRun]:
         return []
     payload = json.loads(path.read_text())
     return [
-        AnalysisRun.model_validate(record)
+        SavedAnalysisRun.model_validate(record)
         for record in payload['runs']
         if record.get('metadata', {}).get('rubric_version') == RUBRIC_VERSION
     ]
 
 
-def summarize_runs(runs: list[AnalysisRun]) -> list[dict[str, Any]]:
+def summarize_runs(runs: Sequence[SavedAnalysisRun]) -> list[dict[str, Any]]:
     """
     Summarize the current rubric separately for each answer and judge model.
     """
-    groups: dict[tuple[str, str], list[PairedResult]] = {}
+    groups: dict[tuple[str, str], list[SavedPairedResult]] = {}
     for batch in runs:
         if batch.metadata.get('rubric_version') != RUBRIC_VERSION:
             continue
@@ -157,7 +165,10 @@ def summarize_runs(runs: list[AnalysisRun]) -> list[dict[str, Any]]:
     ]
 
 
-def save_results(output_dir: Path, runs: list[AnalysisRun]) -> None:
+def save_results(
+    output_dir: Path,
+    runs: Sequence[SavedAnalysisRun],
+) -> None:
     """
     Save all runs and summarize those using the current rubric version.
     """
@@ -175,6 +186,8 @@ def save_results(output_dir: Path, runs: list[AnalysisRun]) -> None:
     pending_path.replace(output_dir.joinpath('results.json'))
     build_summary_plot(summary).savefig(output_dir.joinpath('summary.svg'))
 
+
+# Command-line helpers
 
 def _positive_int(value: str) -> int:
     """
@@ -232,6 +245,8 @@ def _model_metadata(model: str) -> dict[str, str]:
         return {'id': DEFAULT_BEDROCK_MODEL_ID, 'revision': 'not applicable'}
     return {'id': model, 'revision': FrozenModel(model).revision}
 
+
+# Runner
 
 def main(argv: list[str] | None = None) -> int:
     """
@@ -301,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
             'require_successful_query_per_answer; report_recovered_tool_failures'
         ),
     }
-    current_run = AnalysisRun(metadata=metadata)
+    current_run = SavedAnalysisRun(metadata=metadata)
     runs.append(current_run)
     save_results(output_dir, runs)
     for index, (question, context) in enumerate(questions, 1):
@@ -314,14 +329,24 @@ def main(argv: list[str] | None = None) -> int:
             question,
             external_source=None,
         )
+        saved_core = save_attempt(core)
         for external_source in external_sources:
-            current_run.results.append(run_pair(
+            pair = run_pair(
                 question=question,
                 core_context=context,
                 assistant=assistant,
                 judge=judge,
                 external_source=external_source,
                 core=core,
+            )
+            current_run.results.append(SavedPairedResult(
+                external_source=pair.external_source,
+                question=pair.question,
+                core_context=pair.core_context,
+                core=saved_core,
+                external=save_attempt(pair.external),
+                contribution=pair.contribution,
+                judge_error=pair.judge_error,
             ))
             save_results(output_dir, runs)
     print(f'Results: {output_dir}')

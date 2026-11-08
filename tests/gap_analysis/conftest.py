@@ -2,12 +2,16 @@
 Shared answer pair for gap analysis tests.
 """
 
+# Imports
+
 import pytest
 
 from monty_tool.gap_analysis.schemas import (
     AnswerAttempt, Contribution, GapQuestion, PairedResult,
 )
 
+
+# Fixtures
 
 @pytest.fixture
 def pair():
@@ -16,6 +20,7 @@ def pair():
         duration_seconds=0,
     )
     return PairedResult(
+        external_source='shakemap_footprints',
         question=GapQuestion(
             country_code='JPN', hazard_code='GH0001',
             template_id='impacts', question='Impacts?',
