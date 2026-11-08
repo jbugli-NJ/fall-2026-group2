@@ -13,10 +13,10 @@ MH0302,MH0053,Derecho,Wind & Pressure-related,Meteorological & Hydrological,VW,n
 MH0303,MH0054,Gale,Wind & Pressure-related,Meteorological & Hydrological,OT,
 MH0304,MH0055,Squall,Wind & Pressure-related,Meteorological & Hydrological,OT,
 MH0305,MH0059,Tornado,Wind & Pressure-related,Meteorological & Hydrological,TO,nat-met-sto-tor
-MH0306,MH0030,Depression or Cyclone,Wind & Pressure-related,Meteorological & Hydrological,TC,nat-met-sto-tro
-MH0307,MH0031,Extra-tropical Cyclone,Wind & Pressure-related,Meteorological & Hydrological,EC,nat-met-sto-ext
-MH0308,MH0032,Sub-tropical Cyclone,Wind & Pressure-related,Meteorological & Hydrological,TC,nat-met-sto-tro
-MH0309,MH0057,Tropical Cyclone,Wind & Pressure-related,Meteorological & Hydrological,TC,nat-met-sto-tro
+MH0306,MH0030,Cyclone,Wind & Pressure-related,Meteorological & Hydrological,TC,nat-met-sto-tro
+MH0307,MH0031,Cyclone,Wind & Pressure-related,Meteorological & Hydrological,EC,nat-met-sto-ext
+MH0308,MH0032,Cyclone,Wind & Pressure-related,Meteorological & Hydrological,TC,nat-met-sto-tro
+MH0309,MH0057,Cyclone,Wind & Pressure-related,Meteorological & Hydrological,TC,nat-met-sto-tro
 MH0401,MH0035,Drought,Precipitation-related,Meteorological & Hydrological,DR,nat-cli-dro-dro
 MH0402,,Rain,Precipitation-related,Meteorological & Hydrological,OT,
 MH0403,MH0034,Blizzard,Precipitation-related,Meteorological & Hydrological,OT,nat-met-sto-bli
