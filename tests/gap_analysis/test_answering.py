@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from monty_tool.gap_analysis import answering
-from monty_tool.llm.tools import DisasterEventSearchArguments
+from monty_tool.llm.tools import GraphSearchArguments
 
 
 @pytest.mark.parametrize(
@@ -51,15 +51,16 @@ def test_country_hazard_selection_uses_one_graph_query(
     """
     driver = Mock()
     driver.execute_query.return_value = (
-        [Mock(data=lambda: {'country_code': 'JPN', 'hazard_code': 'GH0001'})], None, None,
+        [Mock(data=lambda: {'country_code': 'JPN', 'hazard_name': 'Earthquake'})], None, None,
     )
     monkeypatch.setattr(answering, 'get_graph_db_driver', lambda: nullcontext(driver))
     assert answering.select_contexts(
-        DisasterEventSearchArguments(country_code='JPN', hazard_code='GH0001'),
+        GraphSearchArguments(country_code='JPN'),
         2,
+        hazard_name='Earthquake',
         require_external_data=require_external_data,
         external_sources=sources,
-    ) == [{'country_code': 'JPN', 'hazard_code': 'GH0001'}]
+    ) == [{'country_code': 'JPN', 'hazard_name': 'Earthquake'}]
     driver.execute_query.assert_called_once()
     assert driver.execute_query.call_args.kwargs['parameters_']['limit'] == 2
     assert (
@@ -71,8 +72,8 @@ def test_country_hazard_selection_uses_one_graph_query(
     )
 
     assert driver.execute_query.call_args.kwargs['parameters_']['country_code'] == 'JPN'
-    assert driver.execute_query.call_args.kwargs['parameters_']['hazard_code'] == 'GH0001'
-    named_codes = driver.execute_query.call_args.kwargs['parameters_']['named_hazard_codes']
-    assert 'GH0001' in named_codes
-    assert 'GH009' in named_codes
-    assert 'unknown-code' not in named_codes
+    assert driver.execute_query.call_args.kwargs['parameters_']['hazard_name'] == 'Earthquake'
+    names = driver.execute_query.call_args.kwargs['parameters_']['hazard_code_name_map']
+    assert names['GH0001'] == 'Earthquake'
+    assert names['GH009'] == 'Volcanic eruption'
+    assert 'unknown-code' not in names

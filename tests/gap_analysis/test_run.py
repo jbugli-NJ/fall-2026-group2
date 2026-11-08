@@ -189,7 +189,7 @@ def test_main_measures_each_source_against_shared_baseline(
     assert run.main([
         '--answer-model', run.MODEL_CHOICES[0], '--judge-model', run.MODEL_CHOICES[0],
         '--output-dir', str(tmp_path),
-        '--country-code', 'JPN', '--hazard-code', 'GH0001', '--limit', '2',
+        '--country-code', 'JPN', '--hazard-name', 'Earthquake', '--limit', '2',
         *selection_flags,
         *source_flags,
     ]) == 0
@@ -206,8 +206,9 @@ def test_main_measures_each_source_against_shared_baseline(
     set_seed.assert_called_once_with(run.SEED)
     require_external_data = not selection_flags
     select_contexts.assert_called_once_with(
-        run.DisasterEventSearchArguments(country_code='JPN', hazard_code='GH0001'),
+        run.GraphSearchArguments(country_code='JPN'),
         2,
+        hazard_name='Earthquake',
         require_external_data=require_external_data,
         external_sources=sources,
     )

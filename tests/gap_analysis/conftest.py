@@ -22,10 +22,10 @@ def pair():
     return PairedResult(
         external_source='shakemap_footprints',
         question=GapQuestion(
-            country_code='JPN', hazard_code='GH0001',
+            country_code='JPN', hazard_name='Earthquake',
             template_id='impacts', question='Impacts?',
         ),
-        core_context={'country_code': 'JPN', 'hazard_code': 'GH0001'},
+        core_context={'country_code': 'JPN', 'hazard_name': 'Earthquake'},
         core=attempt,
         external=attempt,
         contribution=Contribution.QUALIFIES,

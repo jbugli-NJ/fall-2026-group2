@@ -40,7 +40,7 @@ from monty_tool.gap_analysis.templates import TEMPLATES
 from monty_tool.gap_analysis.storage import save_attempt
 from monty_tool.llm.client import DEFAULT_BEDROCK_MODEL_ID, BedrockQueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
-from monty_tool.llm.tools import DisasterEventSearchArguments
+from monty_tool.llm.tools import GraphSearchArguments
 from monty_tool.utils.versions import SEED, FrozenModel
 
 
@@ -207,7 +207,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--answer-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--judge-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--country-code')
-    parser.add_argument('--hazard-code', help='Exact Montandon hazard code.')
+    parser.add_argument('--hazard-name', help='Hazard name, such as Cyclone or Earthquake.')
     parser.add_argument('--from-date')
     parser.add_argument('--to-date')
     parser.add_argument(
@@ -259,13 +259,14 @@ def main(argv: list[str] | None = None) -> int:
     started = datetime.now(timezone.utc)
     output_dir = args.output_dir
     runs = load_runs(output_dir)
-    filters = DisasterEventSearchArguments(
-        country_code=args.country_code, hazard_code=args.hazard_code,
+    filters = GraphSearchArguments(
+        country_code=args.country_code,
         from_date=args.from_date, to_date=args.to_date,
     )
     contexts = select_contexts(
         filters,
         args.limit,
+        hazard_name=args.hazard_name,
         require_external_data=args.require_external_data,
         external_sources=external_sources,
     )
@@ -302,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
             else 'token_probabilities'
         ),
         'max_tool_calls': args.max_tool_calls,
-        'selection': filters.model_dump(mode='json'),
+        'selection': {**filters.model_dump(mode='json'), 'hazard_name': args.hazard_name},
         'limit': args.limit,
         'require_external_data': args.require_external_data,
         'contexts': contexts,
@@ -322,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:
     for index, (question, context) in enumerate(questions, 1):
         print(
             f'{index}/{len(questions)}: '
-            f'{question.country_code} / {question.hazard_code} / {question.template_id}'
+            f'{question.country_code} / {question.hazard_name} / {question.template_id}'
         )
         core = answer_question(
             assistant,

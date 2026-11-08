@@ -16,7 +16,7 @@ from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES, ExternalS
 from monty_tool.gap_analysis.schemas import AnswerAttempt, GapQuestion, QuestionTemplate
 from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
-from monty_tool.llm.tools import DisasterEventSearchArguments
+from monty_tool.llm.tools import GraphSearchArguments
 from monty_tool.network.resources import get_graph_db_driver
 from monty_tool.static_codes import HAZARD_NAME_FALLBACKS
 from monty_tool.utils.versions import FrozenModel
@@ -37,7 +37,7 @@ MODEL_CHOICES = tuple(model.value for model in LOCAL_MODELS) + ('bedrock',)
 
 # Helpers
 
-def _hazard_names() -> dict[str, str]:
+def _hazard_code_name_map() -> dict[str, str]:
     """
     Resolve nonempty hazard names, preferring the hazard code table over static fallbacks.
     """
@@ -63,9 +63,10 @@ def make_answerer(model: str) -> AnyQueryAssistant:
 
 
 def select_contexts(
-    filters: DisasterEventSearchArguments,
+    filters: GraphSearchArguments,
     limit: int,
     *,
+    hazard_name: str | None = None,
     require_external_data: bool = True,
     external_sources: list[ExternalSourceName] | None = None,
 ) -> list[dict[str, Any]]:
@@ -86,7 +87,8 @@ def select_contexts(
             query,
             parameters_={
                 **filters.model_dump(),
-                'named_hazard_codes': list(_hazard_names()),
+                'hazard_name': hazard_name,
+                'hazard_code_name_map': _hazard_code_name_map(),
                 'limit': limit,
                 'require_external_data': require_external_data,
                 'external_sources': (
@@ -104,21 +106,18 @@ def construct_gap_questions(
     templates: list[QuestionTemplate],
 ) -> list[GapQuestion]:
     """
-    Fill questions for a named hazard; skip contexts without a hazard name.
+    Fill questions for a country and hazard name.
     """
     question_params = {
-        key: context[key] for key in ('country_code', 'hazard_code')
+        key: context[key] for key in ('country_code', 'hazard_name')
     }
-    hazard_name = _hazard_names().get(question_params['hazard_code'])
-    if hazard_name is None:
-        return []
     country = pycountry.countries.get(alpha_3=question_params['country_code'])
     labels = {
         'country': (
             f"{country.name} ({question_params['country_code']})"
             if country else question_params['country_code']
         ),
-        'hazard': f"{hazard_name} ({question_params['hazard_code']})",
+        'hazard': question_params['hazard_name'],
     }
     scope = ''
     if context.get('from_date') or context.get('to_date'):

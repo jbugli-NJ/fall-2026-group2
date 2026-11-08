@@ -1,11 +1,12 @@
 MATCH (event:Event)-[:IN_COUNTRY]->(country:Country)
 MATCH (event)-[:HAS_HAZARD]->(hazard:Hazard)
 WHERE ($country_code IS NULL OR country.code = $country_code)
-  AND ($hazard_code IS NULL OR hazard.code = $hazard_code)
-  AND hazard.code IN $named_hazard_codes
+  AND ($hazard_name IS NULL OR $hazard_code_name_map[hazard.code] = $hazard_name)
+  AND $hazard_code_name_map[hazard.code] IS NOT NULL
   AND ($from_date IS NULL OR date(event.start_datetime) >= $from_date)
   AND ($to_date IS NULL OR date(event.start_datetime) <= $to_date)
-WITH country, hazard, collect(DISTINCT event) AS events,
+WITH country, $hazard_code_name_map[hazard.code] AS hazard_name,
+     collect(DISTINCT event) AS events,
      max(event.start_datetime) AS last_event_start
 WHERE NOT $require_external_data OR (
   (NOT ('weather' IN $external_sources) OR any(event IN events WHERE
@@ -22,9 +23,9 @@ WHERE NOT $require_external_data OR (
   }))
 )
 RETURN country.code AS country_code,
-       hazard.code AS hazard_code,
+       hazard_name,
        toString($from_date) AS from_date,
        toString($to_date) AS to_date
-ORDER BY last_event_start DESC, country_code ASC, hazard_code ASC
+ORDER BY last_event_start DESC, country_code ASC, hazard_name ASC
 SKIP $offset
 LIMIT $limit

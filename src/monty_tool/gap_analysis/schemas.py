@@ -43,7 +43,7 @@ class GapQuestion(BaseModel):
     A question generated for EAP planning in a country for a hazard.
     """
     country_code: str
-    hazard_code: str
+    hazard_name: str
     template_id: str
     question: str
 

@@ -219,7 +219,7 @@ A draft pipeline is available to compare answer coverage using Montandon alone v
 uv run run-gap-analysis \
   --answer-model Qwen/Qwen3-1.7B \
   --judge-model bedrock \
-  --country-code JPN --hazard-code GH0001 \
+  --country-code JPN --hazard-name Earthquake \
   --from-date 2000-01-01 --to-date 2025-12-31 --limit 1
 ```
 
@@ -227,7 +227,7 @@ Choose local models or `bedrock` independently for answering and judging.
 Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
 
 Questions support EAP planning by country and hazard, using past disasters as evidence.
-`--hazard-code` accepts an exact Montandon hazard code; country and hazard filters are optional.
+`--hazard-name` selects a name such as `Cyclone` or `Earthquake`; country and hazard filters are optional.
 `--limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
 Hazards without a known name are skipped before applying the limit.
 Date filters bound historical disaster event start dates.
