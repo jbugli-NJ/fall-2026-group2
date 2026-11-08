@@ -42,6 +42,8 @@ def save_attempt(attempt: AnswerAttempt) -> SavedAnswerAttempt:
         uri = f's3://{bucket_name}/{key}'
     return SavedAnswerAttempt(
         response_s3_uri=uri,
+        input_tokens=attempt.response['input_tokens'] if attempt.response is not None else None,
+        output_tokens=attempt.response['output_tokens'] if attempt.response is not None else None,
         tool_failure_count=attempt.tool_failures,
         error=attempt.error,
         duration_seconds=attempt.duration_seconds,

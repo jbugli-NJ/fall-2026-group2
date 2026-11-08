@@ -12,7 +12,7 @@ def test_tool_failure_count():
     attempt = AnswerAttempt(
         duration_seconds=0,
         response={
-            'answer': 'Answer',
+            'answer': 'Answer', 'input_tokens': 0, 'output_tokens': 0,
             'tool_results': [
                 {'result': {'status': status}}
                 for status in ('ok', 'error', 'limit_reached')

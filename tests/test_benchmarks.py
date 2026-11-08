@@ -69,6 +69,7 @@ def benchmark_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     assistant.ask.return_value = {
         'answer': f'<answer>{TEST_INPUT.full_answer_substrings[0]}</answer>',
         'tool_results': [],
+        'input_tokens': 0, 'output_tokens': 0,
     }
     monkeypatch.setattr(run_benchmark, 'QueryAssistant', Mock(return_value=assistant))
     return tmp_path
@@ -172,6 +173,7 @@ def test_main_uses_bedrock(benchmark_workspace: Path, monkeypatch: pytest.Monkey
     assistant.ask.return_value = {
         'answer': f'<answer>{TEST_INPUT.full_answer_substrings[0]}</answer>',
         'tool_results': [],
+        'input_tokens': 0, 'output_tokens': 0,
     }
     bedrock = Mock(return_value=assistant)
     monkeypatch.setattr(run_benchmark, 'BedrockQueryAssistant', bedrock)
@@ -356,7 +358,7 @@ def test_output():
     """
     output = BenchmarkOutput(
         benchmark_input=TEST_INPUT, score=1, duration_seconds=0,
-        response={'answer': '<answer>3,000</answer>', 'tool_results': [{
+        response={'answer': '<answer>3,000</answer>', 'input_tokens': 0, 'output_tokens': 0, 'tool_results': [{
             'call': {'name': 'search_disaster_events', 'arguments': {'text': 'Sri Lanka'}},
             'result': 'private trace',
         }]},

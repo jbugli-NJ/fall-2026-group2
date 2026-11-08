@@ -21,7 +21,7 @@ def test_answer_requires_successful_retrieval(pair, statuses, failed):
     """
     assistant = Mock()
     assistant.ask.return_value = {
-        'answer': 'Answer',
+        'answer': 'Answer', 'input_tokens': 0, 'output_tokens': 0,
         'tool_results': [{'result': {'status': status}} for status in statuses],
     }
     result = answering.answer_question(assistant, pair.question, external_source=None)

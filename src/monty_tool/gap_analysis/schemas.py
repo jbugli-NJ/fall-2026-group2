@@ -77,6 +77,8 @@ class SavedAnswerAttempt(BaseModel):
     if a response was present.
     """
     response_s3_uri: str | None = None
+    input_tokens: int | None = Field(ge=0)
+    output_tokens: int | None = Field(ge=0)
     tool_failure_count: int = Field(ge=0)
     error: str | None = None
     duration_seconds: float

@@ -36,6 +36,7 @@ def saved_pair(pair):
     """
     record = SavedAnswerAttempt(
         response_s3_uri='s3://test-bucket/responses/answer.json',
+        input_tokens=0, output_tokens=0,
         tool_failure_count=0,
         duration_seconds=0,
     )
@@ -274,6 +275,7 @@ def test_attempt_upload(pair, response_bucket):
         assert json.loads(path.read_text()) == pair.core.response
 
     response_bucket.upload_file.side_effect = check_upload
+    pair.core.response.update(input_tokens=350, output_tokens=50)
     pair.core.response['tool_results'].append({'result': {'status': 'error'}})
     record = storage.save_attempt(pair.core)
     response_bucket.upload_file.assert_called_once()
@@ -281,6 +283,8 @@ def test_attempt_upload(pair, response_bucket):
     assert key.startswith('test-owner/gap_analysis/responses/')
     assert record.response_s3_uri == f's3://test-bucket/{key}'
     assert record.tool_failure_count == 1
+    assert record.input_tokens == 350
+    assert record.output_tokens == 50
 
 
 def test_failed_attempt_needs_no_upload(response_bucket):
@@ -289,7 +293,7 @@ def test_failed_attempt_needs_no_upload(response_bucket):
     """
     record = storage.save_attempt(AnswerAttempt(error='Failed', duration_seconds=1.5))
     assert record == SavedAnswerAttempt(
-        response_s3_uri=None, tool_failure_count=0,
+        response_s3_uri=None, tool_failure_count=0, input_tokens=None, output_tokens=None,
         error='Failed', duration_seconds=1.5,
     )
     response_bucket.upload_file.assert_not_called()

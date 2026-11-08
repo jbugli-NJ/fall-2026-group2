@@ -16,7 +16,7 @@ from monty_tool.gap_analysis.schemas import (
 @pytest.fixture
 def pair():
     attempt = AnswerAttempt(
-        response={'answer': 'Answer', 'tool_results': [{'result': {'status': 'ok'}}]},
+        response={'answer': 'Answer', 'input_tokens': 0, 'output_tokens': 0, 'tool_results': [{'result': {'status': 'ok'}}]},
         duration_seconds=0,
     )
     return PairedResult(
