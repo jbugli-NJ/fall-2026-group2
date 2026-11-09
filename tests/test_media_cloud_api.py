@@ -4,7 +4,7 @@ from datetime import date
 from unittest.mock import Mock
 
 import pytest
-from requests.exceptions import Timeout
+from requests.exceptions import ConnectionError, SSLError, Timeout
 
 from monty_tool import media_cloud_api
 
@@ -131,19 +131,25 @@ def test_invalid_page_size_is_rejected(page_size: int) -> None:
         )
 
 
+@pytest.mark.parametrize('error_type', [Timeout, ConnectionError, SSLError])
 def test_network_failure_does_not_return_empty_page(
     monkeypatch: pytest.MonkeyPatch,
+    error_type: type[Exception],
 ) -> None:
-    monkeypatch.setattr(media_cloud_api.requests, "get", Mock(side_effect=Timeout))
+    monkeypatch.setattr(
+        media_cloud_api.requests, "get",
+        Mock(side_effect=error_type('Request details must not be exposed.')),
+    )
     monkeypatch.setattr(media_cloud_api, "get_media_cloud_api_key", lambda: "test-key")
 
-    with pytest.raises(RuntimeError, match="request failed"):
+    with pytest.raises(RuntimeError) as caught:
         media_cloud_api.search_media_cloud_page(
             query="earthquake",
             start_date=date(2026, 9, 1),
             end_date=date(2026, 9, 2),
             collection_ids=[123],
         )
+    assert str(caught.value) == f'Media Cloud request failed ({error_type.__name__}).'
 
 def test_single_day_media_cloud_search_is_allowed(
     monkeypatch: pytest.MonkeyPatch,

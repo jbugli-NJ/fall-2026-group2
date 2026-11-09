@@ -87,10 +87,10 @@ def test_wide_polygon_is_graded_regional():
     assert footprint.detail == 'regional'
 
 
-def test_unlisted_hazard_is_labelled_from_crosswalk():
+def test_unlisted_hazard_is_labelled_from_hazard_code_table():
     """
     Confirms a polygon for a hazard without its own layer gets the
-    crosswalk label.
+    hazard code table label.
     """
     footprint = gdacs.footprint_from_item(_item(hazard_codes=('GH0101',)))
 

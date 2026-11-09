@@ -1,5 +1,8 @@
 """
-Question templates for exploring disaster records and external evidence.
+Questions for EAP planning by country and hazard, grounded in historical evidence.
+
+Forecast triggers, operational plans, capacity assessments, evaluation frameworks,
+and approvals need information beyond the available sources.
 """
 
 from monty_tool.gap_analysis.schemas import QuestionTemplate
@@ -7,29 +10,41 @@ from monty_tool.gap_analysis.schemas import QuestionTemplate
 
 TEMPLATES = [
     QuestionTemplate(
-        id='human_impacts',
+        id='introduction_and_context',
         question=(
-            'Use the available tools to investigate deaths, injuries, and displacement '
-            'for {title} (event ID {event_id}, starting {start_datetime}). '
-            'Identify which figures are available and their estimates or uncertainty.'
+            'What do past {hazard} events in {country} tell us about '
+            'where and when this hazard occurs? Include relevant weather evidence.'
         ),
     ),
     QuestionTemplate(
-        id='physical_damage',
+        id='risk_and_vulnerability_analysis',
         question=(
-            'Use the available tools to investigate physical damage to buildings '
-            'and infrastructure for {title} '
-            '(event ID {event_id}, starting {start_datetime}). '
-            'Include quantities and descriptions where available.'
+            'For {hazard} in {country}, which areas, people, and '
+            'infrastructure have been affected? '
+            'Which groups are reported as especially vulnerable?'
         ),
     ),
     QuestionTemplate(
-        id='weather_conditions',
+        id='stakeholders_and_coordination',
         question=(
-            'Use the available tools to investigate precipitation and temperature '
-            'conditions around {title} '
-            '(event ID {event_id}, starting {start_datetime}). '
-            'State the measurement period and available coverage.'
+            'Which organizations have responded to {hazard} in {country}, '
+            'and what roles and coordination are documented?'
+        ),
+    ),
+    QuestionTemplate(
+        id='early_action_selection',
+        question=(
+            'For {hazard} in {country}, what past actions and reported '
+            'needs could inform early action choices? '
+            'Which actions were taken before impact?'
+        ),
+    ),
+    QuestionTemplate(
+        id='budget_and_financing',
+        question=(
+            'What do past appeals for {hazard} in {country} show about '
+            'funding requested, funding received, and people targeted? '
+            'Was any funding specifically for early action?'
         ),
     ),
 ]

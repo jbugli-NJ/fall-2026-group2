@@ -2,14 +2,18 @@
 Schemas for question templates, answer attempts, and paired results.
 """
 
-from enum import StrEnum
-from typing import Any, Literal
+# Imports
 
-from pydantic import AliasChoices, BaseModel, Field
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 from monty_tool.gap_analysis.external_sources import ExternalSourceName
 from monty_tool.llm.schemas import QueryAssistantResponse
 
+
+# Contribution categories
 
 class Contribution(StrEnum):
     """
@@ -24,9 +28,11 @@ class Contribution(StrEnum):
     UNSUPPORTED = 'unsupported'
 
 
+# Question schemas
+
 class QuestionTemplate(BaseModel):
     """
-    A gap analysis question template with placeholders for event details.
+    A gap analysis question template with country and hazard placeholders.
     """
     id: str = Field(min_length=1)
     question: str = Field(min_length=1)
@@ -34,12 +40,15 @@ class QuestionTemplate(BaseModel):
 
 class GapQuestion(BaseModel):
     """
-    A question generated for a specific disaster event.
+    A question generated for EAP planning in a country for a hazard.
     """
-    event_id: str
+    country_code: str
+    hazard_name: str
     template_id: str
     question: str
 
+
+# Answer schemas
 
 class AnswerAttempt(BaseModel):
     """
@@ -62,6 +71,21 @@ class AnswerAttempt(BaseModel):
         )
 
 
+class SavedAnswerAttempt(BaseModel):
+    """
+    Save data for an answer attempt, including an S3 response URI
+    if a response was present.
+    """
+    response_s3_uri: str | None = None
+    input_tokens: int | None = Field(ge=0)
+    output_tokens: int | None = Field(ge=0)
+    tool_failure_count: int = Field(ge=0)
+    error: str | None = None
+    duration_seconds: float
+
+
+# Result schemas
+
 class PairedResult(BaseModel):
     """
     Two answers to the same question and a judgment of what external data adds.
@@ -69,10 +93,7 @@ class PairedResult(BaseModel):
     The core answer uses Montandon records alone. The external answer also has
     access to the specified external source.
     """
-    external_source: ExternalSourceName | Literal['combined'] = Field(
-        default='combined', min_length=1,
-        validation_alias=AliasChoices('external_source', 'source'),
-    )
+    external_source: ExternalSourceName
     question: GapQuestion
     core_context: dict[str, Any]
     core: AnswerAttempt
@@ -81,9 +102,24 @@ class PairedResult(BaseModel):
     judge_error: str | None = None
 
 
-class AnalysisRun(BaseModel):
+class SavedPairedResult(BaseModel):
     """
-    One invocation's settings and paired question results within an analysis.
+    A question, archived answer references, and the contribution judgment.
+    """
+    external_source: ExternalSourceName
+    question: GapQuestion
+    core_context: dict[str, Any]
+    core: SavedAnswerAttempt
+    external: SavedAnswerAttempt
+    contribution: Contribution | None = None
+    judge_error: str | None = None
+
+
+# Run schemas
+
+class SavedAnalysisRun(BaseModel):
+    """
+    Metadata and source comparisons written to the result JSON for one evaluation.
     """
     metadata: dict[str, Any]
-    results: list[PairedResult] = Field(default_factory=list)
+    results: list[SavedPairedResult] = Field(default_factory=list)

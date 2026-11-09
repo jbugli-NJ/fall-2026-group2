@@ -15,3 +15,5 @@ class QueryAssistantResponse(TypedDict):
     """
     answer: str
     tool_results: list[dict[str, Any]]
+    input_tokens: int
+    output_tokens: int

@@ -9,13 +9,16 @@ from importlib.resources import files
 from typing import Any, LiteralString, cast
 
 from neo4j import RoutingControl
+import pycountry
 
+from monty_tool.features import hazard_code_lookup
 from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES, ExternalSourceName
 from monty_tool.gap_analysis.schemas import AnswerAttempt, GapQuestion, QuestionTemplate
 from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
 from monty_tool.llm.tools import GraphSearchArguments
 from monty_tool.network.resources import get_graph_db_driver
+from monty_tool.static_codes import HAZARD_NAME_FALLBACKS
 from monty_tool.utils.versions import FrozenModel
 
 
@@ -34,6 +37,20 @@ MODEL_CHOICES = tuple(model.value for model in LOCAL_MODELS) + ('bedrock',)
 
 # Helpers
 
+def _hazard_code_name_map() -> dict[str, str]:
+    """
+    Resolve nonempty hazard names, preferring the hazard code table over static fallbacks.
+    """
+    return {
+        **HAZARD_NAME_FALLBACKS,
+        **{
+            code: name
+            for code, name in hazard_code_lookup().select('hazard_code', 'hazard_label').iter_rows()
+            if name and name.strip()
+        },
+    }
+
+
 def make_answerer(model: str) -> AnyQueryAssistant:
     """
     Load the selected local or Bedrock assistant.
@@ -49,15 +66,18 @@ def select_contexts(
     filters: GraphSearchArguments,
     limit: int,
     *,
+    hazard_name: str | None = None,
     require_external_data: bool = True,
     external_sources: list[ExternalSourceName] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Fetch the newest matching event records and their impacts, up to the supplied limit.
-    By default, require stored evidence for every selected external source.
+    Select country–hazard pairs from historical events, up to the supplied limit.
+    By default, each pair must have evidence for every selected external source.
+    Different events within the pair may supply different sources.
+    Hazards without a name are skipped before applying the limit and offset.
     """
     if limit < 1:
-        raise ValueError('Event limit must be positive.')
+        raise ValueError('Limit must be positive.')
     query = cast(
         LiteralString,
         files('monty_tool.gap_analysis').joinpath('select_contexts.cypher').read_text(),
@@ -67,6 +87,8 @@ def select_contexts(
             query,
             parameters_={
                 **filters.model_dump(),
+                'hazard_name': hazard_name,
+                'hazard_code_name_map': _hazard_code_name_map(),
                 'limit': limit,
                 'require_external_data': require_external_data,
                 'external_sources': (
@@ -80,20 +102,33 @@ def select_contexts(
 
 
 def construct_gap_questions(
-    event_data: dict[str, Any],
+    context: dict[str, Any],
     templates: list[QuestionTemplate],
 ) -> list[GapQuestion]:
     """
-    Fill question templates with an event's ID, title, and start date.
+    Fill questions for a country and hazard name.
     """
     question_params = {
-        key: event_data[key] for key in ('event_id', 'title', 'start_datetime')
+        key: context[key] for key in ('country_code', 'hazard_name')
     }
+    country = pycountry.countries.get(alpha_3=question_params['country_code'])
+    labels = {
+        'country': (
+            f"{country.name} ({question_params['country_code']})"
+            if country else question_params['country_code']
+        ),
+        'hazard': question_params['hazard_name'],
+    }
+    scope = ''
+    if context.get('from_date') or context.get('to_date'):
+        lower = context.get('from_date') or 'the earliest available date'
+        upper = context.get('to_date') or 'the latest available date'
+        scope += f' Limit disaster event start dates to {lower} through {upper}.'
     return [
         GapQuestion(
-            event_id=question_params['event_id'],
+            **question_params,
             template_id=template.id,
-            question=template.question.format(**question_params),
+            question=template.question.format(**labels) + scope,
         )
         for template in templates
     ]

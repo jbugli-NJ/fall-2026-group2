@@ -2,8 +2,11 @@
 Command-line runner and result summaries for gap analysis.
 """
 
+# Imports
+
 import argparse
 from collections import Counter
+from collections.abc import Sequence
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -26,18 +29,22 @@ from monty_tool.gap_analysis.judging import (
 from monty_tool.gap_analysis.protocols import ContributionJudge
 from monty_tool.gap_analysis.plotting import build_summary_plot
 from monty_tool.gap_analysis.schemas import (
-    AnalysisRun,
     AnswerAttempt,
     Contribution,
     GapQuestion,
     PairedResult,
+    SavedAnalysisRun,
+    SavedPairedResult,
 )
 from monty_tool.gap_analysis.templates import TEMPLATES
+from monty_tool.gap_analysis.storage import save_attempt
 from monty_tool.llm.client import DEFAULT_BEDROCK_MODEL_ID, BedrockQueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
 from monty_tool.llm.tools import GraphSearchArguments
 from monty_tool.utils.versions import SEED, FrozenModel
 
+
+# Paired evaluation
 
 def run_pair(
     question: GapQuestion,
@@ -74,7 +81,9 @@ def run_pair(
     return pair
 
 
-def summarize(results: list[PairedResult]) -> dict[str, Any]:
+# Results and summaries
+
+def summarize(results: Sequence[SavedPairedResult]) -> dict[str, Any]:
     """
     Count categories and failures for each question template and source.
     """
@@ -92,6 +101,10 @@ def summarize(results: list[PairedResult]) -> dict[str, Any]:
         improved = sum(counts[category.value] for category in (
             Contribution.FILLS_FIELD, Contribution.EXTENDS_COVERAGE, Contribution.QUALIFIES,
         ))
+        tool_failures = [
+            pair.core.tool_failure_count + pair.external.tool_failure_count
+            for pair in pairs
+        ]
         summary[f'{template_id} / {source}'] = {
             'template_id': template_id,
             'external_source': source,
@@ -104,13 +117,8 @@ def summarize(results: list[PairedResult]) -> dict[str, Any]:
                 for pair in pairs
             ),
             'judge_failures': sum(pair.judge_error is not None for pair in pairs),
-            'tool_failures': sum(
-                pair.core.tool_failures + pair.external.tool_failures for pair in pairs
-            ),
-            'pairs_with_tool_failures': sum(
-                bool(pair.core.tool_failures or pair.external.tool_failures)
-                for pair in pairs
-            ),
+            'tool_failures': sum(tool_failures),
+            'pairs_with_tool_failures': sum(count > 0 for count in tool_failures),
             'categories': {
                 category.value: counts[category.value] for category in Contribution
             },
@@ -118,23 +126,26 @@ def summarize(results: list[PairedResult]) -> dict[str, Any]:
     return summary
 
 
-def load_runs(output_dir: Path) -> list[AnalysisRun]:
+def load_runs(output_dir: Path) -> list[SavedAnalysisRun]:
     """
-    Read the invocations already saved in the analysis results file.
+    Filter saved runs to the current rubric, then validate them.
     """
     path = output_dir.joinpath('results.json')
     if not path.exists():
         return []
     payload = json.loads(path.read_text())
-    records = payload['runs'] if 'runs' in payload else [payload]
-    return [AnalysisRun.model_validate(record) for record in records]
+    return [
+        SavedAnalysisRun.model_validate(record)
+        for record in payload['runs']
+        if record.get('metadata', {}).get('rubric_version') == RUBRIC_VERSION
+    ]
 
 
-def summarize_runs(runs: list[AnalysisRun]) -> list[dict[str, Any]]:
+def summarize_runs(runs: Sequence[SavedAnalysisRun]) -> list[dict[str, Any]]:
     """
     Summarize the current rubric separately for each answer and judge model.
     """
-    groups: dict[tuple[str, str], list[PairedResult]] = {}
+    groups: dict[tuple[str, str], list[SavedPairedResult]] = {}
     for batch in runs:
         if batch.metadata.get('rubric_version') != RUBRIC_VERSION:
             continue
@@ -154,7 +165,10 @@ def summarize_runs(runs: list[AnalysisRun]) -> list[dict[str, Any]]:
     ]
 
 
-def save_results(output_dir: Path, runs: list[AnalysisRun]) -> None:
+def save_results(
+    output_dir: Path,
+    runs: Sequence[SavedAnalysisRun],
+) -> None:
     """
     Save all runs and summarize those using the current rubric version.
     """
@@ -172,6 +186,8 @@ def save_results(output_dir: Path, runs: list[AnalysisRun]) -> None:
     pending_path.replace(output_dir.joinpath('results.json'))
     build_summary_plot(summary).savefig(output_dir.joinpath('summary.svg'))
 
+
+# Command-line helpers
 
 def _positive_int(value: str) -> int:
     """
@@ -191,9 +207,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--answer-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--judge-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--country-code')
+    parser.add_argument('--hazard-name', help='Hazard name, such as Cyclone or Earthquake.')
     parser.add_argument('--from-date')
     parser.add_argument('--to-date')
-    parser.add_argument('--event-limit', type=_positive_int, default=1)
+    parser.add_argument(
+        '--limit', type=_positive_int, default=1,
+        help='Maximum number of country and hazard combinations (default: 1).',
+    )
     parser.add_argument(
         '--external-sources',
         nargs='+',
@@ -205,7 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--require-external-data',
         action=argparse.BooleanOptionalAction,
         default=True,
-        help='Filters events to require stored external data (default: enabled).',
+        help='Require stored data for every selected source (default: enabled).',
     )
     parser.add_argument('--max-tool-calls', type=_positive_int, default=10)
     parser.add_argument(
@@ -226,6 +246,8 @@ def _model_metadata(model: str) -> dict[str, str]:
     return {'id': model, 'revision': FrozenModel(model).revision}
 
 
+# Runner
+
 def main(argv: list[str] | None = None) -> int:
     """
     Run gap analysis using the command-line options and save its results.
@@ -238,16 +260,18 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = args.output_dir
     runs = load_runs(output_dir)
     filters = GraphSearchArguments(
-        country_code=args.country_code, from_date=args.from_date, to_date=args.to_date,
+        country_code=args.country_code,
+        from_date=args.from_date, to_date=args.to_date,
     )
     contexts = select_contexts(
         filters,
-        args.event_limit,
+        args.limit,
+        hazard_name=args.hazard_name,
         require_external_data=args.require_external_data,
         external_sources=external_sources,
     )
     if not contexts:
-        parser.error('No disaster events matched the selection.')
+        parser.error('No countries and hazards matched the selection.')
     questions = [
         (question, context)
         for context in contexts
@@ -279,10 +303,10 @@ def main(argv: list[str] | None = None) -> int:
             else 'token_probabilities'
         ),
         'max_tool_calls': args.max_tool_calls,
-        'selection': filters.model_dump(mode='json'),
-        'event_limit': args.event_limit,
+        'selection': {**filters.model_dump(mode='json'), 'hazard_name': args.hazard_name},
+        'limit': args.limit,
         'require_external_data': args.require_external_data,
-        'event_ids': [context['event_id'] for context in contexts],
+        'contexts': contexts,
         'templates': [template.model_dump() for template in TEMPLATES],
         'rubric_version': RUBRIC_VERSION,
         'rubric': RUBRIC,
@@ -293,27 +317,37 @@ def main(argv: list[str] | None = None) -> int:
             'require_successful_query_per_answer; report_recovered_tool_failures'
         ),
     }
-    current_run = AnalysisRun(metadata=metadata)
+    current_run = SavedAnalysisRun(metadata=metadata)
     runs.append(current_run)
     save_results(output_dir, runs)
     for index, (question, context) in enumerate(questions, 1):
         print(
             f'{index}/{len(questions)}: '
-            f'{question.event_id} / {question.template_id}'
+            f'{question.country_code} / {question.hazard_name} / {question.template_id}'
         )
         core = answer_question(
             assistant,
             question,
             external_source=None,
         )
+        saved_core = save_attempt(core)
         for external_source in external_sources:
-            current_run.results.append(run_pair(
+            pair = run_pair(
                 question=question,
                 core_context=context,
                 assistant=assistant,
                 judge=judge,
                 external_source=external_source,
                 core=core,
+            )
+            current_run.results.append(SavedPairedResult(
+                external_source=pair.external_source,
+                question=pair.question,
+                core_context=pair.core_context,
+                core=saved_core,
+                external=save_attempt(pair.external),
+                contribution=pair.contribution,
+                judge_error=pair.judge_error,
             ))
             save_results(output_dir, runs)
     print(f'Results: {output_dir}')

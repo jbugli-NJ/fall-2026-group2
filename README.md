@@ -219,20 +219,30 @@ A draft pipeline is available to compare answer coverage using Montandon alone v
 uv run run-gap-analysis \
   --answer-model Qwen/Qwen3-1.7B \
   --judge-model bedrock \
-  --country-code JPN --from-date 2024-01-01 --to-date 2024-01-31 \
-  --event-limit 1
+  --country-code JPN --hazard-name Earthquake \
+  --from-date 2000-01-01 --to-date 2025-12-31 --limit 1
 ```
 
 Choose local models or `bedrock` independently for answering and judging.
 Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
-`--event-limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
 
-By default, events must have stored external data to be included.
+Questions support EAP planning by country and hazard, using past disasters as evidence.
+`--hazard-name` selects a name such as `Cyclone` or `Earthquake`; country and hazard filters are optional.
+`--limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
+Hazards without a known name are skipped before applying the limit.
+Date filters bound historical disaster event start dates.
+
+By default, each country and hazard must have stored data for every selected external source.
+Different historical events can provide different sources.
 Use `--no-require-external-data` to disable that filter.
 
 Outputs accumulate under `benchmarks/gap_analysis/`:
 
-- `results.json`: each invocation's settings, answers, evidence, and combined counts by external source.
+- `results.json`: each invocation's settings, response S3 path, errors, timings, and other metadata.
+  tool-failure counts, and combined counts by external source.
 - `summary.svg`: improvement rates by question type and external source, using separate model markers.
 
 Summaries use the current rubric version and answering/judging model combinations.
+
+Full responses are uploaded to the selected bucket/prefix under `gap_analysis/responses/*.json`.
+Bucket paths are saved in the committed JSON file for potential reference.

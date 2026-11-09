@@ -49,7 +49,10 @@ def _tool_request(name: str, **arguments: Any) -> dict[str, Any]:
     """
     Build a parsed local-model tool request.
     """
-    return {'tool_calls': [{'function': {'name': name, 'arguments': arguments}}]}
+    return {
+        'tool_calls': [{'function': {'name': name, 'arguments': arguments}}],
+        'input_tokens': 0, 'output_tokens': 0,
+    }
 
 
 def _bedrock_assistant(
@@ -67,7 +70,11 @@ def _bedrock_response(content: list[dict[str, Any]], stop_reason: str = 'end_tur
     """
     Build a model response.
     """
-    return {'output': {'message': {'role': 'assistant', 'content': content}}, 'stopReason': stop_reason}
+    return {
+        'output': {'message': {'role': 'assistant', 'content': content}},
+        'stopReason': stop_reason,
+        'usage': {'inputTokens': 0, 'outputTokens': 0},
+    }
 
 
 # Tests
@@ -82,7 +89,7 @@ def test_query_assistant_no_tools(monkeypatch: pytest.MonkeyPatch, requests_tool
     monkeypatch.setattr(client.QueryTools, 'execute', execute)
     response = (
         _tool_request('search_disaster_events')
-        if requests_tool else {'content': 'Answer from memory'}
+        if requests_tool else {'content': 'Answer from memory', 'input_tokens': 0, 'output_tokens': 0}
     )
     generate = Mock(return_value=response)
     monkeypatch.setattr(assistant, '_generate', generate)
@@ -93,6 +100,7 @@ def test_query_assistant_no_tools(monkeypatch: pytest.MonkeyPatch, requests_tool
     else:
         assert assistant.ask('Question', use_tools=False) == {
             'answer': 'Answer from memory', 'tool_results': [],
+            'input_tokens': 0, 'output_tokens': 0,
         }
     execute.assert_not_called()
     assert generate.call_args.kwargs['tool_definitions'] is None
@@ -107,11 +115,11 @@ def test_query_assistant_returns_an_answer_without_tool_calls(
     assistant = _query_assistant(monkeypatch)
     execute = Mock()
     monkeypatch.setattr(client.QueryTools, 'execute', execute)
-    assistant._generate = Mock(return_value={'content': 'A direct answer.'})
+    assistant._generate = Mock(return_value={'content': 'A direct answer.', 'input_tokens': 0, 'output_tokens': 0})
 
     result = assistant.ask('What happened?')
 
-    assert result == {'answer': 'A direct answer.', 'tool_results': []}
+    assert result == {'answer': 'A direct answer.', 'tool_results': [], 'input_tokens': 0, 'output_tokens': 0}
     execute.assert_not_called()
 
 
@@ -128,7 +136,11 @@ def test_query_assistant_executes_tools_before_answering(monkeypatch):
     execute = Mock(return_value=rows)
     monkeypatch.setattr(client.QueryTools, 'execute', execute)
     generate = Mock(side_effect=[
-        {'tool_calls': [{'function': request} for request in calls]}, {'content': 'Answer'},
+        {
+            'tool_calls': [{'function': request} for request in calls],
+            'input_tokens': 100, 'output_tokens': 20,
+        },
+        {'content': 'Answer', 'input_tokens': 250, 'output_tokens': 30},
     ])
     assistant._generate = generate
 
@@ -138,6 +150,7 @@ def test_query_assistant_executes_tools_before_answering(monkeypatch):
     assert result == {
         'answer': 'Answer',
         'tool_results': [{'call': request, 'result': rows} for request in calls],
+        'input_tokens': 350, 'output_tokens': 50,
     }
     tool_messages = generate.call_args.args[0][-2:]
     assert [message['name'] for message in tool_messages] == [request['name'] for request in calls]
@@ -147,8 +160,9 @@ def test_query_assistant_executes_tools_before_answering(monkeypatch):
 @pytest.mark.parametrize(
     'response',
     [
-        {'content': ''},
-        {'tool_calls': [{'function': {'name': 'search_disaster_events'}}]},
+        {'content': '', 'input_tokens': 0, 'output_tokens': 0},
+        {'tool_calls': [{'function': {'name': 'search_disaster_events'}}],
+         'input_tokens': 0, 'output_tokens': 0},
     ],
 )
 def test_query_assistant_rejects_empty_or_malformed_model_responses(
@@ -179,7 +193,7 @@ def test_query_assistant_stops_tools_at_limit(
     monkeypatch.setattr(client.QueryTools, 'execute', execute)
     request = _tool_request('search_disaster_events', country_code='CRI')
     assistant._generate = Mock(side_effect=[
-        request, request if requests_another_tool else {'content': 'Insufficient data.'},
+        request, request if requests_another_tool else {'content': 'Insufficient data.', 'input_tokens': 0, 'output_tokens': 0},
     ])
 
     if requests_another_tool:
@@ -194,7 +208,7 @@ def test_query_assistant_stops_tools_at_limit(
 
 
 @pytest.mark.parametrize('model_id, raw_response, expected', [
-    (FrozenModel.QWEN3_1_7B, '3000<|im_end|>', {'content': '3000'}),
+    (FrozenModel.QWEN3_1_7B, '3000<|im_end|>', {'content': '3000', 'input_tokens': 0, 'output_tokens': 0}),
     (FrozenModel.QWEN3_1_7B,
      '<tool_call>{"name": "search_disaster_events", "arguments": {"country_code": "CRI"}}</tool_call>',
      _tool_request('search_disaster_events', country_code='CRI')),
@@ -224,6 +238,8 @@ def test_query_generation_uses_transformers_parser(monkeypatch, model_id, raw_re
     assert assistant.tokenizer.decode.call_args.kwargs['skip_special_tokens'] is False
     assert assistant.tokenizer.parse_response.call_args.kwargs['prefix'].tolist() == [1]
     assert assistant.tokenizer.parse_response.call_args.kwargs['tools'] is None
+    assert result['input_tokens'] == 1
+    assert result['output_tokens'] == 1
 
 
 def test_bedrock_assistant_returns_answer(monkeypatch: pytest.MonkeyPatch):
@@ -235,7 +251,7 @@ def test_bedrock_assistant_returns_answer(monkeypatch: pytest.MonkeyPatch):
     execute = Mock()
     monkeypatch.setattr(client.QueryTools, 'execute', execute)
 
-    assert assistant.ask('Question') == {'answer': 'An answer.', 'tool_results': []}
+    assert assistant.ask('Question') == {'answer': 'An answer.', 'tool_results': [], 'input_tokens': 0, 'output_tokens': 0}
     execute.assert_not_called()
 
 
@@ -258,7 +274,7 @@ def test_bedrock_assistant_no_tools(monkeypatch: pytest.MonkeyPatch, requests_to
         with pytest.raises(ValueError, match='tool call limit'):
             assistant.ask('Question', use_tools=False)
     else:
-        assert assistant.ask('Question', use_tools=False) == {'answer': 'An answer.', 'tool_results': []}
+        assert assistant.ask('Question', use_tools=False) == {'answer': 'An answer.', 'tool_results': [], 'input_tokens': 0, 'output_tokens': 0}
     execute.assert_not_called()
     assert 'toolConfig' not in converse.call_args.kwargs
 
@@ -268,13 +284,16 @@ def test_bedrock_assistant_executes_tool_call(monkeypatch: pytest.MonkeyPatch):
     Execute a tool call and send its result back with the same ID.
     """
     assistant, converse = _bedrock_assistant(monkeypatch)
-    converse.side_effect = [
+    responses = [
         _bedrock_response([{'toolUse': {
             'toolUseId': 'search-1', 'name': 'search_disaster_events',
             'input': {'country_code': 'FRA'},
         }}], 'tool_use'),
         _bedrock_response([{'text': 'Found an event.'}]),
     ]
+    responses[0]['usage'] = {'inputTokens': 100, 'outputTokens': 20}
+    responses[1]['usage'] = {'inputTokens': 250, 'outputTokens': 30}
+    converse.side_effect = responses
     rows = {'status': 'ok', 'rows': [{'event_id': 'event-1'}]}
     execute = Mock(return_value=rows)
     monkeypatch.setattr(client.QueryTools, 'execute', execute)
@@ -282,6 +301,8 @@ def test_bedrock_assistant_executes_tool_call(monkeypatch: pytest.MonkeyPatch):
     result = assistant.ask('Find disasters in France.')
 
     assert result['answer'] == 'Found an event.'
+    assert result['input_tokens'] == 350
+    assert result['output_tokens'] == 50
     assert result['tool_results'][0]['result'] == rows
     execute.assert_called_once_with('search_disaster_events', {'country_code': 'FRA'})
     returned = converse.call_args.kwargs['messages'][-1]['content'][0]['toolResult']
@@ -291,7 +312,7 @@ def test_bedrock_assistant_executes_tool_call(monkeypatch: pytest.MonkeyPatch):
 
 def test_bedrock_assistant_limits_calls(monkeypatch: pytest.MonkeyPatch):
     """
-    Skip calls beyond the budget and return an error for each skipped call.
+    Skip calls beyond the budget and answer from collected evidence without tools.
     """
     assistant, converse = _bedrock_assistant(monkeypatch)
     assistant.max_tool_calls = 1
@@ -309,10 +330,14 @@ def test_bedrock_assistant_limits_calls(monkeypatch: pytest.MonkeyPatch):
 
     execute.assert_called_once()
     assert len(result['tool_results']) == 1
-    returned = converse.call_args.kwargs['messages'][-1]['content']
-    assert [block['toolResult']['toolUseId'] for block in returned] == ['first', 'second']
-    assert returned[1]['toolResult']['status'] == 'error'
+    messages = converse.call_args.kwargs['messages']
+    assert len(messages) == 1
+    assert messages[0]['content'][0] == {'text': 'Question'}
+    evidence = messages[0]['content'][1]['text'].removeprefix('Collected tool results:\n')
+    assert json.loads(evidence) == result['tool_results']
+    assert all(set(block) == {'text'} for message in messages for block in message['content'])
     assert 'toolConfig' not in converse.call_args.kwargs
+    assert 'budget is exhausted' in converse.call_args.kwargs['system'][0]['text']
 
 
 @pytest.mark.parametrize('backend', ['local', 'bedrock'])
@@ -331,7 +356,7 @@ def test_each_question_uses_its_own_tool_configuration(
     """
     if backend == 'local':
         assistant = _query_assistant(monkeypatch)
-        response = {'content': 'Answer'}
+        response = {'content': 'Answer', 'input_tokens': 0, 'output_tokens': 0}
     else:
         assistant, _ = _bedrock_assistant(monkeypatch)
         response = _bedrock_response([{'text': 'Answer'}])
@@ -372,10 +397,11 @@ def test_each_question_uses_its_own_tool_configuration(
     ]
     assert 'get_event_news' not in {item['function']['name'] for item in core_definitions}
     assert ('get_event_news' in {item['function']['name'] for item in external_definitions}) == enable_news
-    prompt = (
-        generate.call_args.args[0][0]['content'] if backend == 'local'
-        else generate.call_args.args[1][0]['text']
-    )
-    assert ('stored weather' in prompt) == enable_weather
-    assert ('get_event_news' in prompt) == enable_news
-    assert ('external_footprints' in prompt) == enable_external_footprints
+    for definitions, weather_enabled in [
+        (core_definitions, False), (external_definitions, enable_weather),
+    ]:
+        search = next(
+            item['function'] for item in definitions
+            if item['function']['name'] == 'search_disaster_events'
+        )
+        assert ('min_precipitation_total' in search['parameters']['properties']) == weather_enabled

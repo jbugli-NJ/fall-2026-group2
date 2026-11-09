@@ -2,14 +2,55 @@
 Tests for paired execution and accumulated results.
 """
 
+# Imports
+
 import json
 from unittest.mock import Mock
 
 import pytest
 
-from monty_tool.gap_analysis import run
-from monty_tool.gap_analysis.schemas import AnalysisRun
+from monty_tool.gap_analysis import run, storage
+from monty_tool.gap_analysis.schemas import (
+    AnswerAttempt, SavedAnalysisRun, SavedAnswerAttempt, SavedPairedResult,
+)
 
+
+# Fixtures
+
+@pytest.fixture
+def response_bucket(monkeypatch):
+    """
+    Mock the configured S3 bucket.
+    """
+    bucket = Mock()
+    monkeypatch.setattr(storage, 'get_bucket', Mock(return_value=bucket))
+    monkeypatch.setattr(storage, 'get_env_bucket_name', lambda: 'test-bucket')
+    monkeypatch.setattr(storage, 'get_env_bucket_prefix', lambda: 'test-owner/')
+    return bucket
+
+
+@pytest.fixture
+def saved_pair(pair):
+    """
+    Provide a source comparison with S3 response references for summary tests.
+    """
+    record = SavedAnswerAttempt(
+        response_s3_uri='s3://test-bucket/responses/answer.json',
+        input_tokens=0, output_tokens=0,
+        tool_failure_count=0,
+        duration_seconds=0,
+    )
+    return SavedPairedResult(
+        external_source=pair.external_source,
+        question=pair.question,
+        core_context=pair.core_context,
+        core=record,
+        external=record,
+        contribution=pair.contribution,
+    )
+
+
+# Tests
 
 @pytest.mark.parametrize('failed', [False, True])
 def test_pair_uses_both_modes_and_skips_failed_answers(monkeypatch, pair, failed):
@@ -30,7 +71,8 @@ def test_pair_uses_both_modes_and_skips_failed_answers(monkeypatch, pair, failed
     assert result.external_source == source
     assert judge.judge.call_count == int(not failed)
     assert (result.contribution is None) == failed
-    assert run.summarize([result])[f'impacts / {source}']['answer_failures'] == int(failed)
+    assert result.core.error == attempt.error
+    assert result.external.error == attempt.error
 
 
 def test_judge_error_is_counted_separately(monkeypatch, pair):
@@ -41,43 +83,46 @@ def test_judge_error_is_counted_separately(monkeypatch, pair):
     judge = Mock()
     judge.judge.side_effect = ValueError('Judge failed')
     result = run.run_pair(pair.question, pair.core_context, Mock(), judge, external_source='news')
-    counts = run.summarize([result])['impacts / news']
-    assert counts['judge_failures'] == 1
-    assert counts['evaluated'] == counts['answer_failures'] == 0
+    assert result.judge_error == 'Judge failed'
+    assert result.contribution is None
+    assert result.core.error is None
+    assert result.external.error is None
 
 
-def test_saved_runs_accumulate_without_overwriting(tmp_path, pair):
+def test_saved_runs_accumulate_without_overwriting(tmp_path, saved_pair, monkeypatch):
     """
     Retain all runs and group by model IDs within the current rubric.
     """
-    first = AnalysisRun(metadata={
+    monkeypatch.setattr(storage, 'get_bucket', Mock(side_effect=AssertionError('Unexpected S3 access')))
+    saved_pair.core = saved_pair.core.model_copy(update={'tool_failure_count': 1})
+    first = SavedAnalysisRun(metadata={
         'batch': 1, 'rubric_version': run.RUBRIC_VERSION,
         'answer_model': {'id': 'first-model'},
         'judge_model': {'id': 'judge-model'},
-    }, results=[pair])
+    }, results=[saved_pair])
     run.save_results(tmp_path, [first])
     runs = run.load_runs(tmp_path)
-    news = pair.model_copy(update={
+    news = saved_pair.model_copy(update={
         'external_source': 'news', 'contribution': run.Contribution.QUALIFIES,
     })
-    weather = pair.model_copy(update={
+    weather = saved_pair.model_copy(update={
         'external_source': 'weather', 'contribution': run.Contribution.UNRESOLVED,
     })
-    runs.append(AnalysisRun(metadata={
+    runs.append(SavedAnalysisRun(metadata={
         'batch': 2, 'rubric_version': run.RUBRIC_VERSION,
         'answer_model': {'id': 'second-model'},
         'judge_model': {'id': 'judge-model'},
-    }, results=[pair, news, weather]))
+    }, results=[saved_pair, news, weather]))
     runs.extend([
         first.model_copy(),
-        AnalysisRun(metadata={
+        SavedAnalysisRun(metadata={
             **first.metadata, 'judge_model': {'id': 'other-judge'},
-        }, results=[pair]),
+        }, results=[saved_pair]),
     ])
-    unsupported = pair.model_copy(update={'contribution': run.Contribution.UNSUPPORTED})
+    unsupported = saved_pair.model_copy(update={'contribution': run.Contribution.UNSUPPORTED})
     runs.extend([
-        AnalysisRun(metadata={'rubric_version': 'old-rubric'}, results=[unsupported]),
-        AnalysisRun(metadata={}, results=[unsupported]),
+        SavedAnalysisRun(metadata={'rubric_version': 'old-rubric'}, results=[unsupported]),
+        SavedAnalysisRun(metadata={}, results=[unsupported]),
     ])
     run.save_results(tmp_path, runs)
     saved = json.loads(tmp_path.joinpath('results.json').read_text())
@@ -96,12 +141,13 @@ def test_saved_runs_accumulate_without_overwriting(tmp_path, pair):
         ('first-model', 'other-judge'),
     }
     first_counts = summary[('first-model', 'judge-model')]
-    assert first_counts[('impacts', 'combined')]['evaluated'] == 2
+    assert first_counts[('impacts', 'shakemap_footprints')]['evaluated'] == 2
+    assert first_counts[('impacts', 'shakemap_footprints')]['tool_failures'] == 2
     second_counts = summary[('second-model', 'judge-model')]
     assert {
         source: (counts['improved'], counts['evaluated'])
         for (_, source), counts in second_counts.items()
-    } == {'combined': (1, 1), 'news': (1, 1), 'weather': (0, 1)}
+    } == {'shakemap_footprints': (1, 1), 'news': (1, 1), 'weather': (0, 1)}
     assert tmp_path.joinpath('summary.svg').is_file()
 
 
@@ -119,6 +165,7 @@ def test_main_measures_each_source_against_shared_baseline(
     selection_flags,
     source_flags,
     sources,
+    response_bucket,
 ):
     """
     Save a separate judgment for each external source.
@@ -143,6 +190,7 @@ def test_main_measures_each_source_against_shared_baseline(
     assert run.main([
         '--answer-model', run.MODEL_CHOICES[0], '--judge-model', run.MODEL_CHOICES[0],
         '--output-dir', str(tmp_path),
+        '--country-code', 'JPN', '--hazard-name', 'Earthquake', '--limit', '2',
         *selection_flags,
         *source_flags,
     ]) == 0
@@ -159,8 +207,9 @@ def test_main_measures_each_source_against_shared_baseline(
     set_seed.assert_called_once_with(run.SEED)
     require_external_data = not selection_flags
     select_contexts.assert_called_once_with(
-        run.GraphSearchArguments(),
-        1,
+        run.GraphSearchArguments(country_code='JPN'),
+        2,
+        hazard_name='Earthquake',
         require_external_data=require_external_data,
         external_sources=sources,
     )
@@ -168,11 +217,15 @@ def test_main_measures_each_source_against_shared_baseline(
     assert batch.metadata['external_sources'] == sources
     assert batch.metadata['comparisons'] == [f'core_vs_{source}' for source in sources]
     assert batch.metadata['seed'] == run.SEED
+    assert batch.metadata['limit'] == 2
+    assert batch.metadata['contexts'] == [pair.core_context]
     assert batch.metadata['require_external_data'] is require_external_data
     results = batch.results
     assert [(result.external_source, result.contribution) for result in results] == [
         (source, contributions[source]) for source in sources
     ]
+    assert response_bucket.upload_file.call_count == 1 + len(sources)
+    assert len({result.core.response_s3_uri for result in results}) == 1
     saved = json.loads(tmp_path.joinpath('results.json').read_text())
     assert {
         counts['external_source'] for counts in saved['summary'][0]['results']
@@ -180,17 +233,67 @@ def test_main_measures_each_source_against_shared_baseline(
     assert tmp_path.joinpath('summary.svg').is_file()
 
 
-def test_improvement_rate_excludes_confirmation_and_failed_evaluations(pair):
+def test_improvement_rate_excludes_confirmation_and_failed_evaluations(saved_pair):
     """
     Count supported improvements among evaluated pairs and retain failed attempts.
     """
-    results = [pair.model_copy(update={'contribution': category}) for category in run.Contribution]
-    results.append(pair.model_copy(update={'contribution': None, 'judge_error': 'Failed'}))
-    counts = run.summarize(results)['impacts / combined']
+    results = [saved_pair.model_copy(update={'contribution': category}) for category in run.Contribution]
+    results.append(saved_pair.model_copy(update={'contribution': None, 'judge_error': 'Failed'}))
+    counts = run.summarize(results)['impacts / shakemap_footprints']
     assert counts['attempted'] == 8
     assert counts['evaluated'] == 7
     assert counts['improved'] == 3
     assert counts['improvement_rate'] == pytest.approx(3 / 7)
     assert counts['judge_failures'] == 1
-    failed_counts = run.summarize([results[-1]])['impacts / combined']
+    failed_counts = run.summarize([results[-1]])['impacts / shakemap_footprints']
     assert failed_counts['improvement_rate'] is None
+
+
+def test_load_filters_before_validation(tmp_path, saved_pair):
+    """
+    Skip obsolete or unversioned runs before validating current runs.
+    """
+    current = SavedAnalysisRun(
+        metadata={'rubric_version': run.RUBRIC_VERSION}, results=[saved_pair],
+    )
+    tmp_path.joinpath('results.json').write_text(json.dumps({'runs': [
+        {
+            'metadata': {'rubric_version': 'source-contribution-v1'},
+            'results': [{'question': {'event_id': 'e'}}],
+        },
+        {'results': [{}]},
+        current.model_dump(mode='json'),
+    ]}))
+    assert run.load_runs(tmp_path) == [current]
+
+
+def test_attempt_upload(pair, response_bucket):
+    """
+    Upload response JSON and return its S3 URI and failure count.
+    """
+    def check_upload(path, key):
+        assert json.loads(path.read_text()) == pair.core.response
+
+    response_bucket.upload_file.side_effect = check_upload
+    pair.core.response.update(input_tokens=350, output_tokens=50)
+    pair.core.response['tool_results'].append({'result': {'status': 'error'}})
+    record = storage.save_attempt(pair.core)
+    response_bucket.upload_file.assert_called_once()
+    key = response_bucket.upload_file.call_args.args[1]
+    assert key.startswith('test-owner/gap_analysis/responses/')
+    assert record.response_s3_uri == f's3://test-bucket/{key}'
+    assert record.tool_failure_count == 1
+    assert record.input_tokens == 350
+    assert record.output_tokens == 50
+
+
+def test_failed_attempt_needs_no_upload(response_bucket):
+    """
+    Save the error and elapsed time when an attempt produces no response.
+    """
+    record = storage.save_attempt(AnswerAttempt(error='Failed', duration_seconds=1.5))
+    assert record == SavedAnswerAttempt(
+        response_s3_uri=None, tool_failure_count=0, input_tokens=None, output_tokens=None,
+        error='Failed', duration_seconds=1.5,
+    )
+    response_bucket.upload_file.assert_not_called()

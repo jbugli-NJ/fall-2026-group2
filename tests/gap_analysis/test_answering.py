@@ -21,7 +21,7 @@ def test_answer_requires_successful_retrieval(pair, statuses, failed):
     """
     assistant = Mock()
     assistant.ask.return_value = {
-        'answer': 'Answer',
+        'answer': 'Answer', 'input_tokens': 0, 'output_tokens': 0,
         'tool_results': [{'result': {'status': status}} for status in statuses],
     }
     result = answering.answer_question(assistant, pair.question, external_source=None)
@@ -41,25 +41,26 @@ def test_model_error_is_saved(pair):
 
 @pytest.mark.parametrize('require_external_data', [True, False])
 @pytest.mark.parametrize('sources', [None, ['news', 'weather'], ['shakemap_footprints']])
-def test_event_selection_uses_one_graph_query(
+def test_country_hazard_selection_uses_one_graph_query(
     monkeypatch,
     require_external_data,
     sources,
 ):
     """
-    Pass the event limit and external data requirement to the selection query.
+    Pass country, hazard, limit, and source requirements to the selection query.
     """
     driver = Mock()
     driver.execute_query.return_value = (
-        [Mock(data=lambda: {'event_id': 'e'})], None, None,
+        [Mock(data=lambda: {'country_code': 'JPN', 'hazard_name': 'Earthquake'})], None, None,
     )
     monkeypatch.setattr(answering, 'get_graph_db_driver', lambda: nullcontext(driver))
     assert answering.select_contexts(
-        GraphSearchArguments(),
+        GraphSearchArguments(country_code='JPN'),
         2,
+        hazard_name='Earthquake',
         require_external_data=require_external_data,
         external_sources=sources,
-    ) == [{'event_id': 'e'}]
+    ) == [{'country_code': 'JPN', 'hazard_name': 'Earthquake'}]
     driver.execute_query.assert_called_once()
     assert driver.execute_query.call_args.kwargs['parameters_']['limit'] == 2
     assert (
@@ -69,3 +70,10 @@ def test_event_selection_uses_one_graph_query(
     assert driver.execute_query.call_args.kwargs['parameters_']['external_sources'] == (
         ['news', 'weather', 'shakemap_footprints'] if sources is None else sources
     )
+
+    assert driver.execute_query.call_args.kwargs['parameters_']['country_code'] == 'JPN'
+    assert driver.execute_query.call_args.kwargs['parameters_']['hazard_name'] == 'Earthquake'
+    names = driver.execute_query.call_args.kwargs['parameters_']['hazard_code_name_map']
+    assert names['GH0001'] == 'Earthquake'
+    assert names['GH009'] == 'Volcanic eruption'
+    assert 'unknown-code' not in names

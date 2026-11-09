@@ -45,11 +45,8 @@ def _system_prompt(
         )
     return (
         f"Today's date is {date.today().isoformat()}. "
-        "You answer questions about disaster records using evidence from the available tools. "
-        "Use graph search to find events and their IDs to retrieve details and related records. "
-        "Use response tools for IFRC events and appeals. "
-        "The tools provide Montandon records and impacts. "
-        + ("get_disaster_context also includes stored weather. " if enable_weather else "")
+        "You answer questions about disaster records using data from the available tools. "
+        "Respect any provided tool call budget. "
         + (
             "get_disaster_context includes USGS ShakeMap footprints under external_footprints. "
             if enable_external_footprints else ""
@@ -143,11 +140,14 @@ class QueryAssistant:
             skip_special_tokens=False,
         )
         print("Raw model response:", repr(response))
-        return self.tokenizer.parse_response(
+        parsed = self.tokenizer.parse_response(
             response,
             prefix=inputs['input_ids'][0],
             tools=tool_definitions,
         )
+        parsed['input_tokens'] = prompt_length
+        parsed['output_tokens'] = output.shape[-1] - prompt_length
+        return parsed
 
     def ask(
         self,
@@ -178,6 +178,8 @@ class QueryAssistant:
             {"role": "user", "content": question},
         ]
         tool_results: list[dict[str, Any]] = []
+        input_tokens = 0
+        output_tokens = 0
         tool_budget = self.max_tool_calls if use_tools else 0
 
         while True:
@@ -199,6 +201,8 @@ class QueryAssistant:
                 generation_messages,
                 tool_definitions=tools.definitions if tools_available else None,
             )
+            input_tokens += response['input_tokens']
+            output_tokens += response['output_tokens']
             calls = [tool_call['function'] for tool_call in response.get('tool_calls', [])]
             if any(
                 not isinstance(call.get('name'), str)
@@ -217,6 +221,8 @@ class QueryAssistant:
                 return {
                     "answer": answer,
                     "tool_results": tool_results,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                 }
 
             # Execute only the requests that fit in the remaining budget.
@@ -336,21 +342,35 @@ class BedrockQueryAssistant:
             {'role': 'user', 'content': [{'text': question}]},
         ]
         tool_results: list[dict[str, Any]] = []
+        input_tokens = 0
+        output_tokens = 0
         tool_budget = self.max_tool_calls if use_tools else 0
 
         while True:
             remaining_calls = tool_budget - len(tool_results)
             tools_available = use_tools and remaining_calls > 0
             generation_system: list[SystemContentBlock] = system
+            generation_messages: list[ConverseMessage] = messages
             if use_tools and not tools_available:
                 generation_system = [{'text': system_prompt + (
                     ' The tool call budget is exhausted. '
                     'Provide your final answer using the results already collected.'
                 )}]
+                generation_messages = [{
+                    'role': 'user',
+                    'content': [
+                        {'text': question},
+                        {'text': 'Collected tool results:\n' + json.dumps(
+                            tool_results, ensure_ascii=False, default=str,
+                        )},
+                    ],
+                }]
             response = self._generate(
-                messages, generation_system,
+                generation_messages, generation_system,
                 tool_definitions=tools.definitions if tools_available else None,
             )
+            input_tokens += response['usage']['inputTokens']
+            output_tokens += response['usage']['outputTokens']
             stop_reason = response['stopReason']
             if stop_reason not in ('end_turn', 'stop_sequence', 'tool_use'):
                 raise ValueError(f'Model response stopped with {stop_reason}.')
@@ -370,7 +390,10 @@ class BedrockQueryAssistant:
                 ).strip()
                 if not answer:
                     raise ValueError('Expected a final answer or a tool call.')
-                return {'answer': answer, 'tool_results': tool_results}
+                return {
+                    'answer': answer, 'tool_results': tool_results,
+                    'input_tokens': input_tokens, 'output_tokens': output_tokens,
+                }
 
             results: list[ContentBlock] = []
             for tool_call in calls:
