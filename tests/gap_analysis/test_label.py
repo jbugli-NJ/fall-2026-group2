@@ -42,7 +42,7 @@ def saved_run(pair: PairedResult) -> SavedAnalysisRun:
 
 def test_pair_display(saved_run: SavedAnalysisRun, pair: PairedResult) -> None:
     """
-    Test that the question, both answers, and retrieved evidence are displayed.
+    Test evidence before the answers and a code recap after them.
     """
     assert pair.core.response is not None
     core = pair.core.response.copy()
@@ -60,6 +60,10 @@ def test_pair_display(saved_run: SavedAnalysisRun, pair: PairedResult) -> None:
     assert 'get_event_news' in rendered
     assert 'event-1' in rendered
     assert 'Homes were damaged.' in rendered
+    assert rendered.index('Homes were damaged.') < rendered.index('Core answer text')
+    assert rendered.index('Core answer text') < rendered.index('External answer text')
+    assert rendered.index('External answer text') < rendered.index('fills field')
+    assert 'unsupported' in rendered
 
 
 def test_label_and_resume(

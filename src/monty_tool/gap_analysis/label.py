@@ -148,7 +148,7 @@ def format_pair(
     external: QueryAssistantResponse,
 ) -> str:
     """
-    Label each answer and print its tool calls as individual compact JSON lines.
+    Show both sets of tool calls, both answers, and a short labeling code recap.
     """
     context = (
         f'{pair.question.country_code} / {pair.question.hazard_name} / '
@@ -165,17 +165,22 @@ def format_pair(
             body=json.dumps(pair.core_context, ensure_ascii=False, separators=(',', ':')),
         ),
     ]
-    for heading, response in [('CORE ONLY', core), ('WITH EXTERNAL SOURCE', external)]:
-        sections.append(format_section(
-            title=f'{context} | {heading} | ANSWER', body=response['answer'],
-        ))
+    responses = [('CORE ONLY', core), ('WITH EXTERNAL SOURCE', external)]
+    for heading, response in responses:
         calls = response['tool_results']
         for index, call in enumerate(calls, 1):
             sections.append(format_section(
                 title=f'{context} | {heading} | TOOL CALL {index}/{len(calls)}',
                 body=json.dumps(call, ensure_ascii=False, separators=(',', ':')),
             ))
+    for heading, response in responses:
+        sections.append(format_section(
+            title=f'{context} | {heading} | ANSWER', body=response['answer'],
+        ))
     sections.append(f'END PAIR: {context} — ENTER YOUR LABEL')
+    sections.append('Codes: ' + '; '.join(
+        f'{code}: {category.value.replace("_", " ")}' for code, category in LABELS.items()
+    ))
     return '\n\n'.join(sections)
 
 
