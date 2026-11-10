@@ -246,3 +246,12 @@ Summaries use the current rubric version and answering/judging model combination
 
 Full responses are uploaded to the selected bucket/prefix under `gap_analysis/responses/*.json`.
 Bucket paths are saved in the committed JSON file for potential reference.
+
+Hand-label judged pairs in the terminal with:
+```bash
+uv run label-gap-analysis
+```
+
+Labels save to `human_judgments.json` beside the results, with one judgment per pair.
+On startup, labels for pairs no longer present in the results (or with a dated rubric) are deleted.
+`human_judgments.svg` shows human vs. LLM judging comparison.
