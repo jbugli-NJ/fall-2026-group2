@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
-from typing import Any, Literal
+from typing import Literal
 from urllib.parse import urlparse
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -134,43 +134,12 @@ def load_response(uri: str | None) -> QueryAssistantResponse:
         return TypeAdapter(QueryAssistantResponse).validate_json(path.read_text())
 
 
-def evidence_markdown(value: Any) -> str:
+def format_section(title: str, body: str) -> str:
     """
-    Unwrap tool results and show nonempty evidence fields as Markdown.
+    Mark the start and end of a section in the terminal scrollback.
     """
-    if isinstance(value, list):
-        items = [item for item in value if item not in (None, '', [], {})]
-        if not items:
-            return '*No evidence returned.*'
-        if all(not isinstance(item, (dict, list)) for item in items):
-            return ', '.join(str(item) for item in items)
-        return '\n\n---\n\n'.join(evidence_markdown(value=item) for item in items)
-    if isinstance(value, dict):
-        if 'result' in value:
-            call = value.get('call', {})
-            name = call.get('name', 'Retrieved evidence')
-            sections = [f'#### {name}']
-            if call.get('arguments'):
-                sections.append('Query:\n\n' + evidence_markdown(value=call['arguments']))
-            sections.append(evidence_markdown(value=value['result']))
-            return '\n\n'.join(sections)
-        if 'rows' in value and value.get('status') == 'ok':
-            return evidence_markdown(value=value['rows'])
-        fields = []
-        for key, item in value.items():
-            if item in (None, '', [], {}) or (key == 'status' and item == 'ok'):
-                continue
-            name = key.replace('_', ' ').capitalize()
-            text = evidence_markdown(value=item)
-            nested = isinstance(item, dict) or (
-                isinstance(item, list) and any(isinstance(v, dict) for v in item)
-            )
-            if nested:
-                fields.append(f'**{name}**\n\n{text}')
-            else:
-                fields.append(f'- **{name}:** ' + text.replace('\n', '\n  '))
-        return '\n\n'.join(fields) or '*No evidence returned.*'
-    return str(value)
+    border = '=' * 72
+    return f'{border}\n{title}\n{border}\n\n{body}\n\n--- END {title} ---'
 
 
 def format_pair(
@@ -179,24 +148,34 @@ def format_pair(
     external: QueryAssistantResponse,
 ) -> str:
     """
-    Render a pair's question, answers, and evidence for judgement.
+    Label each answer and print its tool calls as individual compact JSON lines.
     """
+    context = (
+        f'{pair.question.country_code} / {pair.question.hazard_name} / '
+        f'{pair.question.template_id} / {pair.external_source}'
+    )
     sections = [
-        f'# {pair.question.country_code} / {pair.question.hazard_name}',
-        f'## Question\n\n{pair.question.question}',
-        f'## External source: {pair.external_source}\n\n'
-        + EXTERNAL_SOURCES[pair.external_source].evidence_description,
-        '## Core context\n\n' + evidence_markdown(value=pair.core_context),
+        format_section(
+            title=f'{context} | QUESTION',
+            body=pair.question.question + '\n\n'
+            + EXTERNAL_SOURCES[pair.external_source].evidence_description,
+        ),
+        format_section(
+            title=f'{context} | CORE CONTEXT',
+            body=json.dumps(pair.core_context, ensure_ascii=False, separators=(',', ':')),
+        ),
     ]
-    for heading, response in [
-        ('Core-only answer', core),
-        ('External-enabled answer', external),
-    ]:
-        sections.extend([
-            f'## {heading}\n\n{response["answer"]}',
-            '### Retrieved evidence',
-            evidence_markdown(value=response['tool_results']),
-        ])
+    for heading, response in [('CORE ONLY', core), ('WITH EXTERNAL SOURCE', external)]:
+        sections.append(format_section(
+            title=f'{context} | {heading} | ANSWER', body=response['answer'],
+        ))
+        calls = response['tool_results']
+        for index, call in enumerate(calls, 1):
+            sections.append(format_section(
+                title=f'{context} | {heading} | TOOL CALL {index}/{len(calls)}',
+                body=json.dumps(call, ensure_ascii=False, separators=(',', ':')),
+            ))
+    sections.append(f'END PAIR: {context} — ENTER YOUR LABEL')
     return '\n\n'.join(sections)
 
 

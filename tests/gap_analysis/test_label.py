@@ -40,34 +40,26 @@ def saved_run(pair: PairedResult) -> SavedAnalysisRun:
 
 # Tests
 
-def test_evidence_markdown() -> None:
+def test_pair_display(saved_run: SavedAnalysisRun, pair: PairedResult) -> None:
     """
-    Test evidence values and retrieval errors in the rendered text.
+    Test that the question, both answers, and retrieved evidence are displayed.
     """
-    rendered = label.evidence_markdown(value={
-        'call': {'name': 'get_disaster_context', 'arguments': {'event_id': 'event-1'}},
-        'result': {
-            'status': 'ok',
-            'rows': [{
-                'title': 'Flood', 'description': 'Homes were damaged.',
-                'weather': {'observed_precipitation_total': 0, 'precipitation_unit': 'mm'},
-                'impacts': [{'impact_value': 123, 'impact_unit': 'people'}],
-                'missing': None, 'empty': [],
-            }],
-            'pagination': {'next_offset': 10},
-        },
-    })
-    assert 'get_disaster_context' in rendered
+    assert pair.core.response is not None
+    core = pair.core.response.copy()
+    core['answer'] = 'Core answer text'
+    external = core.copy()
+    external['answer'] = 'External answer text'
+    external['tool_results'] = [{
+        'call': {'name': 'get_event_news', 'arguments': {'event_id': 'event-1'}},
+        'result': {'rows': [{'evidence_excerpt': 'Homes were damaged.'}]},
+    }]
+    rendered = label.format_pair(pair=saved_run.results[0], core=core, external=external)
+    assert pair.question.question in rendered
+    assert 'Core answer text' in rendered
+    assert 'External answer text' in rendered
+    assert 'get_event_news' in rendered
     assert 'event-1' in rendered
-    assert 'Flood' in rendered
     assert 'Homes were damaged.' in rendered
-    assert '0' in rendered
-    assert 'mm' in rendered
-    assert '123' in rendered
-    assert 'people' in rendered
-    assert 'Access denied' in label.evidence_markdown(value={
-        'result': {'status': 'error', 'message': 'Access denied'},
-    })
 
 
 def test_label_and_resume(
