@@ -136,9 +136,41 @@ def load_response(uri: str | None) -> QueryAssistantResponse:
 
 def evidence_markdown(value: Any) -> str:
     """
-    Convert JSON to markdown for display.
+    Unwrap tool results and show nonempty evidence fields as Markdown.
     """
-    return '```json\n' + json.dumps(value, indent=2, ensure_ascii=False) + '\n```'
+    if isinstance(value, list):
+        items = [item for item in value if item not in (None, '', [], {})]
+        if not items:
+            return '*No evidence returned.*'
+        if all(not isinstance(item, (dict, list)) for item in items):
+            return ', '.join(str(item) for item in items)
+        return '\n\n---\n\n'.join(evidence_markdown(value=item) for item in items)
+    if isinstance(value, dict):
+        if 'result' in value:
+            call = value.get('call', {})
+            name = call.get('name', 'Retrieved evidence')
+            sections = [f'#### {name}']
+            if call.get('arguments'):
+                sections.append('Query:\n\n' + evidence_markdown(value=call['arguments']))
+            sections.append(evidence_markdown(value=value['result']))
+            return '\n\n'.join(sections)
+        if 'rows' in value and value.get('status') == 'ok':
+            return evidence_markdown(value=value['rows'])
+        fields = []
+        for key, item in value.items():
+            if item in (None, '', [], {}) or (key == 'status' and item == 'ok'):
+                continue
+            name = key.replace('_', ' ').capitalize()
+            text = evidence_markdown(value=item)
+            nested = isinstance(item, dict) or (
+                isinstance(item, list) and any(isinstance(v, dict) for v in item)
+            )
+            if nested:
+                fields.append(f'**{name}**\n\n{text}')
+            else:
+                fields.append(f'- **{name}:** ' + text.replace('\n', '\n  '))
+        return '\n\n'.join(fields) or '*No evidence returned.*'
+    return str(value)
 
 
 def format_pair(

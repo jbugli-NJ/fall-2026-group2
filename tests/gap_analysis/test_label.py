@@ -40,6 +40,36 @@ def saved_run(pair: PairedResult) -> SavedAnalysisRun:
 
 # Tests
 
+def test_evidence_markdown() -> None:
+    """
+    Test evidence values and retrieval errors in the rendered text.
+    """
+    rendered = label.evidence_markdown(value={
+        'call': {'name': 'get_disaster_context', 'arguments': {'event_id': 'event-1'}},
+        'result': {
+            'status': 'ok',
+            'rows': [{
+                'title': 'Flood', 'description': 'Homes were damaged.',
+                'weather': {'observed_precipitation_total': 0, 'precipitation_unit': 'mm'},
+                'impacts': [{'impact_value': 123, 'impact_unit': 'people'}],
+                'missing': None, 'empty': [],
+            }],
+            'pagination': {'next_offset': 10},
+        },
+    })
+    assert 'get_disaster_context' in rendered
+    assert 'event-1' in rendered
+    assert 'Flood' in rendered
+    assert 'Homes were damaged.' in rendered
+    assert '0' in rendered
+    assert 'mm' in rendered
+    assert '123' in rendered
+    assert 'people' in rendered
+    assert 'Access denied' in label.evidence_markdown(value={
+        'result': {'status': 'error', 'message': 'Access denied'},
+    })
+
+
 def test_label_and_resume(
     saved_run: SavedAnalysisRun,
     tmp_path: Path,
