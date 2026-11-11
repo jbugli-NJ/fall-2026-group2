@@ -10,8 +10,45 @@ from matplotlib import colormaps
 from matplotlib.figure import Figure
 from matplotlib.ticker import PercentFormatter
 
+from monty_tool.gap_analysis.schemas import Contribution
+
 
 # Plotting
+
+def build_judgment_plot(
+    comparisons: list[tuple[Contribution, Contribution]],
+) -> Figure:
+    """
+    Show counts of human versus automated labels, including disagreements.
+    """
+    figure = Figure(figsize=(10, 8), layout='constrained')
+    axes = figure.subplots()
+    if not comparisons:
+        axes.text(0.5, 0.5, 'No labeled pairs', ha='center', va='center')
+        axes.set_axis_off()
+        return figure
+    categories = list(Contribution)
+    counts = [[0 for _ in categories] for _ in categories]
+    for human, automated in comparisons:
+        counts[categories.index(human)][categories.index(automated)] += 1
+    maximum = max(max(row) for row in counts)
+    axes.imshow(counts, cmap='Blues', vmin=0, vmax=maximum)
+    for row, values in enumerate(counts):
+        for column, count in enumerate(values):
+            axes.text(
+                column, row, str(count), ha='center', va='center',
+                color='white' if count > maximum / 2 else 'black',
+            )
+    labels = [category.value for category in categories]
+    axes.set_xticks(range(len(categories)), labels, rotation=45, ha='right')
+    axes.set_yticks(range(len(categories)), labels)
+    axes.set_xlabel('Automated judgment')
+    axes.set_ylabel('Human judgment')
+    matches = sum(human == automated for human, automated in comparisons)
+    axes.set_title(
+        f'Agreement: {matches}/{len(comparisons)} ({matches / len(comparisons):.0%})'
+    )
+    return figure
 
 
 def build_summary_plot(summary: list[dict[str, Any]]) -> Figure:
