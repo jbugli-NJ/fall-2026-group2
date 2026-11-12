@@ -4,13 +4,11 @@ Plot external-data improvement rates by question type and model.
 
 # Imports
 
-from typing import Any
-
 from matplotlib import colormaps
 from matplotlib.figure import Figure
 from matplotlib.ticker import PercentFormatter
 
-from monty_tool.gap_analysis.schemas import Contribution
+from monty_tool.gap_analysis.schemas import Contribution, ModelSummary
 
 
 # Plotting
@@ -51,7 +49,7 @@ def build_judgment_plot(
     return figure
 
 
-def build_summary_plot(summary: list[dict[str, Any]]) -> Figure:
+def build_summary_plot(summary: list[ModelSummary]) -> Figure:
     """
     Plot model improvement rates with fixed vertical offsets and evaluation counts.
     """
@@ -113,6 +111,7 @@ def build_summary_plot(summary: list[dict[str, Any]]) -> Figure:
                 axes.text(0.02, point_y, 'No evaluations', va='center', color=color, fontsize=9)
                 continue
             rate = counts['improvement_rate']
+            assert rate is not None
             x_values.append(rate)
             y_values.append(point_y)
             axes.annotate(
