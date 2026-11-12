@@ -27,7 +27,10 @@ def pair():
             country_code='JPN', hazard_name='Earthquake',
             template_id='impacts', question='Impacts?',
         ),
-        selection=GapSelection(filters=GraphSearchArguments(country_code='JPN'), hazard_name='Earthquake'),
+        selection=GapSelection(
+            filters=GraphSearchArguments(country_code='JPN'),
+            hazard_name='Earthquake',
+        ),
         evidence_s3_uri='s3://test-bucket/gap_analysis/evidence/context.json',
         core=attempt,
         external=attempt,

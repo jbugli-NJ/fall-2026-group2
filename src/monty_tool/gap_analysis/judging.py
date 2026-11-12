@@ -27,7 +27,10 @@ LABEL_SCHEMA = json.dumps(
     {
         'type': 'object',
         'additionalProperties': False,
-        'properties': {'label': {'type': 'string', 'enum': list(LABELS)}},
+        'properties': {'label': {
+            'type': 'string',
+            'enum': list(LABELS),
+        }},
         'required': ['label'],
     }
 )
@@ -70,7 +73,10 @@ def judgment_messages(pair: PairedResult, evidence: Evidence) -> list[dict[str, 
     if pair.core.answer is None or pair.external.answer is None:
         raise ValueError('Both answers must complete before judging.')
     return [
-        {'role': 'system', 'content': RUBRIC},
+        {
+            'role': 'system',
+            'content': RUBRIC,
+        },
         {
             'role': 'user',
             'content': json.dumps(
@@ -106,7 +112,11 @@ class LocalContributionJudge:
         """
         Judge the contribution provided by external data in the given result pair.
         """
-        label = classify_labels(self.assistant, judgment_messages(pair, evidence), tuple(LABELS))
+        label = classify_labels(
+            self.assistant,
+            judgment_messages(pair, evidence),
+            tuple(LABELS),
+        )
         return LABELS[label]
 
 
@@ -133,7 +143,10 @@ class BedrockContributionJudge:
                     'content': [{'text': messages[1]['content']}],
                 },
             ],
-            inferenceConfig={'maxTokens': 64, 'temperature': 0.0},
+            inferenceConfig={
+                'maxTokens': 64,
+                'temperature': 0.0,
+            },
             outputConfig={
                 'textFormat': {
                     'type': 'json_schema',

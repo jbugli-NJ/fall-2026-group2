@@ -57,7 +57,12 @@ def save_evidence(evidence: Evidence) -> str:
     """
     Archive the retrieved records once for answering, judging, and human review.
     """
-    content = json.dumps(evidence, ensure_ascii=False, sort_keys=True, default=str).encode('utf-8')
+    content = json.dumps(
+        evidence,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    ).encode('utf-8')
     return _save_content(content, 'evidence', 'json')
 
 

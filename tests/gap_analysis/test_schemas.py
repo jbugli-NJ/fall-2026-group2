@@ -28,8 +28,11 @@ def test_selection_reuses_graph_filter_validation():
     Selected countries and date bounds use the existing graph-search validators.
     """
     selection = GapSelection.model_validate({
-        'filters': {'country_code': 'Japan',
-                    'from_date': '2020-01-01', 'to_date': '2020-12-31'},
+        'filters': {
+            'country_code': 'Japan',
+            'from_date': '2020-01-01',
+            'to_date': '2020-12-31',
+        },
         'hazard_name': 'Earthquake',
     })
     assert selection.filters.country_code == 'JPN'
@@ -38,8 +41,11 @@ def test_selection_reuses_graph_filter_validation():
     assert GapSelection.model_validate_json(selection.model_dump_json()) == selection
     with pytest.raises(ValidationError, match='from_date must be on or before to_date'):
         GapSelection.model_validate({
-            'filters': {'country_code': 'JPN',
-                        'from_date': '2021-01-01', 'to_date': '2020-01-01'},
+            'filters': {
+                'country_code': 'JPN',
+                'from_date': '2021-01-01',
+                'to_date': '2020-01-01',
+            },
             'hazard_name': 'Earthquake',
         })
 
@@ -49,7 +55,10 @@ def test_selection_requires_filters_and_hazard(missing):
     """
     The selection boundary requires explicit graph filters and a hazard.
     """
-    payload = {'filters': {'country_code': 'JPN'}, 'hazard_name': 'Earthquake'}
+    payload = {
+        'filters': {'country_code': 'JPN'},
+        'hazard_name': 'Earthquake',
+    }
     del payload[missing]
     with pytest.raises(ValidationError):
         GapSelection.model_validate(payload)

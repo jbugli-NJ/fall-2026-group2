@@ -63,7 +63,15 @@ def test_pair_uses_both_modes_and_skips_failed_answers(monkeypatch, pair, failed
     monkeypatch.setattr(run, 'answer_question', answer)
     judge = Mock()
     judge.judge.return_value = pair.contribution
-    result = run.run_pair(pair.question, pair.selection, Mock(), judge, external_source=source, evidence={}, evidence_s3_uri=pair.evidence_s3_uri)
+    result = run.run_pair(
+        pair.question,
+        pair.selection,
+        Mock(),
+        judge,
+        external_source=source,
+        evidence={},
+        evidence_s3_uri=pair.evidence_s3_uri,
+    )
     assert [
         call.kwargs['external_source']
         for call in answer.call_args_list
@@ -84,7 +92,15 @@ def test_judge_error_is_counted_separately(monkeypatch, pair):
     monkeypatch.setattr(run, 'answer_question', Mock(return_value=pair.core))
     judge = Mock()
     judge.judge.side_effect = ValueError('Judge failed')
-    result = run.run_pair(pair.question, pair.selection, Mock(), judge, external_source='news', evidence={}, evidence_s3_uri=pair.evidence_s3_uri)
+    result = run.run_pair(
+        pair.question,
+        pair.selection,
+        Mock(),
+        judge,
+        external_source='news',
+        evidence={},
+        evidence_s3_uri=pair.evidence_s3_uri,
+    )
     assert result.judge_error == 'Judge failed'
     assert result.contribution is None
     assert result.core.error is None
@@ -95,32 +111,43 @@ def test_saved_runs_accumulate_without_overwriting(tmp_path, saved_pair, monkeyp
     """
     Retain all runs and group by model IDs within the current rubric.
     """
-    monkeypatch.setattr(storage, 'get_bucket', Mock(side_effect=AssertionError('Unexpected S3 access')))
+    monkeypatch.setattr(
+        storage,
+        'get_bucket',
+        Mock(side_effect=AssertionError('Unexpected S3 access')),
+    )
     first = SavedAnalysisRun(metadata={
-        'batch': 1, 'rubric_version': run.RUBRIC_VERSION,
+        'batch': 1,
+        'rubric_version': run.RUBRIC_VERSION,
         'answer_model': {'id': 'first-model'},
         'judge_model': {'id': 'judge-model'},
     }, results=[saved_pair])
     run.save_results(tmp_path, [first])
     runs = run.load_runs(tmp_path)
     news = saved_pair.model_copy(update={
-        'external_source': 'news', 'contribution': run.Contribution.IMPROVEMENT,
+        'external_source': 'news',
+        'contribution': run.Contribution.IMPROVEMENT,
     })
     weather = saved_pair.model_copy(update={
-        'external_source': 'weather', 'contribution': run.Contribution.NO_CHANGE,
+        'external_source': 'weather',
+        'contribution': run.Contribution.NO_CHANGE,
     })
     runs.append(SavedAnalysisRun(metadata={
-        'batch': 2, 'rubric_version': run.RUBRIC_VERSION,
+        'batch': 2,
+        'rubric_version': run.RUBRIC_VERSION,
         'answer_model': {'id': 'second-model'},
         'judge_model': {'id': 'judge-model'},
     }, results=[saved_pair, news, weather]))
     runs.extend([
         first.model_copy(),
         SavedAnalysisRun(metadata={
-            **first.metadata, 'judge_model': {'id': 'other-judge'},
+            **first.metadata,
+            'judge_model': {'id': 'other-judge'},
         }, results=[saved_pair]),
     ])
-    regression = saved_pair.model_copy(update={'contribution': run.Contribution.REGRESSION})
+    regression = saved_pair.model_copy(
+        update={'contribution': run.Contribution.REGRESSION},
+    )
     runs.extend([
         SavedAnalysisRun(metadata={'rubric_version': 'old-rubric'}, results=[regression]),
         SavedAnalysisRun(metadata={}, results=[regression]),
@@ -147,7 +174,11 @@ def test_saved_runs_accumulate_without_overwriting(tmp_path, saved_pair, monkeyp
     assert {
         source: (counts['improved'], counts['evaluated'])
         for (_, source), counts in second_counts.items()
-    } == {'shakemap_footprints': (1, 1), 'news': (1, 1), 'weather': (0, 1)}
+    } == {
+        'shakemap_footprints': (1, 1),
+        'news': (1, 1),
+        'weather': (0, 1),
+    }
     assert tmp_path.joinpath('summary.svg').is_file()
 
 
@@ -157,7 +188,10 @@ def test_saved_runs_accumulate_without_overwriting(tmp_path, saved_pair, monkeyp
     ([], ['news', 'weather', 'shakemap_footprints']),
     (['--external-sources', 'shakemap_footprints'], ['shakemap_footprints']),
     (['--external-sources', 'news', 'weather'], ['news', 'weather']),
-    (['--external-sources', 'shakemap_footprints', 'shakemap_footprints'], ['shakemap_footprints']),
+    (
+        ['--external-sources', 'shakemap_footprints', 'shakemap_footprints'],
+        ['shakemap_footprints'],
+    ),
 ])
 def test_main_measures_each_source_against_shared_baseline(
     monkeypatch,
@@ -179,11 +213,17 @@ def test_main_measures_each_source_against_shared_baseline(
     questions = [pair.question.model_copy(update={'template_id': f'question_{i}'})
                  for i in range(question_count)]
     monkeypatch.setattr(run, 'construct_gap_questions', Mock(return_value=questions))
-    retrieve = Mock(return_value={'events': [], 'responses': []})
+    retrieve = Mock(return_value={
+        'events': [],
+        'responses': [],
+    })
     monkeypatch.setattr(run, 'retrieve_evidence', retrieve)
     assistant = Mock()
     assistant.ask.return_value = {
-        'answer': pair.core.answer, 'input_tokens': 0, 'output_tokens': 0, 'tool_results': [],
+        'answer': pair.core.answer,
+        'input_tokens': 0,
+        'output_tokens': 0,
+        'tool_results': [],
     }
     monkeypatch.setattr(run, 'make_answerer', Mock(return_value=assistant))
     judge = Mock()
@@ -192,7 +232,9 @@ def test_main_measures_each_source_against_shared_baseline(
         'weather': run.Contribution.NO_CHANGE,
         'shakemap_footprints': run.Contribution.IMPROVEMENT,
     }
-    judge.judge.side_effect = [contributions[source] for source in sources] * question_count
+    judge.judge.side_effect = [
+        contributions[source] for source in sources
+    ] * question_count
     monkeypatch.setattr(run, 'LocalContributionJudge', Mock(return_value=judge))
 
     assert run.main([
@@ -206,7 +248,10 @@ def test_main_measures_each_source_against_shared_baseline(
     assert [call.kwargs for call in assistant.ask.call_args_list] == [
         {'use_tools': False} for source in [None, *sources] * question_count
     ]
-    assert all(call.args[1] is retrieve.return_value for call in judge.judge.call_args_list)
+    assert all(
+        call.args[1] is retrieve.return_value
+        for call in judge.judge.call_args_list
+    )
     retrieve.assert_called_once_with(
         pair.selection.filters,
         hazard_name=pair.question.hazard_name,
@@ -232,11 +277,16 @@ def test_main_measures_each_source_against_shared_baseline(
     assert [(result.external_source, result.contribution) for result in results] == [
         (source, contributions[source]) for source in sources
     ] * question_count
-    assert all(result.evidence_s3_uri == judge.judge.call_args_list[i].args[0].evidence_s3_uri
-               for i, result in enumerate(results))
+    assert all(
+        result.evidence_s3_uri
+        == judge.judge.call_args_list[i].args[0].evidence_s3_uri
+        for i, result in enumerate(results)
+    )
     assert answer_bucket.upload_file.call_count == 1 + question_count * (1 + len(sources))
     assert len({result.evidence_s3_uri for result in results}) == 1
-    assert results[0].evidence_s3_uri.startswith('s3://test-bucket/test-owner/gap_analysis/evidence/')
+    assert results[0].evidence_s3_uri.startswith(
+        's3://test-bucket/test-owner/gap_analysis/evidence/',
+    )
     assert len({result.core.answer_s3_uri for result in results}) == 1
     saved = json.loads(tmp_path.joinpath('results.json').read_text())
     assert {
@@ -245,7 +295,11 @@ def test_main_measures_each_source_against_shared_baseline(
     assert tmp_path.joinpath('summary.svg').is_file()
 
 
-def test_main_keeps_each_selections_evidence_with_its_questions(monkeypatch, tmp_path, pair):
+def test_main_keeps_each_selections_evidence_with_its_questions(
+    monkeypatch,
+    tmp_path,
+    pair,
+):
     """
     Retrieve and archive once per selection, reusing its snapshot for all questions.
     """
@@ -253,11 +307,18 @@ def test_main_keeps_each_selections_evidence_with_its_questions(monkeypatch, tmp
         'filters': run.GraphSearchArguments(country_code='FRA'),
     })
     selections = [pair.selection, second]
-    snapshots = [{'events': [], 'responses': []}, {'events': [], 'responses': []}]
+    snapshots = [{
+        'events': [],
+        'responses': [],
+    }, {
+        'events': [],
+        'responses': [],
+    }]
     monkeypatch.setattr(run, 'select_country_hazards', Mock(return_value=selections))
     monkeypatch.setattr(run, 'construct_gap_questions', lambda selection, templates: [
         pair.question.model_copy(update={
-            'country_code': selection.filters.country_code, 'template_id': template_id,
+            'country_code': selection.filters.country_code,
+            'template_id': template_id,
         }) for template_id in ['first', 'second']
     ])
     retrieve = Mock(side_effect=snapshots)
@@ -304,8 +365,16 @@ def test_improvement_rate_counts_only_improvements_among_evaluated_pairs(saved_p
     """
     Count supported improvements among evaluated pairs and retain failed attempts.
     """
-    results = [saved_pair.model_copy(update={'contribution': category}) for category in run.Contribution]
-    results.append(saved_pair.model_copy(update={'contribution': None, 'judge_error': 'Failed'}))
+    results = [
+        saved_pair.model_copy(update={'contribution': category})
+        for category in run.Contribution
+    ]
+    results.append(
+        saved_pair.model_copy(update={
+            'contribution': None,
+            'judge_error': 'Failed',
+        }),
+    )
     counts = run.summarize(results)['impacts / shakemap_footprints']
     assert counts['attempted'] == 4
     assert counts['evaluated'] == 3

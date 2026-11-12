@@ -44,7 +44,10 @@ def hazard_code_name_map() -> dict[str, str]:
         **HAZARD_NAME_FALLBACKS,
         **{
             code: name
-            for code, name in hazard_code_lookup().select('hazard_code', 'hazard_label').iter_rows()
+            for code, name in hazard_code_lookup().select(
+                'hazard_code',
+                'hazard_label',
+            ).iter_rows()
             if name and name.strip()
         },
     }
@@ -83,7 +86,10 @@ def _query_rows(
         files('monty_tool.gap_analysis.cypher_queries').joinpath(filename).read_text(),
     )
     records, _, _ = driver.execute_query(
-        query, parameters_=dict(parameters), database_='neo4j', routing_=RoutingControl.READ,
+        query,
+        parameters_=dict(parameters),
+        database_='neo4j',
+        routing_=RoutingControl.READ,
     )
     return [record.data() for record in records]
 
@@ -113,17 +119,29 @@ def retrieve_evidence(
     }
     with get_graph_db_driver() as driver:
         evidence: Evidence = {
-            'events': cast(list[EventEvidence], _query_rows(driver, 'retrieve_events.cypher', parameters)),
-            'responses': cast(list[ResponseEvidence], _query_rows(driver, 'retrieve_responses.cypher', parameters)),
+            'events': cast(
+                list[EventEvidence],
+                _query_rows(driver, 'retrieve_events.cypher', parameters),
+            ),
+            'responses': cast(
+                list[ResponseEvidence],
+                _query_rows(driver, 'retrieve_responses.cypher', parameters),
+            ),
         }
         if 'news' in sources:
-            evidence['news'] = cast(list[NewsEvidence], _query_rows(driver, 'retrieve_news.cypher', parameters))
+            evidence['news'] = cast(
+                list[NewsEvidence],
+                _query_rows(driver, 'retrieve_news.cypher', parameters),
+            )
     return evidence
 
 
 # Source selection
 
-def evidence_for_source(evidence: Evidence, source: ExternalSourceName | None) -> Evidence:
+def evidence_for_source(
+    evidence: Evidence,
+    source: ExternalSourceName | None,
+) -> Evidence:
     """
     Return a copy of the provided evidence removing unused external source fields.
     """

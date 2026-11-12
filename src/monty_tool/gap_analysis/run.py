@@ -210,7 +210,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--answer-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--judge-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--country-code')
-    parser.add_argument('--hazard-name', help='Hazard name, such as Cyclone or Earthquake.')
+    parser.add_argument(
+        '--hazard-name',
+        help='Hazard name, such as Cyclone or Earthquake.',
+    )
     parser.add_argument('--from-date')
     parser.add_argument('--to-date')
     parser.add_argument(
@@ -244,8 +247,14 @@ def _model_metadata(model: str) -> ModelInfo:
     Return the selected model's ID and revision for the run metadata.
     """
     if model == 'bedrock':
-        return {'id': DEFAULT_BEDROCK_MODEL_ID, 'revision': 'not applicable'}
-    return {'id': model, 'revision': FrozenModel(model).revision}
+        return {
+            'id': DEFAULT_BEDROCK_MODEL_ID,
+            'revision': 'not applicable',
+        }
+    return {
+        'id': model,
+        'revision': FrozenModel(model).revision,
+    }
 
 
 # Runner
@@ -279,7 +288,10 @@ def main(argv: list[str] | None = None) -> int:
         for selection in selections
     ]
     total_questions = sum(len(questions) for _, questions in selection_questions)
-    seed = SEED if args.answer_model != 'bedrock' or args.judge_model != 'bedrock' else None
+    seed = (
+        SEED if args.answer_model != 'bedrock' or args.judge_model != 'bedrock'
+        else None
+    )
     if seed is not None:
         set_seed(seed)
     assistant = make_answerer(args.answer_model)
@@ -303,7 +315,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.judge_model == 'bedrock'
             else 'token_probabilities'
         ),
-        'selection': {**filters.model_dump(mode='json'), 'hazard_name': args.hazard_name},
+        'selection': {
+            **filters.model_dump(mode='json'),
+            'hazard_name': args.hazard_name,
+        },
         'limit': args.limit,
         'require_external_data': args.require_external_data,
         'selections': [selection.model_dump(mode='json') for selection in selections],
@@ -329,7 +344,8 @@ def main(argv: list[str] | None = None) -> int:
             index += 1
             print(
                 f'{index}/{total_questions}: '
-                f'{question.country_code} / {question.hazard_name} / {question.template_id}'
+                f'{question.country_code} / {question.hazard_name} / '
+                f'{question.template_id}'
             )
             core = answer_question(
                 assistant,
