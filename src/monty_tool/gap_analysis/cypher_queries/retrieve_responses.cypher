@@ -3,6 +3,8 @@ WHERE toLower(trim(event.disaster_type_name)) IN $response_hazard_names
   AND ($from_date IS NULL OR date(event.start_datetime) >= date($from_date))
   AND ($to_date IS NULL OR date(event.start_datetime) <= date($to_date))
 WITH DISTINCT event
+ORDER BY event.start_datetime IS NULL, event.start_datetime DESC, event.id
+LIMIT $disaster_limit
 OPTIONAL MATCH (appeal:GOAppeal)-[:FOR_EVENT]->(event)
 WITH event, appeal
 ORDER BY appeal.start_datetime, appeal.id
@@ -31,4 +33,4 @@ RETURN event.id AS event_id,
        event.active_deployments AS active_deployments,
        appeals
 
-ORDER BY start_datetime, event_id
+ORDER BY start_datetime IS NULL, start_datetime DESC, event_id

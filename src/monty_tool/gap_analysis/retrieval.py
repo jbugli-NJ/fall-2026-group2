@@ -55,6 +55,8 @@ def hazard_code_name_map() -> dict[str, str]:
 
 # Query boundary
 
+DISASTER_LIMIT = 20
+
 type EvidenceQuery = Literal[
     'retrieve_events.cypher',
     'retrieve_responses.cypher',
@@ -63,7 +65,7 @@ type EvidenceQuery = Literal[
 
 class RetrievalParameters(TypedDict):
     """
-    Parameters shared by the three evidence queries.
+    Parameters for source-specific evidence retrieval.
     """
     country_code: str
     from_date: date | None
@@ -71,6 +73,9 @@ class RetrievalParameters(TypedDict):
     hazard_name: str
     hazard_code_name_map: dict[str, str]
     response_hazard_names: list[str]
+    external_source: ExternalSourceName
+    disaster_limit: int
+    event_ids: list[str]
 
 
 def _query_rows(
@@ -99,11 +104,11 @@ def _query_rows(
 def retrieve_evidence(
     filters: GraphSearchArguments,
     hazard_name: str,
-    sources: list[ExternalSourceName],
+    external_source: ExternalSourceName,
 ) -> Evidence:
     """
-    Retrieve records for a selected country, hazard, and event start date range.
-    This can optionally include external data for comparison.
+    Retrieve the 20 most recent disasters with the selected external source.
+    Include their associated records and up to 20 matching IFRC response events.
     """
     if filters.country_code is None:
         raise ValueError('Evidence retrieval requires a country code.')
@@ -112,6 +117,9 @@ def retrieve_evidence(
         'from_date': filters.from_date,
         'to_date': filters.to_date,
         'hazard_name': hazard_name,
+        'external_source': external_source,
+        'disaster_limit': DISASTER_LIMIT,
+        'event_ids': [],
         'hazard_code_name_map': hazard_code_name_map(),
         'response_hazard_names': RESPONSE_HAZARD_NAMES.get(
             hazard_name, [hazard_name.lower()],
@@ -128,7 +136,8 @@ def retrieve_evidence(
                 _query_rows(driver, 'retrieve_responses.cypher', parameters),
             ),
         }
-        if 'news' in sources:
+        parameters['event_ids'] = [event['event_id'] for event in evidence['events']]
+        if external_source == 'news':
             evidence['news'] = cast(
                 list[NewsEvidence],
                 _query_rows(driver, 'retrieve_news.cypher', parameters),

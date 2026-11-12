@@ -55,9 +55,10 @@ def test_source_isolation_preserves_core_and_nested_weather():
     assert 'weather' in evidence['events'][0]
 
 
-def test_queries_use_fixed_scope_and_do_not_drop_long_lists(monkeypatch):
+@pytest.mark.parametrize('source', ['news', 'weather', 'shakemap_footprints'])
+def test_queries_share_source_scope_and_preserve_associated_records(monkeypatch, source):
     """
-    Fetch every selected source with a shared scope and retain all returned records.
+    Limit disasters at retrieval, keeping their associated records intact.
     """
     driver = Mock()
     event = {
@@ -79,11 +80,12 @@ def test_queries_use_fixed_scope_and_do_not_drop_long_lists(monkeypatch):
     result = retrieval.retrieve_evidence(
         filters,
         hazard_name='Wildfires',
-        sources=['news'],
+        external_source=source,
     )
     assert len(result['events'][0]['impacts']) == 105
-    assert result['responses'] == result['news'] == []
-    assert driver.execute_query.call_count == 3
+    assert result['responses'] == []
+    assert ('news' in result) == (source == 'news')
+    assert driver.execute_query.call_count == (3 if source == 'news' else 2)
     for call in driver.execute_query.call_args_list:
         params = call.kwargs['parameters_']
         assert params['country_code'] == 'BRA'
@@ -93,7 +95,11 @@ def test_queries_use_fixed_scope_and_do_not_drop_long_lists(monkeypatch):
         assert 'offset' not in params
         assert params['hazard_code_name_map'] == {'WF': 'Wildfires'}
         assert 'fire' in params['response_hazard_names']
-        assert 'LIMIT' not in call.args[0]
+        assert params['disaster_limit'] == 20
+        assert params['external_source'] == source
+    if source == 'news':
+        news_call = driver.execute_query.call_args_list[-1]
+        assert news_call.kwargs['parameters_']['event_ids'] == ['event']
 
 
 def test_query_failure_is_not_treated_as_empty_evidence(monkeypatch):
@@ -107,7 +113,7 @@ def test_query_failure_is_not_treated_as_empty_evidence(monkeypatch):
         retrieval.retrieve_evidence(
             GraphSearchArguments(country_code='JPN'),
             hazard_name='Earthquake',
-            sources=[],
+            external_source='weather',
         )
 
 
@@ -121,7 +127,7 @@ def test_retrieval_requires_a_selected_country(monkeypatch):
         retrieval.retrieve_evidence(
             GraphSearchArguments(),
             hazard_name='Earthquake',
-            sources=[],
+            external_source='weather',
         )
     driver.assert_not_called()
 
@@ -148,7 +154,9 @@ def test_retrieval_preserves_query_order_and_nested_arrays(monkeypatch):
     ]
     monkeypatch.setattr(retrieval, 'get_graph_db_driver', lambda: nullcontext(driver))
     evidence = retrieval.retrieve_evidence(
-        GraphSearchArguments(country_code='JPN'), hazard_name='Earthquake', sources=[],
+        GraphSearchArguments(country_code='JPN'),
+        hazard_name='Earthquake',
+        external_source='weather',
     )
     assert [row['event_id'] for row in evidence['events']] == ['z-first', 'a-second']
     assert evidence['events'][0]['footprints'][0]['severity_levels'] == [3, 1, 2]

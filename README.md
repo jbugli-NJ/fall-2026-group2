@@ -232,9 +232,8 @@ Questions support EAP planning by country and hazard, using past disasters as ev
 Hazards without a known name are skipped before applying the limit.
 Date filters bound historical disaster event start dates.
 
-Fixed Cypher queries retrieve records once per country and hazard.
-Each question is answered using the core records, then again with each selected external source.
-Answers and judgments use the supplied records without query tools.
+The evaluation pipeline retrieves up to 20 of the most recent disasters for each country and hazard combination.
+Each question is answered using those core records, then again with the external evidence.
 
 By default, each country and hazard must have stored data for every selected external source.
 Different historical events can provide different sources.

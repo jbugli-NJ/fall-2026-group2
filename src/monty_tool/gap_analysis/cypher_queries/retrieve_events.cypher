@@ -5,7 +5,23 @@ WHERE EXISTS {
 }
   AND ($from_date IS NULL OR date(event.start_datetime) >= date($from_date))
   AND ($to_date IS NULL OR date(event.start_datetime) <= date($to_date))
+  AND (
+    ($external_source = 'news' AND EXISTS {
+      MATCH (:NewsArticle)-[:VERIFIED_FOR]->(event)
+    })
+    OR ($external_source = 'weather' AND (
+      event.weather_source IS NOT NULL OR EXISTS {
+        MATCH (impact:Impact)-[:IMPACT_OF]->(event)
+        WHERE impact.weather_source IS NOT NULL
+      }
+    ))
+    OR ($external_source = 'shakemap_footprints' AND EXISTS {
+      MATCH (:Footprint {origin: 'external'})-[:FOOTPRINT_OF]->(event)
+    })
+  )
 WITH DISTINCT event
+ORDER BY event.start_datetime IS NULL, event.start_datetime DESC, event.id
+LIMIT $disaster_limit
 CALL (event) {
   MATCH (event)-[:IN_COUNTRY]->(country:Country)
   WITH DISTINCT country.code AS code ORDER BY code
@@ -125,4 +141,4 @@ RETURN event.id AS event_id,
        footprints,
        external_footprints,
        impacts
-ORDER BY start_datetime, event_id
+ORDER BY start_datetime IS NULL, start_datetime DESC, event_id
