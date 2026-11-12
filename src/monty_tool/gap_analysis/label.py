@@ -154,7 +154,11 @@ def format_pair(
         ),
         format_section(
             title=f'{context} | SELECTION',
-            body=json.dumps(pair.selection.model_dump(mode='json'), ensure_ascii=False, separators=(',', ':')),
+            body=json.dumps(
+                pair.selection.model_dump(mode='json'),
+                ensure_ascii=False,
+                separators=(',', ':'),
+            ),
         ),
     ]
     for heading, records in [
@@ -297,7 +301,10 @@ def run_labeling(results_path: Path) -> None:
                 ))
                 save_progress(path=labels_path, judgments=judgments, pairs=judged_pairs)
                 agreement = 'agree' if contribution == pair.contribution else 'disagree'
-                print(f'Automated: {pair.contribution}; human: {contribution} — {agreement}.')
+                print(
+                    f'Automated: {pair.contribution}; '
+                    f'human: {contribution} — {agreement}.',
+                )
         except (EOFError, KeyboardInterrupt):
             print('Labeling stopped.')
 

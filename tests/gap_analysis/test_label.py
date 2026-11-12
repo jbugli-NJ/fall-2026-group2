@@ -30,11 +30,16 @@ def saved_run(pair: PairedResult) -> SavedAnalysisRun:
         output_tokens=0, duration_seconds=0,
     )
     return SavedAnalysisRun(
-        metadata={'started_at': '2026-11-09', 'rubric_version': RUBRIC_VERSION},
+        metadata={
+            'started_at': '2026-11-09',
+            'rubric_version': RUBRIC_VERSION,
+        },
         results=[SavedPairedResult(
             **pair.model_dump(exclude={'core', 'external'}),
             core=attempt,
-            external=attempt.model_copy(update={'answer_s3_uri': 's3://answers/external.txt'}),
+            external=attempt.model_copy(
+                update={'answer_s3_uri': 's3://answers/external.txt'},
+            ),
         )],
     )
 
@@ -47,17 +52,29 @@ def test_pair_display(saved_run: SavedAnalysisRun, pair: PairedResult) -> None:
     """
     core = 'Core answer text'
     external = 'External answer text'
-    evidence = {'events': [{'description': 'Supplied disaster record', 'impacts': []}],
-                'responses': [],
-                'responses': [],
-                'news': [{'evidence_excerpt': 'Homes were damaged.'}]}
+    evidence = {
+        'events': [{
+            'description': 'Supplied disaster record',
+            'impacts': [],
+        }],
+        'responses': [],
+        'responses': [],
+        'news': [{'evidence_excerpt': 'Homes were damaged.'}],
+    }
     saved_run.results[0].external_source = 'news'
-    rendered = label.format_pair(pair=saved_run.results[0], core=core, external=external, evidence=evidence)
+    rendered = label.format_pair(
+        pair=saved_run.results[0],
+        core=core,
+        external=external,
+        evidence=evidence,
+    )
     assert pair.question.question in rendered
     assert 'Core answer text' in rendered
     assert 'External answer text' in rendered
     assert 'RECORDS' in rendered
-    assert rendered.index('Supplied disaster record') < rendered.index('External answer text')
+    assert rendered.index(
+        'Supplied disaster record',
+    ) < rendered.index('External answer text')
     assert 'Homes were damaged.' in rendered
     assert rendered.index('Homes were damaged.') < rendered.index('Core answer text')
     assert rendered.index('Core answer text') < rendered.index('External answer text')
@@ -109,7 +126,11 @@ def test_cleanup_before_quitting(
     results.write_text(json.dumps({'runs': [saved_run.model_dump(mode='json')]}))
     labels = tmp_path / 'human_judgments.json'
     labels.write_text(json.dumps([
-        {'pair_id': identity, 'contribution': 'improvement', 'email': 'reviewer@example.com'}
+        {
+            'pair_id': identity,
+            'contribution': 'improvement',
+            'email': 'reviewer@example.com',
+        }
         for identity in [old_id, 'deleted-pair']
     ]))
     monkeypatch.setattr(label, 'git_email', lambda: 'reviewer@example.com')
@@ -130,7 +151,8 @@ def test_old_rubric_labels_are_not_reinterpreted(saved_run, tmp_path):
     assert label.load_runs(results) == [saved_run]
     judgments = tmp_path / 'human_judgments.json'
     judgments.write_text(json.dumps([{
-        'pair_id': 'old-pair', 'contribution': 'unsupported',
+        'pair_id': 'old-pair',
+        'contribution': 'unsupported',
         'email': 'reviewer@example.com',
     }]))
     assert label.load_judgments(judgments) == []
@@ -143,7 +165,15 @@ def test_review_loads_evidence_from_saved_path(saved_run, monkeypatch):
     pair = saved_run.results[0]
     answers = Mock(side_effect=['Core answer', 'External answer'])
     monkeypatch.setattr(label, 'load_answer', answers)
-    retrieve = Mock(return_value={'events': [{'event_id': 'current', 'impacts': []}], 'responses': []})
+    retrieve = Mock(
+        return_value={
+            'events': [{
+                'event_id': 'current',
+                'impacts': [],
+            }],
+            'responses': [],
+        },
+    )
     monkeypatch.setattr(label, 'load_evidence', retrieve)
     display = Mock(return_value='Pair for review')
     monkeypatch.setattr(label, 'format_pair', display)
@@ -154,7 +184,10 @@ def test_review_loads_evidence_from_saved_path(saved_run, monkeypatch):
     ]
     retrieve.assert_called_once_with(pair.evidence_s3_uri)
     display.assert_called_once_with(
-        pair=pair, core='Core answer', external='External answer', evidence=retrieve.return_value,
+        pair=pair,
+        core='Core answer',
+        external='External answer',
+        evidence=retrieve.return_value,
     )
 
 

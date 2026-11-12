@@ -37,8 +37,11 @@ def test_templates_have_unique_ids(hazard_name):
     assert len(id_set) == len(templates.TEMPLATES)
     assert len(question_set) == len(templates.TEMPLATES)
     questions = answering.construct_gap_questions(GapSelection.model_validate({
-        'filters': {'country_code': 'JPN',
-                    'from_date': '2000-01-01', 'to_date': '2025-12-31'},
+        'filters': {
+            'country_code': 'JPN',
+            'from_date': '2000-01-01',
+            'to_date': '2025-12-31',
+        },
         'hazard_name': hazard_name,
     }), templates.TEMPLATES)
     assert len(questions) == len(templates.TEMPLATES)

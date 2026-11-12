@@ -23,8 +23,12 @@ def test_source_isolation_preserves_core_and_nested_weather():
     """
     evidence = {
         'events': [{
-            'event_id': 'event', 'weather': {'mean_temperature': 20},
-            'impacts': [{'impact_value': 10, 'weather': {'mean_temperature': 21}}],
+            'event_id': 'event',
+            'weather': {'mean_temperature': 20},
+            'impacts': [{
+                'impact_value': 10,
+                'weather': {'mean_temperature': 21},
+            }],
             'footprints': [{'source': 'montandon'}],
             'external_footprints': [{'source': 'usgs'}],
         }],
@@ -33,8 +37,11 @@ def test_source_isolation_preserves_core_and_nested_weather():
     }
     core = retrieval.evidence_for_source(evidence, None)
     assert core == {
-        'events': [{'event_id': 'event', 'impacts': [{'impact_value': 10}],
-                    'footprints': [{'source': 'montandon'}]}],
+        'events': [{
+            'event_id': 'event',
+            'impacts': [{'impact_value': 10}],
+            'footprints': [{'source': 'montandon'}],
+        }],
         'responses': evidence['responses'],
     }
     for source in ['news', 'weather', 'shakemap_footprints']:
@@ -42,7 +49,9 @@ def test_source_isolation_preserves_core_and_nested_weather():
         assert retrieval.evidence_for_source(selected, None) == core
         assert ('news' in selected) == (source == 'news')
         assert ('weather' in selected['events'][0]['impacts'][0]) == (source == 'weather')
-        assert ('external_footprints' in selected['events'][0]) == (source == 'shakemap_footprints')
+        assert ('external_footprints' in selected['events'][0]) == (
+            source == 'shakemap_footprints'
+        )
     assert 'weather' in evidence['events'][0]
 
 
@@ -51,18 +60,27 @@ def test_queries_use_fixed_scope_and_do_not_drop_long_lists(monkeypatch):
     Fetch every selected source with a shared scope and retain all returned records.
     """
     driver = Mock()
-    event = {'event_id': 'event', 'impacts': [{'impact_value': n} for n in range(105)]}
+    event = {
+        'event_id': 'event',
+        'impacts': [{'impact_value': n} for n in range(105)],
+    }
     driver.execute_query.side_effect = [
         ([Mock(data=lambda: event)], None, None),
         ([], None, None), ([], None, None),
     ]
     monkeypatch.setattr(retrieval, 'get_graph_db_driver', lambda: nullcontext(driver))
     filters = GraphSearchArguments.model_validate({
-        'country_code': 'Brazil', 'from_date': '2026-08-01',
-        'to_date': '2026-09-30', 'offset': 5,
+        'country_code': 'Brazil',
+        'from_date': '2026-08-01',
+        'to_date': '2026-09-30',
+        'offset': 5,
     })
     monkeypatch.setattr(retrieval, 'hazard_code_name_map', lambda: {'WF': 'Wildfires'})
-    result = retrieval.retrieve_evidence(filters, hazard_name='Wildfires', sources=['news'])
+    result = retrieval.retrieve_evidence(
+        filters,
+        hazard_name='Wildfires',
+        sources=['news'],
+    )
     assert len(result['events'][0]['impacts']) == 105
     assert result['responses'] == result['news'] == []
     assert driver.execute_query.call_count == 3
@@ -87,7 +105,9 @@ def test_query_failure_is_not_treated_as_empty_evidence(monkeypatch):
     monkeypatch.setattr(retrieval, 'get_graph_db_driver', lambda: nullcontext(driver))
     with pytest.raises(RuntimeError, match='Database unavailable'):
         retrieval.retrieve_evidence(
-            GraphSearchArguments(country_code='JPN'), hazard_name='Earthquake', sources=[],
+            GraphSearchArguments(country_code='JPN'),
+            hazard_name='Earthquake',
+            sources=[],
         )
 
 
@@ -98,7 +118,11 @@ def test_retrieval_requires_a_selected_country(monkeypatch):
     driver = Mock()
     monkeypatch.setattr(retrieval, 'get_graph_db_driver', driver)
     with pytest.raises(ValueError, match='requires a country code'):
-        retrieval.retrieve_evidence(GraphSearchArguments(), hazard_name='Earthquake', sources=[])
+        retrieval.retrieve_evidence(
+            GraphSearchArguments(),
+            hazard_name='Earthquake',
+            sources=[],
+        )
     driver.assert_not_called()
 
 
@@ -108,9 +132,15 @@ def test_retrieval_preserves_query_order_and_nested_arrays(monkeypatch):
     """
     driver = Mock()
     rows = [
-        {'event_id': 'z-first', 'start_datetime': date(2020, 1, 1),
-         'footprints': [{'severity_levels': [3, 1, 2]}]},
-        {'event_id': 'a-second', 'start_datetime': date(2021, 1, 1)},
+        {
+            'event_id': 'z-first',
+            'start_datetime': date(2020, 1, 1),
+            'footprints': [{'severity_levels': [3, 1, 2]}],
+        },
+        {
+            'event_id': 'a-second',
+            'start_datetime': date(2021, 1, 1),
+        },
     ]
     driver.execute_query.side_effect = [
         ([Mock(data=lambda row=row: row) for row in rows], None, None),
@@ -129,11 +159,20 @@ def test_source_selection_does_not_mutate_shared_snapshot():
     """
     Editing one pass cannot change the records used by another pass or the archive.
     """
-    evidence = {'events': [{
-        'event_id': 'one', 'impacts': [{'impact_value': 10, 'weather': None}],
-        'footprints': [{'severity_levels': ['high', 'low']}],
-        'weather': None, 'external_footprints': [],
-    }], 'responses': [], 'news': []}
+    evidence = {
+        'events': [{
+            'event_id': 'one',
+            'impacts': [{
+                'impact_value': 10,
+                'weather': None,
+            }],
+            'footprints': [{'severity_levels': ['high', 'low']}],
+            'weather': None,
+            'external_footprints': [],
+        }],
+        'responses': [],
+        'news': [],
+    }
     selected = retrieval.evidence_for_source(evidence, None)
     selected['events'][0]['impacts'][0]['impact_value'] = 99
     selected['events'][0]['footprints'][0]['severity_levels'].reverse()

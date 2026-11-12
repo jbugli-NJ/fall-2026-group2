@@ -16,7 +16,9 @@ def test_label_meanings_and_coverage():
     Verify letter mappings cover every category and match the rubric.
     """
     assert judging.LABELS == {
-        'A': 'improvement', 'B': 'no_change', 'C': 'regression',
+        'A': 'improvement',
+        'B': 'no_change',
+        'C': 'regression',
     }
     assert set(judging.LABELS.values()) == set(Contribution)
     for letter, category in judging.LABELS.items():
@@ -29,8 +31,11 @@ def records():
     Supply the shared evidence snapshot held by the runner.
     """
     return {
-        'events': [{'event_id': 'current', 'impacts': [],
-                    'weather': {'mean_temperature': 20}}],
+        'events': [{
+            'event_id': 'current',
+            'impacts': [],
+            'weather': {'mean_temperature': 20},
+        }],
         'responses': [],
         'news': [{'evidence_excerpt': 'Damage reported'}],
     }
@@ -42,21 +47,33 @@ def test_local_judge_uses_label_classifier(monkeypatch, pair, records):
     """
     classify = Mock(return_value='C')
     monkeypatch.setattr(judging, 'classify_labels', classify)
-    assert judging.LocalContributionJudge(Mock()).judge(pair, records) == Contribution.REGRESSION
+    assert judging.LocalContributionJudge(Mock()).judge(
+        pair,
+        records,
+    ) == Contribution.REGRESSION
     assert classify.call_args.args[2] == tuple('ABC')
     payload = json.loads(classify.call_args.args[1][1]['content'])
     assert payload['core_answer'] == pair.core.answer
-    assert payload['records'] == {'events': [{'event_id': 'current', 'impacts': []}], 'responses': []}
+    assert payload['records'] == {
+        'events': [{
+            'event_id': 'current',
+            'impacts': [],
+        }],
+        'responses': [],
+    }
 
 
-@pytest.mark.parametrize('source, evidence', [
-    ('weather', 'Weather fields in supplied disaster and impact records.'),
-    (
-        'shakemap_footprints',
-        'USGS ShakeMap footprints in external_footprints in graph query results. '
-        'The footprints field contains Montandon evidence and remains core evidence.',
-    ),
-])
+@pytest.mark.parametrize(
+    'source, evidence',
+    [
+        ('weather', 'Weather fields in supplied disaster and impact records.'),
+        (
+            'shakemap_footprints',
+            'USGS ShakeMap footprints in external_footprints in graph query results. '
+            'The footprints field contains Montandon evidence and remains core evidence.',
+        ),
+    ],
+)
 def test_bedrock_judge_reads_label_and_rejects_incomplete_response(
     pair,
     source,
@@ -84,7 +101,10 @@ def test_bedrock_judge_reads_label_and_rejects_incomplete_response(
     expected_event = records['events'][0].copy()
     if source != 'weather':
         expected_event.pop('weather')
-    assert payload['records'] == {'events': [expected_event], 'responses': []}
+    assert payload['records'] == {
+        'events': [expected_event],
+        'responses': [],
+    }
     assert 'core_records' not in payload
     assert 'external_enabled_records' not in payload
     response['stopReason'] = 'max_tokens'
@@ -93,7 +113,12 @@ def test_bedrock_judge_reads_label_and_rejects_incomplete_response(
 
 
 @pytest.mark.parametrize('source', ['news', 'weather', 'shakemap_footprints'])
-def test_judging_uses_supplied_records_without_storage_or_graph_access(monkeypatch, pair, records, source):
+def test_judging_uses_supplied_records_without_storage_or_graph_access(
+    monkeypatch,
+    pair,
+    records,
+    source,
+):
     """
     Judging uses the in-memory snapshot and includes only the selected source.
     """

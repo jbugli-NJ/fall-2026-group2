@@ -14,7 +14,13 @@ import pycountry
 
 from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES, ExternalSourceName
 from monty_tool.gap_analysis.retrieval import evidence_for_source, hazard_code_name_map
-from monty_tool.gap_analysis.schemas import AnswerAttempt, Evidence, GapQuestion, GapSelection, QuestionTemplate
+from monty_tool.gap_analysis.schemas import (
+    AnswerAttempt,
+    Evidence,
+    GapQuestion,
+    GapSelection,
+    QuestionTemplate,
+)
 from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
 from monty_tool.llm.tools import GraphSearchArguments
@@ -66,7 +72,9 @@ def select_country_hazards(
         raise ValueError('Limit must be positive.')
     query = cast(
         LiteralString,
-        files('monty_tool.gap_analysis.cypher_queries').joinpath('select_country_hazards.cypher').read_text(),
+        files('monty_tool.gap_analysis.cypher_queries').joinpath(
+            'select_country_hazards.cypher',
+        ).read_text(),
     )
     with get_graph_db_driver() as driver:
         records, _, _ = driver.execute_query(
@@ -78,7 +86,8 @@ def select_country_hazards(
                 'limit': limit,
                 'require_external_data': require_external_data,
                 'external_sources': (
-                    list(EXTERNAL_SOURCES) if external_sources is None else external_sources
+                    list(EXTERNAL_SOURCES)
+                    if external_sources is None else external_sources
                 ),
             },
             database_='neo4j',

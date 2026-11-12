@@ -41,10 +41,16 @@ def test_evidence_round_trip_preserves_snapshot_and_uses_content_hash(artifacts)
     Saved records remain unchanged when the in-memory retrieval result changes.
     """
     started = DateTime(2020, 1, 1, 12, 0, 0, nanosecond=123456789)
-    evidence = {'events': [{'event_id': 'évent', 'impacts': [], 'start_datetime': started,
-                            'weather': {'mean_temperature': 20}}],
-                'responses': [],
-                'news': [{'evidence_excerpt': 'Homes were damaged.'}]}
+    evidence = {
+        'events': [{
+            'event_id': 'évent',
+            'impacts': [],
+            'start_datetime': started,
+            'weather': {'mean_temperature': 20},
+        }],
+        'responses': [],
+        'news': [{'evidence_excerpt': 'Homes were damaged.'}],
+    }
     uri = storage.save_evidence(evidence)
     assert uri.startswith('s3://test-bucket/owner/gap_analysis/evidence/')
     assert uri.endswith('.json')
@@ -63,7 +69,9 @@ def test_load_answer_reads_plain_utf8_text(artifacts):
     Answers are read as plain text rather than assistant response envelopes.
     """
     artifacts['answer.txt'] = 'An answer with é.\nSecond line.'.encode('utf-8')
-    assert storage.load_answer('s3://test-bucket/answer.txt') == 'An answer with é.\nSecond line.'
+    assert storage.load_answer(
+        's3://test-bucket/answer.txt',
+    ) == 'An answer with é.\nSecond line.'
 
 
 def test_missing_snapshot_is_not_replaced_with_a_graph_query(monkeypatch):

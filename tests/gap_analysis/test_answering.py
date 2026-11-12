@@ -20,18 +20,39 @@ def test_answer_uses_supplied_records_without_tools(pair):
     """
     assistant = Mock()
     assistant.ask.return_value = {
-        'answer': 'Answer', 'input_tokens': 0, 'output_tokens': 0, 'tool_results': [],
+        'answer': 'Answer',
+        'input_tokens': 0,
+        'output_tokens': 0,
+        'tool_results': [],
     }
     started = DateTime(2020, 1, 1, 12, 0, 0, nanosecond=123456789)
-    evidence = {'events': [{'event_id': 'one', 'impacts': [], 'start_datetime': started,
-                            'weather': {'mean_temperature': 20}}], 'responses': []}
-    result = answering.answer_question(assistant, pair.question, external_source=None, evidence=evidence)
+    evidence = {
+        'events': [{
+            'event_id': 'one',
+            'impacts': [],
+            'start_datetime': started,
+            'weather': {'mean_temperature': 20},
+        }],
+        'responses': [],
+    }
+    result = answering.answer_question(
+        assistant,
+        pair.question,
+        external_source=None,
+        evidence=evidence,
+    )
     assert result.error is None
     assert result.answer == 'Answer'
-    assert set(result.model_dump()) == {'answer', 'input_tokens', 'output_tokens', 'error', 'duration_seconds'}
+    assert set(result.model_dump()) == {
+        'answer', 'input_tokens', 'output_tokens', 'error', 'duration_seconds',
+    }
     assert assistant.ask.call_args.kwargs == {'use_tools': False}
     assert json.loads(assistant.ask.call_args.args[0])['records'] == {
-        'events': [{'event_id': 'one', 'impacts': [], 'start_datetime': str(started)}],
+        'events': [{
+            'event_id': 'one',
+            'impacts': [],
+            'start_datetime': str(started),
+        }],
         'responses': [],
     }
     assert evidence['events'][0]['start_datetime'] is started
@@ -43,7 +64,15 @@ def test_model_error_is_saved(pair):
     """
     assistant = Mock()
     assistant.ask.side_effect = ValueError('Model failed')
-    result = answering.answer_question(assistant, pair.question, external_source=None, evidence={'events': [], 'responses': []})
+    result = answering.answer_question(
+        assistant,
+        pair.question,
+        external_source=None,
+        evidence={
+            'events': [],
+            'responses': [],
+        },
+    )
     assert result.error == 'Model failed'
 
 
@@ -59,7 +88,12 @@ def test_country_hazard_selection_uses_one_graph_query(
     """
     driver = Mock()
     driver.execute_query.return_value = (
-        [Mock(data=lambda: {'filters': {'country_code': 'JPN'}, 'hazard_name': 'Earthquake'})], None, None,
+        [Mock(
+            data=lambda: {
+                'filters': {'country_code': 'JPN'},
+                'hazard_name': 'Earthquake',
+            },
+        )], None, None,
     )
     monkeypatch.setattr(answering, 'get_graph_db_driver', lambda: nullcontext(driver))
     assert answering.select_country_hazards(
@@ -68,7 +102,10 @@ def test_country_hazard_selection_uses_one_graph_query(
         hazard_name='Earthquake',
         require_external_data=require_external_data,
         external_sources=sources,
-    ) == [GapSelection(filters=GraphSearchArguments(country_code='JPN'), hazard_name='Earthquake')]
+    ) == [GapSelection(
+        filters=GraphSearchArguments(country_code='JPN'),
+        hazard_name='Earthquake',
+    )]
     driver.execute_query.assert_called_once()
     assert driver.execute_query.call_args.kwargs['parameters_']['limit'] == 2
     assert (
@@ -80,7 +117,10 @@ def test_country_hazard_selection_uses_one_graph_query(
     )
 
     assert driver.execute_query.call_args.kwargs['parameters_']['country_code'] == 'JPN'
-    assert driver.execute_query.call_args.kwargs['parameters_']['hazard_name'] == 'Earthquake'
+    assert (
+        driver.execute_query.call_args.kwargs['parameters_']['hazard_name']
+        == 'Earthquake'
+    )
     names = driver.execute_query.call_args.kwargs['parameters_']['hazard_code_name_map']
     assert names['GH0001'] == 'Earthquake'
     assert names['GH009'] == 'Volcanic eruption'
