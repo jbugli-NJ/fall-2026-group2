@@ -27,7 +27,6 @@ from monty_tool.gap_analysis.judging import (
 from monty_tool.gap_analysis.protocols import ContributionJudge
 from monty_tool.gap_analysis.plotting import build_summary_plot
 from monty_tool.gap_analysis.schemas import (
-    AnswerAttempt,
     Contribution,
     Evidence,
     GapQuestion,
@@ -40,7 +39,7 @@ from monty_tool.gap_analysis.schemas import (
     SavedPairedResult,
 )
 from monty_tool.gap_analysis.templates import TEMPLATES
-from monty_tool.gap_analysis.retrieval import retrieve_evidence
+from monty_tool.gap_analysis.retrieval import DISASTER_LIMIT, retrieve_evidence
 from monty_tool.gap_analysis.storage import save_attempt, save_evidence
 from monty_tool.llm.client import DEFAULT_BEDROCK_MODEL_ID, BedrockQueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
@@ -57,7 +56,6 @@ def run_pair(
     judge: ContributionJudge,
     *,
     external_source: ExternalSourceName,
-    core: AnswerAttempt | None = None,
     evidence: Evidence,
     evidence_s3_uri: str,
 ) -> PairedResult:
@@ -69,7 +67,7 @@ def run_pair(
         question=question,
         selection=selection,
         evidence_s3_uri=evidence_s3_uri,
-        core=core if core is not None else answer_question(
+        core=answer_question(
             assistant=assistant,
             question=question,
             external_source=None,
@@ -320,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
             'hazard_name': args.hazard_name,
         },
         'limit': args.limit,
+        'disaster_limit': DISASTER_LIMIT,
         'require_external_data': args.require_external_data,
         'selections': [selection.model_dump(mode='json') for selection in selections],
         'templates': [template.model_dump() for template in TEMPLATES],
@@ -333,35 +332,28 @@ def main(argv: list[str] | None = None) -> int:
     runs.append(current_run)
     save_results(output_dir, runs)
     index = 0
+    total_comparisons = total_questions * len(external_sources)
     for selection, questions in selection_questions:
-        evidence = retrieve_evidence(
-            selection.filters,
-            hazard_name=selection.hazard_name,
-            sources=external_sources,
-        )
-        evidence_s3_uri = save_evidence(evidence)
-        for question in questions:
-            index += 1
-            print(
-                f'{index}/{total_questions}: '
-                f'{question.country_code} / {question.hazard_name} / '
-                f'{question.template_id}'
+        for external_source in external_sources:
+            evidence = retrieve_evidence(
+                selection.filters,
+                hazard_name=selection.hazard_name,
+                external_source=external_source,
             )
-            core = answer_question(
-                assistant,
-                question,
-                external_source=None,
-                evidence=evidence,
-            )
-            saved_core = save_attempt(core)
-            for external_source in external_sources:
+            evidence_s3_uri = save_evidence(evidence)
+            for question in questions:
+                index += 1
+                print(
+                    f'{index}/{total_comparisons}: '
+                    f'{question.country_code} / {question.hazard_name} / '
+                    f'{question.template_id} / {external_source}'
+                )
                 pair = run_pair(
                     question=question,
                     selection=selection,
                     assistant=assistant,
                     judge=judge,
                     external_source=external_source,
-                    core=core,
                     evidence=evidence,
                     evidence_s3_uri=evidence_s3_uri,
                 )
@@ -370,7 +362,7 @@ def main(argv: list[str] | None = None) -> int:
                     question=pair.question,
                     selection=pair.selection,
                     evidence_s3_uri=pair.evidence_s3_uri,
-                    core=saved_core,
+                    core=save_attempt(pair.core),
                     external=save_attempt(pair.external),
                     contribution=pair.contribution,
                     judge_error=pair.judge_error,

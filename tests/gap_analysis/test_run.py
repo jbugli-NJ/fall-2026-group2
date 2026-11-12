@@ -5,7 +5,7 @@ Tests for paired execution and accumulated results.
 # Imports
 
 import json
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -193,7 +193,7 @@ def test_saved_runs_accumulate_without_overwriting(tmp_path, saved_pair, monkeyp
         ['shakemap_footprints'],
     ),
 ])
-def test_main_measures_each_source_against_shared_baseline(
+def test_main_measures_each_source_against_its_own_baseline(
     monkeypatch,
     tmp_path,
     pair,
@@ -213,18 +213,32 @@ def test_main_measures_each_source_against_shared_baseline(
     questions = [pair.question.model_copy(update={'template_id': f'question_{i}'})
                  for i in range(question_count)]
     monkeypatch.setattr(run, 'construct_gap_questions', Mock(return_value=questions))
-    retrieve = Mock(return_value={
-        'events': [],
-        'responses': [],
-    })
+    snapshots = {
+        source: {
+            'events': [{
+                'event_id': source,
+                'impacts': [],
+            }],
+            'responses': [],
+        }
+        for source in sources
+    }
+    def retrieve_snapshot(filters, *, hazard_name, external_source):
+        return snapshots[external_source]
+
+    retrieve = Mock(side_effect=retrieve_snapshot)
     monkeypatch.setattr(run, 'retrieve_evidence', retrieve)
     assistant = Mock()
-    assistant.ask.return_value = {
-        'answer': pair.core.answer,
-        'input_tokens': 0,
-        'output_tokens': 0,
-        'tool_results': [],
-    }
+
+    def answer(prompt, **kwargs):
+        return {
+            'answer': json.loads(prompt)['records']['events'][0]['event_id'],
+            'input_tokens': 0,
+            'output_tokens': 0,
+            'tool_results': [],
+        }
+
+    assistant.ask.side_effect = answer
     monkeypatch.setattr(run, 'make_answerer', Mock(return_value=assistant))
     judge = Mock()
     contributions = {
@@ -233,8 +247,8 @@ def test_main_measures_each_source_against_shared_baseline(
         'shakemap_footprints': run.Contribution.IMPROVEMENT,
     }
     judge.judge.side_effect = [
-        contributions[source] for source in sources
-    ] * question_count
+        contributions[source] for source in sources for _ in questions
+    ]
     monkeypatch.setattr(run, 'LocalContributionJudge', Mock(return_value=judge))
 
     assert run.main([
@@ -246,17 +260,19 @@ def test_main_measures_each_source_against_shared_baseline(
     ]) == 0
 
     assert [call.kwargs for call in assistant.ask.call_args_list] == [
-        {'use_tools': False} for source in [None, *sources] * question_count
+        {'use_tools': False} for _ in range(2 * len(sources) * question_count)
     ]
     assert all(
-        call.args[1] is retrieve.return_value
-        for call in judge.judge.call_args_list
+        judged.args[1] is snapshots[judged.args[0].external_source]
+        for judged in judge.judge.call_args_list
     )
-    retrieve.assert_called_once_with(
-        pair.selection.filters,
-        hazard_name=pair.question.hazard_name,
-        sources=sources,
-    )
+    assert retrieve.call_args_list == [
+        call(
+            pair.selection.filters,
+            hazard_name=pair.question.hazard_name,
+            external_source=source,
+        ) for source in sources
+    ]
     set_seed.assert_called_once_with(run.SEED)
     require_external_data = not selection_flags
     select_country_hazards.assert_called_once_with(
@@ -271,23 +287,31 @@ def test_main_measures_each_source_against_shared_baseline(
     assert batch.metadata['comparisons'] == [f'core_vs_{source}' for source in sources]
     assert batch.metadata['seed'] == run.SEED
     assert batch.metadata['limit'] == 2
+    assert batch.metadata['disaster_limit'] == 20
     assert batch.metadata['selections'] == [pair.selection.model_dump(mode='json')]
     assert batch.metadata['require_external_data'] is require_external_data
     results = batch.results
     assert [(result.external_source, result.contribution) for result in results] == [
-        (source, contributions[source]) for source in sources
-    ] * question_count
+        (source, contributions[source]) for source in sources for _ in questions
+    ]
     assert all(
         result.evidence_s3_uri
         == judge.judge.call_args_list[i].args[0].evidence_s3_uri
         for i, result in enumerate(results)
     )
-    assert answer_bucket.upload_file.call_count == 1 + question_count * (1 + len(sources))
-    assert len({result.evidence_s3_uri for result in results}) == 1
+    assert answer_bucket.upload_file.call_count == len(sources) * (1 + 2 * question_count)
+    assert len({result.evidence_s3_uri for result in results}) == len(sources)
     assert results[0].evidence_s3_uri.startswith(
         's3://test-bucket/test-owner/gap_analysis/evidence/',
     )
-    assert len({result.core.answer_s3_uri for result in results}) == 1
+    assert len({result.core.answer_s3_uri for result in results}) == len(sources)
+    for source in sources:
+        source_pairs = [result for result in results if result.external_source == source]
+        assert len({result.evidence_s3_uri for result in source_pairs}) == 1
+    prompts = [json.loads(asked.args[0]) for asked in assistant.ask.call_args_list]
+    for baseline, external in zip(prompts[::2], prompts[1::2]):
+        assert baseline['external_source'] is None
+        assert baseline['records']['events'] == external['records']['events']
     saved = json.loads(tmp_path.joinpath('results.json').read_text())
     assert {
         counts['external_source'] for counts in saved['summary'][0]['results']

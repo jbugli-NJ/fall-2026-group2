@@ -1,11 +1,5 @@
-MATCH (event:Event)-[:IN_COUNTRY]->(:Country {code: $country_code})
-WHERE EXISTS {
-  MATCH (event)-[:HAS_HAZARD]->(matched_hazard:Hazard)
-  WHERE $hazard_code_name_map[matched_hazard.code] = $hazard_name
-}
-  AND ($from_date IS NULL OR date(event.start_datetime) >= date($from_date))
-  AND ($to_date IS NULL OR date(event.start_datetime) <= date($to_date))
-WITH DISTINCT event
+MATCH (event:Event)
+WHERE event.id IN $event_ids
 MATCH (article:NewsArticle)-[link:VERIFIED_FOR]->(event)
 RETURN event.id AS event_id,
        article.title AS title,
