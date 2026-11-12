@@ -13,7 +13,11 @@ from neo4j import RoutingControl
 import pycountry
 
 from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES, ExternalSourceName
-from monty_tool.gap_analysis.retrieval import evidence_for_source, hazard_code_name_map
+from monty_tool.gap_analysis.retrieval import (
+    EVIDENCE_SCOPE,
+    evidence_for_source,
+    hazard_code_name_map,
+)
 from monty_tool.gap_analysis.schemas import (
     AnswerAttempt,
     Evidence,
@@ -140,7 +144,7 @@ def answer_question(
     """
     Answer a question using the selected data sources.
     Return the answer, token counts, elapsed time, and any model error.
-    Use external_source=None to restrict the answer to Montandon records.
+    Use external_source=None to restrict the answer to core records.
     """
     if external_source is not None and external_source not in EXTERNAL_SOURCES:
         raise ValueError(f'Unknown external source: {external_source}')
@@ -149,6 +153,7 @@ def answer_question(
         supplied = evidence_for_source(evidence, external_source)
         prompt = json.dumps({
             'question': question.question,
+            'scope': EVIDENCE_SCOPE,
             'external_source': external_source,
             'records': supplied,
         }, ensure_ascii=False, default=str)
