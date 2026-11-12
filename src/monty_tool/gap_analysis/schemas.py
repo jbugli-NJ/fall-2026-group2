@@ -19,13 +19,9 @@ class Contribution(StrEnum):
     """
     Categories describing how external data contributes to answering a question.
     """
-    FILLS_FIELD = 'fills_field'
-    EXTENDS_COVERAGE = 'extends_coverage'
-    QUALIFIES = 'qualifies'
-    CORROBORATES = 'corroborates'
-    CORE_SUFFICIENT = 'core_sufficient'
-    UNRESOLVED = 'unresolved'
-    UNSUPPORTED = 'unsupported'
+    IMPROVEMENT = 'improvement'
+    NO_CHANGE = 'no_change'
+    REGRESSION = 'regression'
 
 
 # Question schemas

@@ -98,9 +98,7 @@ def summarize(results: Sequence[SavedPairedResult]) -> dict[str, Any]:
             pair.contribution.value for pair in pairs if pair.contribution is not None
         )
         evaluated = sum(counts.values())
-        improved = sum(counts[category.value] for category in (
-            Contribution.FILLS_FIELD, Contribution.EXTENDS_COVERAGE, Contribution.QUALIFIES,
-        ))
+        improved = counts[Contribution.IMPROVEMENT.value]
         tool_failures = [
             pair.core.tool_failure_count + pair.external.tool_failure_count
             for pair in pairs

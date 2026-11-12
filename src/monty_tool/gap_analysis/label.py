@@ -42,7 +42,10 @@ def load_runs(path: Path) -> list[SavedAnalysisRun]:
     Read analysis runs from the results JSON.
     """
     payload = json.loads(path.read_text())
-    return TypeAdapter(list[SavedAnalysisRun]).validate_python(payload['runs'])
+    return TypeAdapter(list[SavedAnalysisRun]).validate_python([
+        run for run in payload['runs']
+        if run.get('metadata', {}).get('rubric_version') == RUBRIC_VERSION
+    ])
 
 
 def load_judgments(path: Path) -> list[HumanJudgment]:
@@ -50,7 +53,10 @@ def load_judgments(path: Path) -> list[HumanJudgment]:
     Read saved human labels, or start with none if the file does not exist.
     """
     return (
-        TypeAdapter(list[HumanJudgment]).validate_json(path.read_text())
+        TypeAdapter(list[HumanJudgment]).validate_python([
+            record for record in json.loads(path.read_text())
+            if record.get('contribution') in set(Contribution)
+        ])
         if path.exists()
         else []
     )
@@ -189,10 +195,10 @@ def read_choice() -> str:
     Prompt until the user enters a category, skip, or quit.
     """
     while True:
-        choice = input('Label [A–G / s / q]: ').strip().upper()
+        choice = input('Label [A–C / s / q]: ').strip().upper()
         if choice in LABELS or choice in ('S', 'Q'):
             return choice
-        print('Enter A–G, s, or q.')
+        print('Enter A–C, s, or q.')
 
 
 def review_pair(pair: SavedPairedResult) -> Contribution | Literal['skip', 'quit']:

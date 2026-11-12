@@ -62,8 +62,8 @@ def test_pair_display(saved_run: SavedAnalysisRun, pair: PairedResult) -> None:
     assert 'Homes were damaged.' in rendered
     assert rendered.index('Homes were damaged.') < rendered.index('Core answer text')
     assert rendered.index('Core answer text') < rendered.index('External answer text')
-    assert rendered.index('External answer text') < rendered.index('fills field')
-    assert 'unsupported' in rendered
+    assert rendered.index('External answer text') < rendered.index('improvement')
+    assert 'regression' in rendered
 
 
 def test_label_and_resume(
@@ -79,13 +79,13 @@ def test_label_and_resume(
     results.parent.mkdir(parents=True)
     results.write_text(json.dumps({'runs': [saved_run.model_dump(mode='json')]}))
     monkeypatch.setattr(label, 'git_email', lambda: 'reviewer@example.com')
-    monkeypatch.setattr(label, 'review_pair', lambda pair: Contribution.UNRESOLVED)
+    monkeypatch.setattr(label, 'review_pair', lambda pair: Contribution.NO_CHANGE)
     label.main(argv=[])
     labels = results.with_name('human_judgments.json')
     records = json.loads(labels.read_text())
     assert records == [{
         'pair_id': label.pair_id(run=saved_run, pair=saved_run.results[0]),
-        'contribution': 'unresolved',
+        'contribution': 'no_change',
         'email': 'reviewer@example.com',
     }]
     assert results.with_name('human_judgments.svg').is_file()
@@ -110,10 +110,28 @@ def test_cleanup_before_quitting(
     results.write_text(json.dumps({'runs': [saved_run.model_dump(mode='json')]}))
     labels = tmp_path / 'human_judgments.json'
     labels.write_text(json.dumps([
-        {'pair_id': identity, 'contribution': 'qualifies', 'email': 'reviewer@example.com'}
+        {'pair_id': identity, 'contribution': 'improvement', 'email': 'reviewer@example.com'}
         for identity in [old_id, 'deleted-pair']
     ]))
     monkeypatch.setattr(label, 'git_email', lambda: 'reviewer@example.com')
     monkeypatch.setattr(label, 'review_pair', lambda pair: 'quit')
     label.run_labeling(results_path=results)
     assert json.loads(labels.read_text()) == []
+
+
+def test_old_rubric_labels_are_not_reinterpreted(saved_run, tmp_path):
+    """
+    Old results and human labels can be loaded without assigning new meanings.
+    """
+    old = saved_run.model_dump(mode='json')
+    old['metadata']['rubric_version'] = 'source-contribution-v2'
+    old['results'][0]['contribution'] = 'extends_coverage'
+    results = tmp_path / 'results.json'
+    results.write_text(json.dumps({'runs': [old, saved_run.model_dump(mode='json')]}))
+    assert label.load_runs(results) == [saved_run]
+    judgments = tmp_path / 'human_judgments.json'
+    judgments.write_text(json.dumps([{
+        'pair_id': 'old-pair', 'contribution': 'unsupported',
+        'email': 'reviewer@example.com',
+    }]))
+    assert label.load_judgments(judgments) == []

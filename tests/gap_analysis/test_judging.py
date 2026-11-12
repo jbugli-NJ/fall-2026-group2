@@ -16,9 +16,7 @@ def test_label_meanings_and_coverage():
     Verify letter mappings cover every category and match the rubric.
     """
     assert judging.LABELS == {
-        'A': 'fills_field', 'B': 'extends_coverage', 'C': 'qualifies',
-        'D': 'corroborates', 'E': 'core_sufficient',
-        'F': 'unresolved', 'G': 'unsupported',
+        'A': 'improvement', 'B': 'no_change', 'C': 'regression',
     }
     assert set(judging.LABELS.values()) == set(Contribution)
     for letter, category in judging.LABELS.items():
@@ -31,8 +29,8 @@ def test_local_judge_uses_label_classifier(monkeypatch, pair):
     """
     classify = Mock(return_value='C')
     monkeypatch.setattr(judging, 'classify_labels', classify)
-    assert judging.LocalContributionJudge(Mock()).judge(pair) == Contribution.QUALIFIES
-    assert classify.call_args.args[2] == tuple('ABCDEFG')
+    assert judging.LocalContributionJudge(Mock()).judge(pair) == Contribution.REGRESSION
+    assert classify.call_args.args[2] == tuple('ABC')
 
 
 @pytest.mark.parametrize('source, evidence', [
@@ -59,7 +57,7 @@ def test_bedrock_judge_reads_label_and_rejects_incomplete_response(
     }
     assistant.client.converse.return_value = response
     judge = judging.BedrockContributionJudge(assistant)
-    assert judge.judge(pair) == Contribution.QUALIFIES
+    assert judge.judge(pair) == Contribution.REGRESSION
     request = assistant.client.converse.call_args.kwargs
     assert request['system'] == [{'text': judging.RUBRIC}]
     payload = json.loads(request['messages'][0]['content'][0]['text'])

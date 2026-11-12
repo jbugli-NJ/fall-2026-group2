@@ -103,10 +103,10 @@ def test_saved_runs_accumulate_without_overwriting(tmp_path, saved_pair, monkeyp
     run.save_results(tmp_path, [first])
     runs = run.load_runs(tmp_path)
     news = saved_pair.model_copy(update={
-        'external_source': 'news', 'contribution': run.Contribution.QUALIFIES,
+        'external_source': 'news', 'contribution': run.Contribution.IMPROVEMENT,
     })
     weather = saved_pair.model_copy(update={
-        'external_source': 'weather', 'contribution': run.Contribution.UNRESOLVED,
+        'external_source': 'weather', 'contribution': run.Contribution.NO_CHANGE,
     })
     runs.append(SavedAnalysisRun(metadata={
         'batch': 2, 'rubric_version': run.RUBRIC_VERSION,
@@ -119,10 +119,10 @@ def test_saved_runs_accumulate_without_overwriting(tmp_path, saved_pair, monkeyp
             **first.metadata, 'judge_model': {'id': 'other-judge'},
         }, results=[saved_pair]),
     ])
-    unsupported = saved_pair.model_copy(update={'contribution': run.Contribution.UNSUPPORTED})
+    regression = saved_pair.model_copy(update={'contribution': run.Contribution.REGRESSION})
     runs.extend([
-        SavedAnalysisRun(metadata={'rubric_version': 'old-rubric'}, results=[unsupported]),
-        SavedAnalysisRun(metadata={}, results=[unsupported]),
+        SavedAnalysisRun(metadata={'rubric_version': 'old-rubric'}, results=[regression]),
+        SavedAnalysisRun(metadata={}, results=[regression]),
     ])
     run.save_results(tmp_path, runs)
     saved = json.loads(tmp_path.joinpath('results.json').read_text())
@@ -180,9 +180,9 @@ def test_main_measures_each_source_against_shared_baseline(
     monkeypatch.setattr(run, 'make_answerer', Mock(return_value=assistant))
     judge = Mock()
     contributions = {
-        'news': run.Contribution.QUALIFIES,
-        'weather': run.Contribution.UNRESOLVED,
-        'shakemap_footprints': run.Contribution.EXTENDS_COVERAGE,
+        'news': run.Contribution.IMPROVEMENT,
+        'weather': run.Contribution.NO_CHANGE,
+        'shakemap_footprints': run.Contribution.IMPROVEMENT,
     }
     judge.judge.side_effect = [contributions[source] for source in sources]
     monkeypatch.setattr(run, 'LocalContributionJudge', Mock(return_value=judge))
@@ -233,17 +233,17 @@ def test_main_measures_each_source_against_shared_baseline(
     assert tmp_path.joinpath('summary.svg').is_file()
 
 
-def test_improvement_rate_excludes_confirmation_and_failed_evaluations(saved_pair):
+def test_improvement_rate_counts_only_improvements_among_evaluated_pairs(saved_pair):
     """
     Count supported improvements among evaluated pairs and retain failed attempts.
     """
     results = [saved_pair.model_copy(update={'contribution': category}) for category in run.Contribution]
     results.append(saved_pair.model_copy(update={'contribution': None, 'judge_error': 'Failed'}))
     counts = run.summarize(results)['impacts / shakemap_footprints']
-    assert counts['attempted'] == 8
-    assert counts['evaluated'] == 7
-    assert counts['improved'] == 3
-    assert counts['improvement_rate'] == pytest.approx(3 / 7)
+    assert counts['attempted'] == 4
+    assert counts['evaluated'] == 3
+    assert counts['improved'] == 1
+    assert counts['improvement_rate'] == pytest.approx(1 / 3)
     assert counts['judge_failures'] == 1
     failed_counts = run.summarize([results[-1]])['impacts / shakemap_footprints']
     assert failed_counts['improvement_rate'] is None
