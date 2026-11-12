@@ -56,6 +56,10 @@ def hazard_code_name_map() -> dict[str, str]:
 # Query boundary
 
 DISASTER_LIMIT = 20
+EVIDENCE_SCOPE = (
+    f'Disaster records cover up to {DISASTER_LIMIT} of the most recent disasters '
+    'with the selected external source.'
+)
 
 type EvidenceQuery = Literal[
     'retrieve_events.cypher',

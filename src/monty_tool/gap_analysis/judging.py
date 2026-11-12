@@ -10,7 +10,7 @@ from typing import Any
 
 from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES
 from monty_tool.gap_analysis.schemas import Contribution, Evidence, PairedResult
-from monty_tool.gap_analysis.retrieval import evidence_for_source
+from monty_tool.gap_analysis.retrieval import EVIDENCE_SCOPE, evidence_for_source
 from monty_tool.llm.classification import classify_labels
 from monty_tool.llm.client import BedrockQueryAssistant, QueryAssistant
 
@@ -35,7 +35,7 @@ LABEL_SCHEMA = json.dumps(
     }
 )
 RUBRIC = """
-Compare the two answers to the same question: one using Montandon alone and
+Compare the two answers to the same question: one using core records alone and
 one with access to an external source. Does adding that source make the answer
 more useful, leave it essentially unchanged, or make it worse?
 
@@ -86,6 +86,7 @@ def judgment_messages(pair: PairedResult, evidence: Evidence) -> list[dict[str, 
                         pair.external_source
                     ].evidence_description,
                     'question': pair.question.model_dump(),
+                    'scope': EVIDENCE_SCOPE,
                     'selection': pair.selection.model_dump(mode='json'),
                     'records': evidence_for_source(evidence, pair.external_source),
                     'core_answer': pair.core.answer,
