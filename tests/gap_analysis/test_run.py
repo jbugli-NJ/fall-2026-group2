@@ -258,9 +258,12 @@ def test_main_measures_each_source_against_its_own_baseline(
         'weather': run.Contribution.NO_CHANGE,
         'shakemap_footprints': run.Contribution.IMPROVEMENT,
     }
-    judge.judge.side_effect = [
-        contributions[source] for source in sources for _ in questions
-    ]
+    def judge_pair(result, evidence):
+        result.judge_input_tokens = 1200
+        result.judge_output_tokens = 6
+        return contributions[result.external_source]
+
+    judge.judge.side_effect = judge_pair
     monkeypatch.setattr(run, 'LocalContributionJudge', Mock(return_value=judge))
 
     assert run.main([
@@ -303,6 +306,8 @@ def test_main_measures_each_source_against_its_own_baseline(
     assert batch.metadata['selections'] == [pair.selection.model_dump(mode='json')]
     assert batch.metadata['require_external_data'] is require_external_data
     results = batch.results
+    assert all(result.judge_input_tokens == 1200 for result in results)
+    assert all(result.judge_output_tokens == 6 for result in results)
     assert [(result.external_source, result.contribution) for result in results] == [
         (source, contributions[source]) for source in sources for _ in questions
     ]

@@ -366,6 +366,8 @@ def main(argv: list[str] | None = None) -> int:
                     external=save_attempt(pair.external),
                     contribution=pair.contribution,
                     judge_error=pair.judge_error,
+                    judge_input_tokens=pair.judge_input_tokens,
+                    judge_output_tokens=pair.judge_output_tokens,
                 ))
                 save_results(output_dir, runs)
     print(f'Results: {output_dir}')

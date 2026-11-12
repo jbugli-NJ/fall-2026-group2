@@ -160,6 +160,8 @@ class BedrockContributionJudge:
                 },
             },
         )
+        pair.judge_input_tokens = response['usage']['inputTokens']
+        pair.judge_output_tokens = response['usage']['outputTokens']
         if response['stopReason'] != 'end_turn':
             raise ValueError(f'Judgment stopped with {response["stopReason"]}.')
         text = ''.join(

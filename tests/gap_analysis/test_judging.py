@@ -88,10 +88,16 @@ def test_bedrock_judge_reads_label_and_rejects_incomplete_response(
     response = {
         'stopReason': 'end_turn',
         'output': {'message': {'content': [{'text': '{"label":"C"}'}]}},
+        'usage': {
+            'inputTokens': 1200,
+            'outputTokens': 6,
+        },
     }
     assistant.client.converse.return_value = response
     judge = judging.BedrockContributionJudge(assistant)
     assert judge.judge(pair, records) == Contribution.REGRESSION
+    assert pair.judge_input_tokens == 1200
+    assert pair.judge_output_tokens == 6
     request = assistant.client.converse.call_args.kwargs
     assert request['system'] == [{'text': judging.RUBRIC}]
     payload = json.loads(request['messages'][0]['content'][0]['text'])
@@ -108,8 +114,12 @@ def test_bedrock_judge_reads_label_and_rejects_incomplete_response(
     assert 'core_records' not in payload
     assert 'external_enabled_records' not in payload
     response['stopReason'] = 'max_tokens'
+    response['usage']['inputTokens'] = 1300
+    response['usage']['outputTokens'] = 64
     with pytest.raises(ValueError):
         judge.judge(pair, records)
+    assert pair.judge_input_tokens == 1300
+    assert pair.judge_output_tokens == 64
 
 
 @pytest.mark.parametrize('source', ['news', 'weather', 'shakemap_footprints'])
