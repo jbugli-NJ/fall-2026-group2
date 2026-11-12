@@ -40,7 +40,9 @@ def _system_prompt(
     if not use_tools:
         return (
             f"Today's date is {date.today().isoformat()}. "
-            "You answer questions about disaster records using your own knowledge. "
+            "You answer questions about disaster records. "
+            "When supporting records are supplied, ground your answer in those records "
+            "and explain where relevant information is missing. "
             "Answer in the user's language."
         )
     return (
