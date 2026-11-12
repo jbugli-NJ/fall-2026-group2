@@ -20,7 +20,10 @@ def test_answer_attempt_rejects_negative_token_counts(field):
     Generation metadata must contain valid token counts.
     """
     with pytest.raises(ValidationError):
-        AnswerAttempt(duration_seconds=0, **{field: -1})
+        AnswerAttempt.model_validate({
+            'duration_seconds': 0,
+            field: -1,
+        })
 
 
 def test_selection_reuses_graph_filter_validation():

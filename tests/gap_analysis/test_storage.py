@@ -5,6 +5,7 @@ Tests for evidence snapshots and answer archives.
 # Imports
 
 from copy import deepcopy
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
@@ -12,6 +13,7 @@ from botocore.exceptions import ClientError
 from neo4j.time import DateTime
 
 from monty_tool.gap_analysis import storage
+from monty_tool.gap_analysis.schemas import Evidence
 
 
 # Fixtures
@@ -41,24 +43,30 @@ def test_evidence_round_trip_preserves_snapshot_and_uses_content_hash(artifacts)
     Saved records remain unchanged when the in-memory retrieval result changes.
     """
     started = DateTime(2020, 1, 1, 12, 0, 0, nanosecond=123456789)
-    evidence = {
-        'events': [{
-            'event_id': 'évent',
-            'impacts': [],
-            'start_datetime': started,
-            'weather': {'mean_temperature': 20},
-        }],
-        'responses': [],
-        'news': [{'evidence_excerpt': 'Homes were damaged.'}],
-    }
+    evidence = cast(
+        Evidence,
+        {
+            'events': [{
+                'event_id': 'évent',
+                'impacts': [],
+                'start_datetime': started,
+                'weather': {'mean_temperature': 20},
+            }],
+            'responses': [],
+            'news': [{'evidence_excerpt': 'Homes were damaged.'}],
+        },
+    )
     uri = storage.save_evidence(evidence)
     assert uri.startswith('s3://test-bucket/owner/gap_analysis/evidence/')
     assert uri.endswith('.json')
-    assert storage.save_evidence(dict(reversed(list(evidence.items())))) == uri
+    reordered = cast(Evidence, dict(reversed(list(evidence.items()))))
+    assert storage.save_evidence(reordered) == uri
     assert evidence['events'][0]['start_datetime'] is started
     original = deepcopy(evidence)
     original['events'][0]['start_datetime'] = str(started)
-    evidence['events'][0]['weather']['mean_temperature'] = 99
+    weather = evidence['events'][0].get('weather')
+    assert weather is not None
+    weather['mean_temperature'] = 99
     assert storage.load_evidence(uri) == original
     assert storage.save_evidence(evidence) != uri
     assert len(artifacts) == 2
