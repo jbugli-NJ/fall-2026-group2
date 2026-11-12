@@ -241,6 +241,8 @@ class PairedResult(BaseModel):
     external: AnswerAttempt
     contribution: Contribution | None = None
     judge_error: str | None = None
+    judge_input_tokens: int | None = Field(default=None, ge=0)
+    judge_output_tokens: int | None = Field(default=None, ge=0)
 
 
 class SavedPairedResult(BaseModel):
@@ -255,6 +257,8 @@ class SavedPairedResult(BaseModel):
     external: SavedAnswerAttempt
     contribution: Contribution | None = None
     judge_error: str | None = None
+    judge_input_tokens: int | None = Field(default=None, ge=0)
+    judge_output_tokens: int | None = Field(default=None, ge=0)
 
 
 # Summary schemas
