@@ -1,22 +1,55 @@
 """
-Tests for answer attempt failure counts.
+Tests for selections and answer attempt metadata.
 """
 
-from monty_tool.gap_analysis.schemas import AnswerAttempt
+# Imports
+
+from datetime import date
+
+import pytest
+from pydantic import ValidationError
+
+from monty_tool.gap_analysis.schemas import AnswerAttempt, GapSelection
 
 
-def test_tool_failure_count():
+# Tests
+
+@pytest.mark.parametrize('field', ['input_tokens', 'output_tokens'])
+def test_answer_attempt_rejects_negative_token_counts(field):
     """
-    Verify error and limit_reached tool results count as failures.
+    Generation metadata must contain valid token counts.
     """
-    attempt = AnswerAttempt(
-        duration_seconds=0,
-        response={
-            'answer': 'Answer', 'input_tokens': 0, 'output_tokens': 0,
-            'tool_results': [
-                {'result': {'status': status}}
-                for status in ('ok', 'error', 'limit_reached')
-            ],
-        },
-    )
-    assert attempt.tool_failures == 2
+    with pytest.raises(ValidationError):
+        AnswerAttempt(duration_seconds=0, **{field: -1})
+
+
+def test_selection_reuses_graph_filter_validation():
+    """
+    Selected countries and date bounds use the existing graph-search validators.
+    """
+    selection = GapSelection.model_validate({
+        'filters': {'country_code': 'Japan',
+                    'from_date': '2020-01-01', 'to_date': '2020-12-31'},
+        'hazard_name': 'Earthquake',
+    })
+    assert selection.filters.country_code == 'JPN'
+    assert selection.filters.from_date == date(2020, 1, 1)
+    assert selection.filters.to_date == date(2020, 12, 31)
+    assert GapSelection.model_validate_json(selection.model_dump_json()) == selection
+    with pytest.raises(ValidationError, match='from_date must be on or before to_date'):
+        GapSelection.model_validate({
+            'filters': {'country_code': 'JPN',
+                        'from_date': '2021-01-01', 'to_date': '2020-01-01'},
+            'hazard_name': 'Earthquake',
+        })
+
+
+@pytest.mark.parametrize('missing', ['filters', 'hazard_name'])
+def test_selection_requires_filters_and_hazard(missing):
+    """
+    The selection boundary requires explicit graph filters and a hazard.
+    """
+    payload = {'filters': {'country_code': 'JPN'}, 'hazard_name': 'Earthquake'}
+    del payload[missing]
+    with pytest.raises(ValidationError):
+        GapSelection.model_validate(payload)
