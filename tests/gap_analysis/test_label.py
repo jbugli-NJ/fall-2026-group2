@@ -6,6 +6,7 @@ Tests for human gap analyis judgement labeling.
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -25,15 +26,15 @@ def saved_run(pair: PairedResult) -> SavedAnalysisRun:
     A judged answer pair with archived responses.
     """
     attempt = SavedAnswerAttempt(
-        response_s3_uri='s3://answers/core.json', input_tokens=0,
-        output_tokens=0, tool_failure_count=0, duration_seconds=0,
+        answer_s3_uri='s3://answers/core.txt', input_tokens=0,
+        output_tokens=0, duration_seconds=0,
     )
     return SavedAnalysisRun(
         metadata={'started_at': '2026-11-09', 'rubric_version': RUBRIC_VERSION},
         results=[SavedPairedResult(
             **pair.model_dump(exclude={'core', 'external'}),
             core=attempt,
-            external=attempt.model_copy(update={'response_s3_uri': 's3://answers/external.json'}),
+            external=attempt.model_copy(update={'answer_s3_uri': 's3://answers/external.txt'}),
         )],
     )
 
@@ -44,21 +45,19 @@ def test_pair_display(saved_run: SavedAnalysisRun, pair: PairedResult) -> None:
     """
     Test evidence before the answers and a code recap after them.
     """
-    assert pair.core.response is not None
-    core = pair.core.response.copy()
-    core['answer'] = 'Core answer text'
-    external = core.copy()
-    external['answer'] = 'External answer text'
-    external['tool_results'] = [{
-        'call': {'name': 'get_event_news', 'arguments': {'event_id': 'event-1'}},
-        'result': {'rows': [{'evidence_excerpt': 'Homes were damaged.'}]},
-    }]
-    rendered = label.format_pair(pair=saved_run.results[0], core=core, external=external)
+    core = 'Core answer text'
+    external = 'External answer text'
+    evidence = {'events': [{'description': 'Supplied disaster record', 'impacts': []}],
+                'responses': [],
+                'responses': [],
+                'news': [{'evidence_excerpt': 'Homes were damaged.'}]}
+    saved_run.results[0].external_source = 'news'
+    rendered = label.format_pair(pair=saved_run.results[0], core=core, external=external, evidence=evidence)
     assert pair.question.question in rendered
     assert 'Core answer text' in rendered
     assert 'External answer text' in rendered
-    assert 'get_event_news' in rendered
-    assert 'event-1' in rendered
+    assert 'RECORDS' in rendered
+    assert rendered.index('Supplied disaster record') < rendered.index('External answer text')
     assert 'Homes were damaged.' in rendered
     assert rendered.index('Homes were damaged.') < rendered.index('Core answer text')
     assert rendered.index('Core answer text') < rendered.index('External answer text')
@@ -105,7 +104,7 @@ def test_cleanup_before_quitting(
     """
     pair = saved_run.results[0]
     old_id = label.pair_id(run=saved_run, pair=pair)
-    pair.external.response_s3_uri = 's3://answers/replacement.json'
+    pair.external.answer_s3_uri = 's3://answers/replacement.json'
     results = tmp_path / 'results.json'
     results.write_text(json.dumps({'runs': [saved_run.model_dump(mode='json')]}))
     labels = tmp_path / 'human_judgments.json'
@@ -135,3 +134,35 @@ def test_old_rubric_labels_are_not_reinterpreted(saved_run, tmp_path):
         'email': 'reviewer@example.com',
     }]))
     assert label.load_judgments(judgments) == []
+
+
+def test_review_loads_evidence_from_saved_path(saved_run, monkeypatch):
+    """
+    Review combines archived answers with the evidence snapshot used for answering.
+    """
+    pair = saved_run.results[0]
+    answers = Mock(side_effect=['Core answer', 'External answer'])
+    monkeypatch.setattr(label, 'load_answer', answers)
+    retrieve = Mock(return_value={'events': [{'event_id': 'current', 'impacts': []}], 'responses': []})
+    monkeypatch.setattr(label, 'load_evidence', retrieve)
+    display = Mock(return_value='Pair for review')
+    monkeypatch.setattr(label, 'format_pair', display)
+    monkeypatch.setattr(label, 'read_choice', lambda: 'B')
+    assert label.review_pair(pair) == Contribution.NO_CHANGE
+    assert [call.kwargs['uri'] for call in answers.call_args_list] == [
+        pair.core.answer_s3_uri, pair.external.answer_s3_uri,
+    ]
+    retrieve.assert_called_once_with(pair.evidence_s3_uri)
+    display.assert_called_once_with(
+        pair=pair, core='Core answer', external='External answer', evidence=retrieve.return_value,
+    )
+
+
+def test_evidence_path_is_part_of_pair_identity(saved_run):
+    """
+    A different evidence snapshot requires a new human judgment.
+    """
+    pair = saved_run.results[0]
+    original = label.pair_id(saved_run, pair)
+    pair.evidence_s3_uri = 's3://answers/gap_analysis/evidence/replacement.json'
+    assert label.pair_id(saved_run, pair) != original
