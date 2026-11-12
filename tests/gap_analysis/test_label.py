@@ -6,6 +6,7 @@ Tests for human gap analyis judgement labeling.
 
 import json
 from pathlib import Path
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
@@ -14,6 +15,7 @@ from monty_tool.gap_analysis import label
 from monty_tool.gap_analysis.judging import RUBRIC_VERSION
 from monty_tool.gap_analysis.plotting import build_judgment_plot
 from monty_tool.gap_analysis.schemas import (
+    Evidence,
     Contribution, PairedResult, SavedAnalysisRun, SavedAnswerAttempt, SavedPairedResult,
 )
 
@@ -52,15 +54,18 @@ def test_pair_display(saved_run: SavedAnalysisRun, pair: PairedResult) -> None:
     """
     core = 'Core answer text'
     external = 'External answer text'
-    evidence = {
-        'events': [{
-            'description': 'Supplied disaster record',
-            'impacts': [],
-        }],
-        'responses': [],
-        'responses': [],
-        'news': [{'evidence_excerpt': 'Homes were damaged.'}],
-    }
+    evidence = cast(
+        Evidence,
+        {
+            'events': [{
+                'description': 'Supplied disaster record',
+                'impacts': [],
+            }],
+            'responses': [],
+            'responses': [],
+            'news': [{'evidence_excerpt': 'Homes were damaged.'}],
+        },
+    )
     saved_run.results[0].external_source = 'news'
     rendered = label.format_pair(
         pair=saved_run.results[0],

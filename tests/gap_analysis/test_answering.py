@@ -4,12 +4,14 @@ Tests for answering gap analysis questions.
 
 import json
 from contextlib import nullcontext
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
 from neo4j.time import DateTime
 
 from monty_tool.gap_analysis import answering
+from monty_tool.gap_analysis.schemas import Evidence
 from monty_tool.llm.tools import GraphSearchArguments
 from monty_tool.gap_analysis.schemas import GapSelection
 
@@ -26,15 +28,18 @@ def test_answer_uses_supplied_records_without_tools(pair):
         'tool_results': [],
     }
     started = DateTime(2020, 1, 1, 12, 0, 0, nanosecond=123456789)
-    evidence = {
-        'events': [{
-            'event_id': 'one',
-            'impacts': [],
-            'start_datetime': started,
-            'weather': {'mean_temperature': 20},
-        }],
-        'responses': [],
-    }
+    evidence = cast(
+        Evidence,
+        {
+            'events': [{
+                'event_id': 'one',
+                'impacts': [],
+                'start_datetime': started,
+                'weather': {'mean_temperature': 20},
+            }],
+            'responses': [],
+        },
+    )
     result = answering.answer_question(
         assistant,
         pair.question,

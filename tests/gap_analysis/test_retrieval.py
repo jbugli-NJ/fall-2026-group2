@@ -6,11 +6,14 @@ Tests for fixed evidence retrieval and source isolation.
 
 from datetime import date
 from contextlib import nullcontext
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
 
 from monty_tool.gap_analysis import retrieval
+from monty_tool.gap_analysis.schemas import Evidence
+from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES
 from monty_tool.llm.tools import GraphSearchArguments
 
 
@@ -21,20 +24,23 @@ def test_source_isolation_preserves_core_and_nested_weather():
     """
     Each external pass changes only its source, including impact weather.
     """
-    evidence = {
-        'events': [{
-            'event_id': 'event',
-            'weather': {'mean_temperature': 20},
-            'impacts': [{
-                'impact_value': 10,
-                'weather': {'mean_temperature': 21},
+    evidence = cast(
+        Evidence,
+        {
+            'events': [{
+                'event_id': 'event',
+                'weather': {'mean_temperature': 20},
+                'impacts': [{
+                    'impact_value': 10,
+                    'weather': {'mean_temperature': 21},
+                }],
+                'footprints': [{'source': 'montandon'}],
+                'external_footprints': [{'source': 'usgs'}],
             }],
-            'footprints': [{'source': 'montandon'}],
-            'external_footprints': [{'source': 'usgs'}],
-        }],
-        'responses': [{'appeals': [{'amount_requested': 100}]}],
-        'news': [{'evidence_excerpt': 'Damage reported'}],
-    }
+            'responses': [{'appeals': [{'amount_requested': 100}]}],
+            'news': [{'evidence_excerpt': 'Damage reported'}],
+        },
+    )
     core = retrieval.evidence_for_source(evidence, None)
     assert core == {
         'events': [{
@@ -44,7 +50,7 @@ def test_source_isolation_preserves_core_and_nested_weather():
         }],
         'responses': evidence['responses'],
     }
-    for source in ['news', 'weather', 'shakemap_footprints']:
+    for source in EXTERNAL_SOURCES:
         selected = retrieval.evidence_for_source(evidence, source)
         assert retrieval.evidence_for_source(selected, None) == core
         assert ('news' in selected) == (source == 'news')
@@ -167,23 +173,28 @@ def test_source_selection_does_not_mutate_shared_snapshot():
     """
     Editing one pass cannot change the records used by another pass or the archive.
     """
-    evidence = {
-        'events': [{
-            'event_id': 'one',
-            'impacts': [{
-                'impact_value': 10,
+    evidence = cast(
+        Evidence,
+        {
+            'events': [{
+                'event_id': 'one',
+                'impacts': [{
+                    'impact_value': 10,
+                    'weather': None,
+                }],
+                'footprints': [{'severity_levels': ['high', 'low']}],
                 'weather': None,
+                'external_footprints': [],
             }],
-            'footprints': [{'severity_levels': ['high', 'low']}],
-            'weather': None,
-            'external_footprints': [],
-        }],
-        'responses': [],
-        'news': [],
-    }
+            'responses': [],
+            'news': [],
+        },
+    )
     selected = retrieval.evidence_for_source(evidence, None)
     selected['events'][0]['impacts'][0]['impact_value'] = 99
-    selected['events'][0]['footprints'][0]['severity_levels'].reverse()
+    levels = selected['events'][0]['footprints'][0]['severity_levels']
+    assert levels is not None
+    levels.reverse()
     assert evidence['events'][0]['impacts'][0]['impact_value'] == 10
     assert evidence['events'][0]['footprints'][0]['severity_levels'] == ['high', 'low']
     assert 'weather' in evidence['events'][0]

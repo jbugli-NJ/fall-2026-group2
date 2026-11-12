@@ -69,7 +69,10 @@ def test_pair_uses_both_modes_and_skips_failed_answers(monkeypatch, pair, failed
         Mock(),
         judge,
         external_source=source,
-        evidence={},
+        evidence={
+            'events': [],
+            'responses': [],
+        },
         evidence_s3_uri=pair.evidence_s3_uri,
     )
     assert [
@@ -79,7 +82,13 @@ def test_pair_uses_both_modes_and_skips_failed_answers(monkeypatch, pair, failed
     assert result.external_source == source
     assert judge.judge.call_count == int(not failed)
     if not failed:
-        judge.judge.assert_called_once_with(result, {})
+        judge.judge.assert_called_once_with(
+            result,
+            {
+                'events': [],
+                'responses': [],
+            },
+        )
     assert (result.contribution is None) == failed
     assert result.core.error == attempt.error
     assert result.external.error == attempt.error
@@ -98,7 +107,10 @@ def test_judge_error_is_counted_separately(monkeypatch, pair):
         Mock(),
         judge,
         external_source='news',
-        evidence={},
+        evidence={
+            'events': [],
+            'responses': [],
+        },
         evidence_s3_uri=pair.evidence_s3_uri,
     )
     assert result.judge_error == 'Judge failed'
