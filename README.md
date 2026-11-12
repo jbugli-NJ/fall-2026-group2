@@ -228,9 +228,13 @@ Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
 
 Questions support EAP planning by country and hazard, using past disasters as evidence.
 `--hazard-name` selects a name such as `Cyclone` or `Earthquake`; country and hazard filters are optional.
-`--limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
+`--limit` defaults to 1.
 Hazards without a known name are skipped before applying the limit.
 Date filters bound historical disaster event start dates.
+
+Fixed Cypher queries retrieve records once per country and hazard.
+Each question is answered using the core records, then again with each selected external source.
+Answers and judgments use the supplied records without query tools.
 
 By default, each country and hazard must have stored data for every selected external source.
 Different historical events can provide different sources.
@@ -238,13 +242,14 @@ Use `--no-require-external-data` to disable that filter.
 
 Outputs accumulate under `benchmarks/gap_analysis/`:
 
-- `results.json`: each invocation's settings, response S3 path, errors, timings, and other metadata.
-  tool-failure counts, and combined counts by external source.
+- `results.json`: each invocation's settings, answer and evidence S3 paths, token counts, errors,
+  timings, and combined counts by external source.
 - `summary.svg`: improvement rates by question type and external source, using separate model markers.
 
 Summaries use the current rubric version and answering/judging model combinations.
 
-Full responses are uploaded to the selected bucket/prefix under `gap_analysis/responses/*.json`.
+Answer text is uploaded to the selected bucket/prefix under `gap_analysis/answers/*.txt`.
+Retrieved records are saved under `gap_analysis/evidence/*.json` for human review.
 Bucket paths are saved in the committed JSON file for potential reference.
 
 Hand-label judged pairs in the terminal with:
