@@ -28,5 +28,5 @@ def pair():
         core_context={'country_code': 'JPN', 'hazard_name': 'Earthquake'},
         core=attempt,
         external=attempt,
-        contribution=Contribution.QUALIFIES,
+        contribution=Contribution.IMPROVEMENT,
     )
