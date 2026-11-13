@@ -10,6 +10,7 @@ from unittest.mock import Mock, call
 import pytest
 
 from monty_tool.gap_analysis import run, storage
+from monty_tool.gap_analysis.retrieval import DISASTER_LIMIT
 from monty_tool.gap_analysis.schemas import (
     AnswerAttempt, SavedAnalysisRun, SavedAnswerAttempt, SavedPairedResult,
 )
@@ -302,7 +303,7 @@ def test_main_measures_each_source_against_its_own_baseline(
     assert batch.metadata['comparisons'] == [f'core_vs_{source}' for source in sources]
     assert batch.metadata['seed'] == run.SEED
     assert batch.metadata['limit'] == 2
-    assert batch.metadata['disaster_limit'] == 20
+    assert batch.metadata['disaster_limit'] == DISASTER_LIMIT
     assert batch.metadata['selections'] == [pair.selection.model_dump(mode='json')]
     assert batch.metadata['require_external_data'] is require_external_data
     results = batch.results

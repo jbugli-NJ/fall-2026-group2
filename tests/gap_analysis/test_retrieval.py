@@ -113,7 +113,7 @@ def test_queries_share_source_scope_and_preserve_associated_records(
         assert 'offset' not in params
         assert params['hazard_code_name_map'] == names
         assert params['response_hazard_ids'] == type_ids
-        assert params['disaster_limit'] == 20
+        assert params['disaster_limit'] == retrieval.DISASTER_LIMIT
         assert params['external_source'] == source
     if source == 'news':
         news_call = driver.execute_query.call_args_list[-1]

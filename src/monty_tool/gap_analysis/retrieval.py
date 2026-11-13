@@ -65,7 +65,7 @@ def hazard_code_name_map() -> dict[str, str]:
 
 # Query boundary
 
-DISASTER_LIMIT = 20
+DISASTER_LIMIT = 10
 EVIDENCE_SCOPE = (
     f'Disaster records cover up to {DISASTER_LIMIT} of the most recent disasters '
     'with the selected external source.'
@@ -121,8 +121,8 @@ def retrieve_evidence(
     external_source: ExternalSourceName,
 ) -> Evidence:
     """
-    Retrieve the 20 most recent disasters with the selected external source.
-    Include their associated records and up to 20 matching IFRC response events.
+    Retrieve the 10 most recent disasters with the selected external source.
+    Include their associated records and up to 10 matching IFRC response events.
     """
     if filters.country_code is None:
         raise ValueError('Evidence retrieval requires a country code.')
