@@ -230,9 +230,7 @@ Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
 
 Questions support EAP planning by country and hazard, using past disasters as evidence.
 `--hazard-name` selects a name such as `Cyclone` or `Earthquake`; country and hazard filters are optional.
-`--limit` defaults to 1.
-Hazards without a known name are skipped before applying the limit.
-Date filters bound historical disaster event start dates.
+`--limit` defaults to 1. Use `--offset` (default: 0) to skip country and hazard pairs.
 
 The evaluation pipeline retrieves up to 10 of the most recent disasters for each country and hazard combination.
 Each question is answered using those core records, then again with the external evidence.

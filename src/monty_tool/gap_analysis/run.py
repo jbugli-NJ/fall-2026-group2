@@ -200,6 +200,16 @@ def _positive_int(value: str) -> int:
     return number
 
 
+def _non_negative_int(value: str) -> int:
+    """
+    Parse a CLI argument as an integer greater than or equal to zero.
+    """
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError('Value must be non-negative.')
+    return number
+
+
 def build_parser() -> argparse.ArgumentParser:
     """
     Define command-line options for running gap analysis.
@@ -217,6 +227,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--limit', type=_positive_int, default=1,
         help='Maximum number of country and hazard combinations (default: 1).',
+    )
+    parser.add_argument(
+        '--offset',
+        type=_non_negative_int,
+        default=0,
+        help='Country–hazard groups to skip (default: 0).',
     )
     parser.add_argument(
         '--external-sources',
@@ -271,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
     filters = GraphSearchArguments(
         country_code=args.country_code,
         from_date=args.from_date, to_date=args.to_date,
+        offset=args.offset,
     )
     selections = select_country_hazards(
         filters,

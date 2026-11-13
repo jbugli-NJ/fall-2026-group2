@@ -53,6 +53,17 @@ def saved_pair(pair):
 
 # Tests
 
+def test_offset_defaults_and_validation():
+    """
+    Default to the first batch and reject negative offsets.
+    """
+    parser = run.build_parser()
+    models = ['--answer-model', 'bedrock', '--judge-model', 'bedrock']
+    assert parser.parse_args(models).offset == 0
+    with pytest.raises(SystemExit):
+        parser.parse_args([*models, '--offset', '-1'])
+
+
 @pytest.mark.parametrize('failed', [False, True])
 def test_pair_uses_both_modes_and_skips_failed_answers(monkeypatch, pair, failed):
     """
@@ -270,7 +281,8 @@ def test_main_measures_each_source_against_its_own_baseline(
     assert run.main([
         '--answer-model', run.MODEL_CHOICES[0], '--judge-model', run.MODEL_CHOICES[0],
         '--output-dir', str(tmp_path),
-        '--country-code', 'JPN', '--hazard-name', 'Earthquake', '--limit', '2',
+        '--country-code', 'JPN', '--hazard-name', 'Earthquake',
+        '--limit', '2', '--offset', '10',
         *selection_flags,
         *source_flags,
     ]) == 0
@@ -292,7 +304,7 @@ def test_main_measures_each_source_against_its_own_baseline(
     set_seed.assert_called_once_with(run.SEED)
     require_external_data = not selection_flags
     select_country_hazards.assert_called_once_with(
-        run.GraphSearchArguments(country_code='JPN'),
+        run.GraphSearchArguments(country_code='JPN', offset=10),
         2,
         hazard_name='Earthquake',
         require_external_data=require_external_data,
@@ -303,6 +315,7 @@ def test_main_measures_each_source_against_its_own_baseline(
     assert batch.metadata['comparisons'] == [f'core_vs_{source}' for source in sources]
     assert batch.metadata['seed'] == run.SEED
     assert batch.metadata['limit'] == 2
+    assert batch.metadata['selection']['offset'] == 10
     assert batch.metadata['disaster_limit'] == DISASTER_LIMIT
     assert batch.metadata['selections'] == [pair.selection.model_dump(mode='json')]
     assert batch.metadata['require_external_data'] is require_external_data
