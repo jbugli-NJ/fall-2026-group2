@@ -9,21 +9,19 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
-from tempfile import TemporaryDirectory
 from typing import Literal
-from urllib.parse import urlparse
 
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel, Field, TypeAdapter
 
-from monty_tool.boto3_utils.s3_utils import download_object, get_bucket
 from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES
 from monty_tool.gap_analysis.judging import LABELS, RUBRIC, RUBRIC_VERSION
 from monty_tool.gap_analysis.plotting import build_judgment_plot
 from monty_tool.gap_analysis.schemas import (
-    Contribution, SavedAnalysisRun, SavedPairedResult,
+    Contribution, Evidence, SavedAnalysisRun, SavedPairedResult,
 )
-from monty_tool.llm.schemas import QueryAssistantResponse
+from monty_tool.gap_analysis.retrieval import evidence_for_source
+from monty_tool.gap_analysis.storage import load_answer, load_evidence
 
 
 # Schemas
@@ -42,7 +40,10 @@ def load_runs(path: Path) -> list[SavedAnalysisRun]:
     Read analysis runs from the results JSON.
     """
     payload = json.loads(path.read_text())
-    return TypeAdapter(list[SavedAnalysisRun]).validate_python(payload['runs'])
+    return TypeAdapter(list[SavedAnalysisRun]).validate_python([
+        run for run in payload['runs']
+        if run.get('metadata', {}).get('rubric_version') == RUBRIC_VERSION
+    ])
 
 
 def load_judgments(path: Path) -> list[HumanJudgment]:
@@ -50,7 +51,10 @@ def load_judgments(path: Path) -> list[HumanJudgment]:
     Read saved human labels, or start with none if the file does not exist.
     """
     return (
-        TypeAdapter(list[HumanJudgment]).validate_json(path.read_text())
+        TypeAdapter(list[HumanJudgment]).validate_python([
+            record for record in json.loads(path.read_text())
+            if record.get('contribution') in set(Contribution)
+        ])
         if path.exists()
         else []
     )
@@ -64,9 +68,10 @@ def pair_id(run: SavedAnalysisRun, pair: SavedPairedResult) -> str:
         'started_at': run.metadata['started_at'],
         'question': pair.question.model_dump(mode='json'),
         'external_source': pair.external_source,
-        'core_context': pair.core_context,
-        'core_uri': pair.core.response_s3_uri,
-        'external_uri': pair.external.response_s3_uri,
+        'selection': pair.selection.model_dump(mode='json'),
+        'evidence_s3_uri': pair.evidence_s3_uri,
+        'core_uri': pair.core.answer_s3_uri,
+        'external_uri': pair.external.answer_s3_uri,
     }
     return hashlib.sha256(
         json.dumps(content, sort_keys=True, ensure_ascii=False).encode('utf-8')
@@ -99,7 +104,10 @@ def pairs_for_comparison(runs: list[SavedAnalysisRun]) -> dict[str, SavedPairedR
     """
     Select pairs with an LLM label from the current rubric to compare with humans.
     """
-    current_runs = [run for run in runs if run.metadata.get('rubric_version') == RUBRIC_VERSION]
+    current_runs = [
+        run for run in runs
+        if run.metadata.get('rubric_version') == RUBRIC_VERSION
+    ]
     return {
         identity: pair for identity, pair in index_pairs(runs=current_runs).items()
         if pair.contribution is not None and pair.judge_error is None
@@ -117,23 +125,6 @@ def filter_unlabeled_pairs(
     return {identity: pair for identity, pair in pairs.items() if identity not in labeled}
 
 
-def load_response(uri: str | None) -> QueryAssistantResponse:
-    """
-    Retrieve an archived answer using the bucket and key in its S3 URI.
-    """
-    parsed = urlparse(uri or '')
-    if parsed.scheme != 's3' or not parsed.netloc or not parsed.path.lstrip('/'):
-        raise ValueError(f'Invalid response S3 URI: {uri}')
-    with TemporaryDirectory(prefix='gap-label-') as directory:
-        path = Path(directory, 'response.json')
-        download_object(
-            bucket=get_bucket(bucket_name=parsed.netloc),
-            key=parsed.path.lstrip('/'),
-            output_path=path,
-        )
-        return TypeAdapter(QueryAssistantResponse).validate_json(path.read_text())
-
-
 def format_section(title: str, body: str) -> str:
     """
     Mark the start and end of a section in the terminal scrollback.
@@ -144,11 +135,12 @@ def format_section(title: str, body: str) -> str:
 
 def format_pair(
     pair: SavedPairedResult,
-    core: QueryAssistantResponse,
-    external: QueryAssistantResponse,
+    core: str,
+    external: str,
+    evidence: Evidence,
 ) -> str:
     """
-    Show both sets of tool calls, both answers, and a short labeling code recap.
+    Show archived records, both answers, and a labeling code recap.
     """
     context = (
         f'{pair.question.country_code} / {pair.question.hazard_name} / '
@@ -161,21 +153,25 @@ def format_pair(
             + EXTERNAL_SOURCES[pair.external_source].evidence_description,
         ),
         format_section(
-            title=f'{context} | CORE CONTEXT',
-            body=json.dumps(pair.core_context, ensure_ascii=False, separators=(',', ':')),
+            title=f'{context} | SELECTION',
+            body=json.dumps(
+                pair.selection.model_dump(mode='json'),
+                ensure_ascii=False,
+                separators=(',', ':'),
+            ),
         ),
     ]
-    responses = [('CORE ONLY', core), ('WITH EXTERNAL SOURCE', external)]
-    for heading, response in responses:
-        calls = response['tool_results']
-        for index, call in enumerate(calls, 1):
-            sections.append(format_section(
-                title=f'{context} | {heading} | TOOL CALL {index}/{len(calls)}',
-                body=json.dumps(call, ensure_ascii=False, separators=(',', ':')),
-            ))
-    for heading, response in responses:
+    for heading, records in [
+        ('CORE ONLY', evidence_for_source(evidence, None)),
+        ('WITH EXTERNAL SOURCE', evidence_for_source(evidence, pair.external_source)),
+    ]:
         sections.append(format_section(
-            title=f'{context} | {heading} | ANSWER', body=response['answer'],
+            title=f'{context} | {heading} | RECORDS',
+            body=json.dumps(records, ensure_ascii=False),
+        ))
+    for heading, answer in [('CORE ONLY', core), ('WITH EXTERNAL SOURCE', external)]:
+        sections.append(format_section(
+            title=f'{context} | {heading} | ANSWER', body=answer,
         ))
     sections.append(f'END PAIR: {context} — ENTER YOUR LABEL')
     sections.append('Codes: ' + '; '.join(
@@ -189,10 +185,10 @@ def read_choice() -> str:
     Prompt until the user enters a category, skip, or quit.
     """
     while True:
-        choice = input('Label [A–G / s / q]: ').strip().upper()
+        choice = input('Label [A–C / s / q]: ').strip().upper()
         if choice in LABELS or choice in ('S', 'Q'):
             return choice
-        print('Enter A–G, s, or q.')
+        print('Enter A–C, s, or q.')
 
 
 def review_pair(pair: SavedPairedResult) -> Contribution | Literal['skip', 'quit']:
@@ -200,12 +196,13 @@ def review_pair(pair: SavedPairedResult) -> Contribution | Literal['skip', 'quit
     Show one pair's answers and evidence, then ask the user to label it.
     """
     try:
-        core = load_response(uri=pair.core.response_s3_uri)
-        external = load_response(uri=pair.external.response_s3_uri)
+        core = load_answer(uri=pair.core.answer_s3_uri)
+        external = load_answer(uri=pair.external.answer_s3_uri)
+        evidence = load_evidence(pair.evidence_s3_uri)
     except (OSError, ValueError, BotoCoreError, ClientError) as exc:
         print(f'Skipping pair: {exc}')
         return 'skip'
-    print(format_pair(pair=pair, core=core, external=external))
+    print(format_pair(pair=pair, core=core, external=external, evidence=evidence))
     choice = read_choice()
     if choice == 'S':
         return 'skip'
@@ -288,10 +285,6 @@ def run_labeling(results_path: Path) -> None:
     judged_pairs = pairs_for_comparison(runs=runs)
     pending_pairs = filter_unlabeled_pairs(pairs=judged_pairs, judgments=judgments)
     save_progress(path=labels_path, judgments=judgments, pairs=judged_pairs)
-    for run in runs:
-        if run.metadata.get('rubric_version') != RUBRIC_VERSION:
-            print(f'Skipping unsupported rubric: {run.metadata.get("rubric_version")}')
-
     if pending_pairs:
         email = git_email()
         print(RUBRIC)
@@ -308,7 +301,10 @@ def run_labeling(results_path: Path) -> None:
                 ))
                 save_progress(path=labels_path, judgments=judgments, pairs=judged_pairs)
                 agreement = 'agree' if contribution == pair.contribution else 'disagree'
-                print(f'Automated: {pair.contribution}; human: {contribution} — {agreement}.')
+                print(
+                    f'Automated: {pair.contribution}; '
+                    f'human: {contribution} — {agreement}.',
+                )
         except (EOFError, KeyboardInterrupt):
             print('Labeling stopped.')
 

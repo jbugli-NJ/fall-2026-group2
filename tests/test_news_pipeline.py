@@ -62,17 +62,16 @@ def make_record(
     }
 
 
-def select(records, *, max_records=5):
+def select(records):
     return select_disaster_records(
         records,
         start_date=date(2026, 9, 1),
         end_date=date(2026, 9, 10),
-        max_records=max_records,
     )
 
 
 @pytest.mark.parametrize("reverse_input", [False, True])
-def test_groups_episodes_before_applying_limit(reverse_input):
+def test_selects_latest_episode_per_disaster(reverse_input):
     records = [
         make_record("a-old", source_id="a", episode=2),
         make_record("a-new", source_id="a", episode=10),
@@ -81,7 +80,7 @@ def test_groups_episodes_before_applying_limit(reverse_input):
     if reverse_input:
         records.reverse()
 
-    result = select(records, max_records=2)
+    result = select(records)
 
     assert [event.item_id for event in result] == ["a-new", "b"]
 
@@ -169,12 +168,6 @@ def test_selection_does_not_modify_input():
     select(records)
 
     assert records == original
-
-
-@pytest.mark.parametrize("max_records", [0, -1, True, 1.5])
-def test_invalid_record_limit_is_rejected(max_records):
-    with pytest.raises(ValueError, match="max_records"):
-        select([], max_records=max_records)
 
 
 def test_reversed_date_range_is_rejected():

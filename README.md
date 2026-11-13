@@ -93,8 +93,8 @@ multiple collection IDs. `--no-geometry` produces `.nogeom.jsonl.gz` files;
 
 ### Collecting Media Cloud news from S3 disaster records
 
-The news collector reads `<AWS_BUCKET_PREFIX>/raw/<collection>.jsonl.gz` from `AWS_BUCKET`.
-Set those variables and AWS credentials as described above.
+The news collector reads `<AWS_BUCKET_PREFIX>/raw/<collection>.jsonl.gz` from
+`AWS_BUCKET` (default: `dats-capstone`). Set AWS credentials as described above.
 For execution, obtain a personal [Media Cloud API key](https://www.mediacloud.org/documentation/search-api-guide)
 and set `MEDIACLOUD_API_KEY` locally.
 
@@ -113,10 +113,12 @@ uv run python -m monty_tool.news.cli --dry-run \
 ```
 `--dry-run` reads the disaster data and shows planned searches without making
 Media Cloud requests or saving results. To collect and classify, use `--execute`
-instead and supply a Qwen `--model`, a run-wide `--request-limit`, and a
-per-event `--max-body-attempts`. Add `--s3-upload` to save results to S3;
-otherwise results are saved locally. Use `--refresh` to recollect and replace
-an event's current snapshot.
+instead and supply a Qwen `--model` and a run-wide `--request-limit`.
+Each disaster gets one search page of up to 100 candidates and up to three article-fetch
+attempts; override the latter with `--max-body-attempts`. Empty searches count toward
+the request limit. Use `--random` to search disasters in random order.
+Add `--s3-upload` to reuse matching S3 snapshots and upload new results;
+otherwise results are saved locally. Use `--refresh` to recollect an event's snapshot.
 
 Choose collection IDs that cover the events of interest: the US collection
 alone does not provide global publisher coverage. If the raw input is a
@@ -228,23 +230,29 @@ Edit questions in [templates.py](src/monty_tool/gap_analysis/templates.py).
 
 Questions support EAP planning by country and hazard, using past disasters as evidence.
 `--hazard-name` selects a name such as `Cyclone` or `Earthquake`; country and hazard filters are optional.
-`--limit` defaults to 1; `--max-tool-calls` defaults to 10 per answer.
-Hazards without a known name are skipped before applying the limit.
-Date filters bound historical disaster event start dates.
+`--limit` defaults to 1. Use `--offset` (default: 0) to skip country and hazard pairs.
+
+The evaluation pipeline retrieves up to 10 of the most recent disasters for each country and hazard combination.
+Each question is answered using those core records, then again with the external evidence.
 
 By default, each country and hazard must have stored data for every selected external source.
 Different historical events can provide different sources.
 Use `--no-require-external-data` to disable that filter.
 
+IFRC GO responses and appeals are filtered by country, dates, and the hazard mapping in
+[retrieval.py](src/monty_tool/gap_analysis/retrieval.py).
+Hazards without a mapping produce a warning and no GO response records.
+
 Outputs accumulate under `benchmarks/gap_analysis/`:
 
-- `results.json`: each invocation's settings, response S3 path, errors, timings, and other metadata.
-  tool-failure counts, and combined counts by external source.
+- `results.json`: each invocation's settings, answer and evidence S3 paths, token counts, errors,
+  timings, and combined counts by external source.
 - `summary.svg`: improvement rates by question type and external source, using separate model markers.
 
 Summaries use the current rubric version and answering/judging model combinations.
 
-Full responses are uploaded to the selected bucket/prefix under `gap_analysis/responses/*.json`.
+Answer text is uploaded to the selected bucket/prefix under `gap_analysis/answers/*.txt`.
+Retrieved records are saved under `gap_analysis/evidence/*.json` for human review.
 Bucket paths are saved in the committed JSON file for potential reference.
 
 Hand-label judged pairs in the terminal with:
