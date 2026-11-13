@@ -62,7 +62,17 @@ def test_source_isolation_preserves_core_and_nested_weather():
 
 
 @pytest.mark.parametrize('source', ['news', 'weather', 'shakemap_footprints'])
-def test_queries_share_source_scope_and_preserve_associated_records(monkeypatch, source):
+@pytest.mark.parametrize('hazard, type_ids', [
+    ('Heatwave', [19]),
+    ('Fire', [15]),
+    ('Wildfires', []),
+    ('Liquefaction', []),
+    ('Flash Flooding', []),
+    ('Unknown hazard', []),
+])
+def test_queries_share_source_scope_and_preserve_associated_records(
+    monkeypatch, caplog, source, hazard, type_ids,
+):
     """
     Limit disasters at retrieval, keeping their associated records intact.
     """
@@ -82,25 +92,27 @@ def test_queries_share_source_scope_and_preserve_associated_records(monkeypatch,
         'to_date': '2026-09-30',
         'offset': 5,
     })
-    monkeypatch.setattr(retrieval, 'hazard_code_name_map', lambda: {'WF': 'Wildfires'})
+    names = {'test-code': hazard}
+    monkeypatch.setattr(retrieval, 'hazard_code_name_map', lambda: names)
     result = retrieval.retrieve_evidence(
         filters,
-        hazard_name='Wildfires',
+        hazard_name=hazard,
         external_source=source,
     )
     assert len(result['events'][0]['impacts']) == 105
     assert result['responses'] == []
     assert ('news' in result) == (source == 'news')
     assert driver.execute_query.call_count == (3 if source == 'news' else 2)
+    assert ('No GO disaster type mapping' in caplog.text) == (not type_ids)
     for call in driver.execute_query.call_args_list:
         params = call.kwargs['parameters_']
         assert params['country_code'] == 'BRA'
         assert params['from_date'] == date(2026, 8, 1)
         assert params['to_date'] == date(2026, 9, 30)
-        assert params['hazard_name'] == 'Wildfires'
+        assert params['hazard_name'] == hazard
         assert 'offset' not in params
-        assert params['hazard_code_name_map'] == {'WF': 'Wildfires'}
-        assert 'fire' in params['response_hazard_names']
+        assert params['hazard_code_name_map'] == names
+        assert params['response_hazard_ids'] == type_ids
         assert params['disaster_limit'] == 20
         assert params['external_source'] == source
     if source == 'news':

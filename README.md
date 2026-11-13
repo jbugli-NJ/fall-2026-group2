@@ -239,6 +239,10 @@ By default, each country and hazard must have stored data for every selected ext
 Different historical events can provide different sources.
 Use `--no-require-external-data` to disable that filter.
 
+IFRC GO responses and appeals are filtered by country, dates, and the hazard mapping in
+[retrieval.py](src/monty_tool/gap_analysis/retrieval.py).
+Hazards without a mapping produce a warning and no GO response records.
+
 Outputs accumulate under `benchmarks/gap_analysis/`:
 
 - `results.json`: each invocation's settings, answer and evidence S3 paths, token counts, errors,
