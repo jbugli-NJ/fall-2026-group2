@@ -67,8 +67,8 @@ def hazard_code_name_map() -> dict[str, str]:
 
 DISASTER_LIMIT = 10
 EVIDENCE_SCOPE = (
-    f'Disaster records cover up to {DISASTER_LIMIT} of the most recent disasters '
-    'with the selected external source.'
+    f'These records are a sample of up to {DISASTER_LIMIT} recent disasters with the '
+    f'selected external source and up to {DISASTER_LIMIT} IFRC response events.'
 )
 
 type EvidenceQuery = Literal[
