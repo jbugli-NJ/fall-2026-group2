@@ -1,6 +1,7 @@
 MATCH (event:Event)-[:IN_COUNTRY]->(country:Country)
 MATCH (event)-[:HAS_HAZARD]->(hazard:Hazard)
 WHERE ($country_code IS NULL OR country.code = $country_code)
+  AND country.code <> 'UNK'
   AND ($hazard_name IS NULL OR $hazard_code_name_map[hazard.code] = $hazard_name)
   AND $hazard_code_name_map[hazard.code] IS NOT NULL
   AND ($from_date IS NULL OR date(event.start_datetime) >= $from_date)
