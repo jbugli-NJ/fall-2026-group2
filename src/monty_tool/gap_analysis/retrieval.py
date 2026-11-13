@@ -7,6 +7,7 @@ Utilities to retrieve context for country and hazard comparisons.
 from copy import deepcopy
 from datetime import date
 from importlib.resources import files
+import logging
 from typing import Literal, LiteralString, TypedDict, cast
 
 from neo4j import Driver, RoutingControl
@@ -22,17 +23,26 @@ from monty_tool.gap_analysis.schemas import (
     EventEvidence, Evidence, NewsEvidence, ResponseEvidence,
 )
 
+logger = logging.getLogger(__name__)
 
-# Name mapping
 
-# NOTE: IFRC uses disaster type names rather than Montandon hazard codes.
-RESPONSE_HAZARD_NAMES = {
-    'Wildfires': ['fire', 'forest fire', 'wildfire', 'wildfires'],
-    'Cyclone': ['cyclone', 'tropical cyclone', 'extratropical cyclone'],
-    'Flooding': ['flood', 'floods', 'flooding', 'flash flood'],
-    'Earthquake': ['earthquake'],
-    'Volcanic eruption': ['volcanic eruption', 'volcano'],
-    'Drought': ['drought'],
+# Hazard mapping
+
+# NOTE: This maps Montandon hazard names to GO disaster type IDs
+RESPONSE_HAZARD_IDS: dict[str, list[int]] = {
+    'Earthquake': [2],
+    'Cyclone': [4],
+    'Civil Unrest': [7],
+    'Volcanic eruption': [8],
+    'Tsunami': [11],
+    'Flooding': [12],
+    'Cold Wave': [14],
+    'Fire': [15],
+    'Heatwave': [19],
+    'Drought': [20],
+    'Storm Surge': [23],
+    'Gravitational Mass Movement (Landslide)': [24],
+    'Insect Pest Infestations': [62],
 }
 
 
@@ -76,7 +86,7 @@ class RetrievalParameters(TypedDict):
     to_date: date | None
     hazard_name: str
     hazard_code_name_map: dict[str, str]
-    response_hazard_names: list[str]
+    response_hazard_ids: list[int]
     external_source: ExternalSourceName
     disaster_limit: int
     event_ids: list[str]
@@ -116,6 +126,9 @@ def retrieve_evidence(
     """
     if filters.country_code is None:
         raise ValueError('Evidence retrieval requires a country code.')
+    response_hazard_ids = list(RESPONSE_HAZARD_IDS.get(hazard_name, []))
+    if not response_hazard_ids:
+        logger.warning(f"No GO disaster type mapping for {hazard_name=}")
     parameters: RetrievalParameters = {
         'country_code': filters.country_code,
         'from_date': filters.from_date,
@@ -125,9 +138,7 @@ def retrieve_evidence(
         'disaster_limit': DISASTER_LIMIT,
         'event_ids': [],
         'hazard_code_name_map': hazard_code_name_map(),
-        'response_hazard_names': RESPONSE_HAZARD_NAMES.get(
-            hazard_name, [hazard_name.lower()],
-        ),
+        'response_hazard_ids': response_hazard_ids,
     }
     with get_graph_db_driver() as driver:
         evidence: Evidence = {

@@ -1,5 +1,5 @@
 MATCH (event:GOEvent)-[:IN_COUNTRY]->(:Country {code: $country_code})
-WHERE toLower(trim(event.disaster_type_name)) IN $response_hazard_names
+WHERE event.disaster_type_id IN $response_hazard_ids
   AND ($from_date IS NULL OR date(event.start_datetime) >= date($from_date))
   AND ($to_date IS NULL OR date(event.start_datetime) <= date($to_date))
 WITH DISTINCT event
