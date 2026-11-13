@@ -33,7 +33,7 @@ from monty_tool.news.s3_storage import (
     upload_media_cloud_snapshot,
 )
 from monty_tool.news.verification import EventJudge, JudgeResult, make_qwen_event_judge
-from monty_tool.tools.resources import get_env_bucket_prefix
+from monty_tool.tools.resources import get_env_bucket_name, get_env_bucket_prefix
 from monty_tool.utils.versions import FrozenModel
 
 PAGE_SIZE = 100
@@ -208,18 +208,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     ):
         parser.error("--collection must be a collection name, not a path.")
 
-    bucket_name = os.getenv("AWS_BUCKET", "").strip()
     raw_prefix = get_env_bucket_prefix().rstrip("/")
     upload_prefix = (
         args.s3_prefix if args.s3_prefix is not None else raw_prefix
     ).strip().strip("/")
     needs_s3 = args.cache_dir is None or args.s3_upload
-    if needs_s3 and not bucket_name:
-        parser.error("Set AWS_BUCKET explicitly for S3 access.")
     if args.s3_upload and not upload_prefix:
         parser.error("--s3-prefix must not be blank.")
 
-    bucket: S3Bucket | None = get_bucket(bucket_name) if needs_s3 else None
+    bucket: S3Bucket | None = get_bucket(get_env_bucket_name()) if needs_s3 else None
     source_context = (
         nullcontext(str(args.cache_dir)) if args.cache_dir is not None
         else TemporaryDirectory()

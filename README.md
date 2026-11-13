@@ -93,8 +93,8 @@ multiple collection IDs. `--no-geometry` produces `.nogeom.jsonl.gz` files;
 
 ### Collecting Media Cloud news from S3 disaster records
 
-The news collector reads `<AWS_BUCKET_PREFIX>/raw/<collection>.jsonl.gz` from `AWS_BUCKET`.
-Set those variables and AWS credentials as described above.
+The news collector reads `<AWS_BUCKET_PREFIX>/raw/<collection>.jsonl.gz` from
+`AWS_BUCKET` (default: `dats-capstone`). Set AWS credentials as described above.
 For execution, obtain a personal [Media Cloud API key](https://www.mediacloud.org/documentation/search-api-guide)
 and set `MEDIACLOUD_API_KEY` locally.
 

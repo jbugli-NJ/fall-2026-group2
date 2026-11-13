@@ -222,13 +222,17 @@ def test_exact_event_selection_and_missing_id(environment, capsys):
         cli.main([*args, "--dry-run", "--event-id", "missing"])
 
 
-def test_s3_raw_input_uses_explicit_configuration(environment, monkeypatch, capsys):
+@pytest.mark.parametrize("bucket_name", [None, "", "test-bucket"])
+def test_s3_raw_input_uses_configured_or_default_bucket(
+    environment, monkeypatch, capsys, bucket_name,
+):
     args, load, collect, _, get_bucket, bucket, download, _ = environment
     args = [*args[:2], *args[4:]]  # Remove only --cache-dir and its value.
-    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
+    if bucket_name is not None:
+        monkeypatch.setenv("AWS_BUCKET", bucket_name)
     monkeypatch.setenv("AWS_BUCKET_PREFIX", " /test-owner/ ")
     assert cli.main([*args, "--dry-run"]) == 0
-    get_bucket.assert_called_once_with("test-bucket")
+    get_bucket.assert_called_once_with(bucket_name or "dats-capstone")
     assert download.call_args.args[:2] == (bucket, "test-owner/raw/emdat-events.nogeom.jsonl.gz")
     assert load.call_args.kwargs["geometry"] is False
     assert not download.call_args.args[2].exists()
@@ -311,13 +315,13 @@ def test_exact_s3_run_is_reused_without_new_requests(environment, monkeypatch, t
     model.assert_not_called()
 
 
-def test_s3_upload_uses_shared_default_prefix(environment, monkeypatch, capsys):
-    args, _, _, _, _, bucket, _, _ = environment
-    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
+def test_s3_upload_uses_shared_defaults(environment, capsys):
+    args, _, _, _, get_bucket, bucket, _, _ = environment
     assert cli.main([*args, *EXECUTE, "--s3-upload"]) == 0
     output = json.loads(capsys.readouterr().out)
     key = "shared/group2/media_cloud_articles/current/emdat-events/event-a.json"
     assert output["saved"][0]["s3_key"] == key
+    get_bucket.assert_called_once_with("dats-capstone")
     assert bucket.upload_file.call_args.args[1] == key
 
 
