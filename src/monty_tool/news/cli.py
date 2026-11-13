@@ -36,6 +36,8 @@ from monty_tool.news.verification import EventJudge, JudgeResult, make_qwen_even
 from monty_tool.tools.resources import get_env_bucket_prefix
 from monty_tool.utils.versions import FrozenModel
 
+PAGE_SIZE = 100
+
 
 def positive_int(value: str) -> int:
     number = int(value)
@@ -54,7 +56,11 @@ def non_negative_int(value: str) -> int:
 def deferred_judge(
     event: EventContext, story: MediaCloudStory, body_text: str,
 ) -> JudgeResult:
-    return "uncertain", "Verification explicitly deferred; no model judgment performed.", None
+    return (
+        "uncertain",
+        "Verification explicitly deferred; no model judgment performed.",
+        None,
+    )
 
 
 def load_qwen_judge(model: str) -> EventJudge:
@@ -68,38 +74,116 @@ def load_qwen_judge(model: str) -> EventJudge:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--dry-run", action="store_true", help="Show searches without news requests or writes.")
-    mode.add_argument("--execute", action="store_true", help="Save local snapshots; S3 upload is opt-in.")
-    parser.add_argument("--collection", required=True, help="Montandon collection, e.g. emdat-events.")
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview searches.",
+    )
+    mode.add_argument(
+        "--execute",
+        action="store_true",
+        help="Collect articles and save results.",
+    )
+    parser.add_argument(
+        "--collection",
+        required=True,
+        help="Disaster collection, e.g. gdacs-events.",
+    )
     source = parser.add_mutually_exclusive_group()
-    source.add_argument("--cache-dir", type=Path, help="Read existing local raw data instead of S3.")
-    source.add_argument("--s3-source-key", help="Explicit raw-data S3 key; requires AWS_BUCKET.")
-    parser.add_argument("--no-geometry", action="store_true")
-    parser.add_argument("--start-date", type=date.fromisoformat, required=True)
-    parser.add_argument("--end-date", type=date.fromisoformat, required=True)
-    parser.add_argument("--event-id", action="append", help="Select exact raw record ID; repeat for more events.")
-    parser.add_argument("--random", action="store_true")
-    parser.add_argument("--max-records", type=positive_int)
-    parser.add_argument("--days-before", type=non_negative_int, default=1)
-    parser.add_argument("--days-after", type=non_negative_int, default=3)
-    parser.add_argument("--media-collection-id", type=positive_int, action="append", required=True,
-                        help="Media Cloud source collection ID; repeat to include more collections.")
-    parser.add_argument("--page-size", type=positive_int, default=100)
-    parser.add_argument("--max-pages", type=positive_int, default=1, help="Maximum search pages per event.")
-    parser.add_argument("--request-limit", type=positive_int,
-                        help="Maximum Media Cloud search requests across this run; required for execution.")
-    parser.add_argument("--max-body-attempts", type=non_negative_int,
-                        help="Maximum publisher fetch attempts per event; required for execution.")
+    source.add_argument(
+        "--cache-dir",
+        type=Path,
+        help="Local disaster data instead of S3.",
+    )
+    source.add_argument(
+        "--s3-source-key",
+        help="S3 key for disaster data.",
+    )
+    parser.add_argument(
+        "--no-geometry",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--start-date",
+        type=date.fromisoformat,
+        required=True,
+    )
+    parser.add_argument(
+        "--end-date",
+        type=date.fromisoformat,
+        required=True,
+    )
+    parser.add_argument(
+        "--event-id",
+        action="append",
+        help="Disaster ID; repeat for multiple events.",
+    )
+    parser.add_argument(
+        "--random",
+        action="store_true",
+        help="Shuffle disasters before searching.",
+    )
+    parser.add_argument(
+        "--days-before",
+        type=non_negative_int,
+        default=1,
+    )
+    parser.add_argument(
+        "--days-after",
+        type=non_negative_int,
+        default=3,
+    )
+    parser.add_argument(
+        "--media-collection-id",
+        type=positive_int,
+        action="append",
+        required=True,
+        help="Publisher collection ID; repeat to combine.",
+    )
+    parser.add_argument(
+        "--request-limit",
+        type=positive_int,
+        help="Search requests per run (required with --execute).",
+    )
+    parser.add_argument(
+        "--max-body-attempts",
+        type=non_negative_int,
+        default=3,
+        help="Article fetch attempts per disaster (default: 3).",
+    )
     judge = parser.add_mutually_exclusive_group()
-    judge.add_argument("--model", choices=[
-        FrozenModel.QWEN3_1_7B.value, FrozenModel.QWEN3_5_4B.value, FrozenModel.QWEN3_5_9B.value,
-    ])
-    judge.add_argument("--defer-verification", action="store_true",
-                       help="Preserve evidence as uncertain without loading Qwen.")
-    parser.add_argument("--output-dir", type=Path, default=Path("outputs/media-cloud"))
-    parser.add_argument("--refresh", action="store_true", help="Collect again and replace the event's current snapshot.")
-    parser.add_argument("--s3-upload", action="store_true", help="Use S3 current snapshots for reuse and upload new results.")
-    parser.add_argument("--s3-prefix", help="Upload folder; defaults to AWS_BUCKET_PREFIX or shared/group2/.")
+    judge.add_argument(
+        "--model",
+        choices=[
+            FrozenModel.QWEN3_1_7B.value,
+            FrozenModel.QWEN3_5_4B.value,
+            FrozenModel.QWEN3_5_9B.value,
+        ],
+    )
+    judge.add_argument(
+        "--defer-verification",
+        action="store_true",
+        help="Save candidates without model verification.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("outputs/media-cloud"),
+    )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Replace cached results.",
+    )
+    parser.add_argument(
+        "--s3-upload",
+        action="store_true",
+        help="Reuse S3 snapshots and upload results.",
+    )
+    parser.add_argument(
+        "--s3-prefix",
+        help="S3 folder (default: AWS_BUCKET_PREFIX or shared/group2/).",
+    )
     return parser
 
 
@@ -109,22 +193,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.start_date > args.end_date:
         parser.error("--start-date must not be later than --end-date.")
-    if args.page_size > 100:
-        parser.error("--page-size must be between 1 and 100.")
-    if args.execute and (args.request_limit is None or args.max_body_attempts is None):
-        parser.error("--execute requires --request-limit and --max-body-attempts.")
+    if args.execute and args.request_limit is None:
+        parser.error("--execute requires --request-limit.")
     if args.execute and args.model is None and not args.defer_verification:
         parser.error("--execute requires --model or --defer-verification.")
     if args.s3_upload and not args.execute:
         parser.error("--s3-upload requires --execute.")
     if args.s3_prefix is not None and not args.s3_upload:
         parser.error("--s3-prefix requires --s3-upload.")
-    if not args.collection.strip() or Path(args.collection).name != args.collection or args.collection in {".", ".."}:
+    if (
+        not args.collection.strip()
+        or Path(args.collection).name != args.collection
+        or args.collection in {".", ".."}
+    ):
         parser.error("--collection must be a collection name, not a path.")
 
     bucket_name = os.getenv("AWS_BUCKET", "").strip()
     raw_prefix = get_env_bucket_prefix().rstrip("/")
-    upload_prefix = (args.s3_prefix if args.s3_prefix is not None else raw_prefix).strip().strip("/")
+    upload_prefix = (
+        args.s3_prefix if args.s3_prefix is not None else raw_prefix
+    ).strip().strip("/")
     needs_s3 = args.cache_dir is None or args.s3_upload
     if needs_s3 and not bucket_name:
         parser.error("Set AWS_BUCKET explicitly for S3 access.")
@@ -145,7 +233,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             download_object(bucket, key, raw_cache_path(
                 args.collection, cache_dir=cache_dir, geometry=not args.no_geometry,
             ))
-        records = load_collection(args.collection, cache_dir=cache_dir, geometry=not args.no_geometry)
+        records = load_collection(
+            args.collection,
+            cache_dir=cache_dir,
+            geometry=not args.no_geometry,
+        )
         if args.event_id:
             requested = set(args.event_id)
             matching = [record for record in records if record.get("id") in requested]
@@ -155,7 +247,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             records = iter(matching)
         events = select_disaster_records(
             records, start_date=args.start_date, end_date=args.end_date,
-            max_records=args.max_records, randomize=args.random,
+            randomize=args.random,
         )
         jobs = prepare_media_cloud_jobs(
             events, collection_ids=args.media_collection_id,
@@ -165,8 +257,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         print(json.dumps({
             "mode": "dry_run", "provider": "media_cloud", "planned_jobs": len(jobs),
-            "media_cloud_requests_made": 0, "page_size": args.page_size,
-            "max_pages_per_event": args.max_pages, "request_limit": args.request_limit,
+            "media_cloud_requests_made": 0, "page_size": PAGE_SIZE,
+            "max_pages_per_event": 1, "request_limit": args.request_limit,
             "output_dir": str(args.output_dir),
             "jobs": [job.model_dump(mode="json") for job in jobs],
         }, ensure_ascii=False, indent=2))
@@ -188,13 +280,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     requests_made = 0
     stop_reason = "completed"
     for job in jobs:
-        remaining = args.request_limit - requests_made
-        if remaining <= 0:
+        if requests_made >= args.request_limit:
             stop_reason = "budget_exhausted"
             break
         settings: MediaCloudRunSettings = {
-            "page_size": args.page_size,
-            "max_pages": min(args.max_pages, remaining),
+            "page_size": PAGE_SIZE,
+            "max_pages": 1,
             "max_body_attempts": args.max_body_attempts,
             "verification_mode": verification_mode,
         }
@@ -229,7 +320,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     judge = load_qwen_judge(args.model)
                 result = run_media_cloud_job(
                     job, judge=judge, max_body_attempts=args.max_body_attempts,
-                    page_size=args.page_size, max_pages=settings["max_pages"],
+                    page_size=settings["page_size"], max_pages=settings["max_pages"],
                 )
                 requests_made += result.pages_fetched
                 snapshot = save_media_cloud_snapshot(
@@ -239,7 +330,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             entry: dict[str, object] = {
                 "event_id": job.event.item_id, "snapshot": str(snapshot),
                 "candidates": len(result.assessments),
-                "decisions": dict(Counter(item.decision.status for item in result.assessments)),
+                "decisions": dict(Counter(
+                    item.decision.status for item in result.assessments
+                )),
                 "has_more_pages": bool(result.next_page_token),
                 "verification_mode": "deferred" if args.defer_verification else "qwen",
                 "reused_from": reused_from,
@@ -261,8 +354,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "local_snapshot": str(snapshot) if snapshot is not None else None,
             }, ensure_ascii=False, indent=2))
             return 1
-    print(json.dumps({"stop_reason": stop_reason, "requests_made": requests_made, "saved": saved},
-                     ensure_ascii=False, indent=2))
+    print(json.dumps(
+        {"stop_reason": stop_reason, "requests_made": requests_made, "saved": saved},
+        ensure_ascii=False,
+        indent=2,
+    ))
     return 0
 
 
