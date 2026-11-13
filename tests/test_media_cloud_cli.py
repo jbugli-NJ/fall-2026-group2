@@ -87,10 +87,12 @@ def test_local_dry_run_never_collects_loads_model_or_uses_s3(environment, tmp_pa
 
 def test_execute_saves_body_and_unavailable_candidate(environment, capsys):
     args, _, collect, model, get_bucket, _, _, _ = environment
-    assert cli.main([*args, *EXECUTE]) == 0
+    assert cli.main([*args, "--execute", "--request-limit", "1", "--defer-verification"]) == 0
     output = json.loads(capsys.readouterr().out)
     saved = output["saved"][0]
     restored = read_media_cloud_snapshot(Path(saved["snapshot"]))
+    report = json.loads(Path(saved["snapshot"]).read_text())
+    assert report["request_settings"]["max_body_attempts"] == 3
     assert saved["decisions"] == {"uncertain": 2}
     assert saved["verification_mode"] == "deferred"
     assert saved["has_more_pages"] is True
@@ -193,6 +195,7 @@ def test_legacy_local_snapshots_are_not_reused(environment, monkeypatch, capsys)
     [], ["--execute"],
     ["--execute", "--request-limit", "1", "--max-body-attempts", "0"],
     ["--dry-run", "--page-size", "101"],
+    ["--dry-run", "--max-records", "1"],
     ["--dry-run", "--s3-upload"],
     ["--dry-run", "--refresh-hours", "24"],
     ["--dry-run", "--max-pages", "0"],
@@ -328,14 +331,19 @@ def test_upload_failure_preserves_local_snapshot(environment, monkeypatch, capsy
     assert Path(output["local_snapshot"]).is_file()
 
 
-def test_total_request_budget_stops_before_next_event(environment, capsys):
+@pytest.mark.parametrize("empty_results", [False, True])
+def test_total_request_budget_stops_before_next_event(environment, capsys, empty_results):
     args, load, collect, _, _, _, _, pause = environment
     load.side_effect = lambda *_a, **_k: iter([record(), record("event-b")])
-    assert cli.main([*args, *EXECUTE, "--max-pages", "10", "--max-body-attempts", "0"]) == 0
+    if empty_results:
+        collect.return_value = collect.return_value.model_copy(update={"stories": []})
+    assert cli.main([*args, *EXECUTE, "--max-body-attempts", "0"]) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["stop_reason"] == "budget_exhausted"
+    assert output["requests_made"] == 1
     assert collect.call_count == 1
     assert collect.call_args.kwargs["max_pages"] == 1
+    assert collect.call_args.kwargs["page_size"] == cli.PAGE_SIZE
     pause.assert_not_called()
 
 

@@ -113,10 +113,12 @@ uv run python -m monty_tool.news.cli --dry-run \
 ```
 `--dry-run` reads the disaster data and shows planned searches without making
 Media Cloud requests or saving results. To collect and classify, use `--execute`
-instead and supply a Qwen `--model`, a run-wide `--request-limit`, and a
-per-event `--max-body-attempts`. Add `--s3-upload` to save results to S3;
-otherwise results are saved locally. Use `--refresh` to recollect and replace
-an event's current snapshot.
+instead and supply a Qwen `--model` and a run-wide `--request-limit`.
+Each disaster gets one search page of up to 100 candidates and up to three article-fetch
+attempts; override the latter with `--max-body-attempts`. Empty searches count toward
+the request limit. Use `--random` to search disasters in random order.
+Add `--s3-upload` to reuse matching S3 snapshots and upload new results;
+otherwise results are saved locally. Use `--refresh` to recollect an event's snapshot.
 
 Choose collection IDs that cover the events of interest: the US collection
 alone does not provide global publisher coverage. If the raw input is a
