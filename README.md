@@ -232,7 +232,7 @@ Questions support EAP planning by country and hazard, using past disasters as ev
 Hazards without a known name are skipped before applying the limit.
 Date filters bound historical disaster event start dates.
 
-The evaluation pipeline retrieves up to 20 of the most recent disasters for each country and hazard combination.
+The evaluation pipeline retrieves up to 10 of the most recent disasters for each country and hazard combination.
 Each question is answered using those core records, then again with the external evidence.
 
 By default, each country and hazard must have stored data for every selected external source.
