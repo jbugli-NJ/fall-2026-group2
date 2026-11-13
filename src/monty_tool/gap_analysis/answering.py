@@ -154,6 +154,10 @@ def answer_question(
         prompt = json.dumps({
             'question': question.question,
             'scope': EVIDENCE_SCOPE,
+            'instructions': (
+                'Give the best answer supported by this sample of recent disasters. '
+                'Answer based on the provided context only; do not decline due to incomplete evidence. '
+            ),
             'external_source': external_source,
             'records': supplied,
         }, ensure_ascii=False, default=str)
