@@ -23,12 +23,13 @@ investigate which information needs remain unanswered in
 Montandon-based disaster question answering and whether external
 sources help address those gaps.
 
-We construct a Neo4j graph that connects Montandon disaster and impact
+We construct a Neo4j graph that integrates Montandon disaster and impact
 records with IFRC GO response information, news articles, NASA POWER
 weather data, and disaster footprints. A language-model assistant uses
 predefined graph-query tools to retrieve evidence and answer questions.
-For country--hazard contexts, we compare answers produced with the core
-graph against answers produced when one external source is enabled.
+For each selected country and hazard type, we compare answers
+produced with the core sources against answers produced when news,
+weather, or external spatial footprints are enabled separately.
 The comparison examines both the answers and the evidence retrieved
 for five EAP-related question areas.
 \end{abstract}
@@ -41,12 +42,16 @@ question answering, external data, Early Action Protocols.
 \section{Introduction}
 
 Disaster preparedness requires more than knowing when and where a
-hazard occurred. Planners also need evidence about affected places and
-people, past response activities, participating organizations, and
-available financing. An Early Action Protocol (EAP) specifies
-prearranged actions and resources for acting ahead of a forecast
-hazard. Historical disaster and response records can inform several
-parts of that planning process \cite{undrr2015sendai}.
+hazard occurred \cite{undrr2015sendai}. An Early Action Protocol
+(EAP) is a pre-agreed plan for a specific hazard that specifies when
+early actions should be triggered, what actions should be taken, and
+what resources are needed \cite{ifrcAnticipatoryPillar}. Developing
+such a plan requires evidence about the areas and people affected by
+past disasters, the impacts they experienced, response activities,
+participating organizations, and financing. To address questions
+relevant to EAP development, we link disaster and response records
+with complementary external sources and retrieve historical evidence
+across them.
 
 The Montandon Global Crisis Data Bank brings together structured
 records from multiple disaster-related collections. Nevertheless, a
@@ -60,11 +65,15 @@ answer a particular question is an empirical issue.
 This paper asks which information needs remain unanswered in
 Montandon-based disaster question answering and how selected external
 sources help address them. We build a graph-based question-answering
-system around Montandon records and compare answers to the same
-country--hazard question under different source-access conditions.
-The analysis focuses on information relevant to EAP development,
-including hazard context, vulnerability, coordination, early actions,
-and financing.
+system around Montandon records. For evaluation, we select a country
+and a hazard type and apply the same five preparedness-question
+templates to each selected pair. These templates address hazard
+context and timing, affected areas and vulnerable groups, responding
+organizations and coordination, past actions and needs, and appeal
+funding and people targeted. For each resulting question, we compare
+an answer produced with the core sources against answers produced
+when news, weather, or external spatial footprints are enabled
+separately.
 
 The contributions of this work are threefold. First, we construct a
 graph representation that connects disaster events with impacts,
