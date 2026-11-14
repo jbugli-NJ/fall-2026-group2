@@ -260,6 +260,9 @@ Hand-label judged pairs in the terminal with:
 uv run label-gap-analysis
 ```
 
+Unlabeled pairs are shown in random order by default (`--random`).
+Use `--no-random` to review them in results-file order.
+
 Labels save to `human_judgments.json` beside the results, with one judgment per pair.
 On startup, labels for pairs no longer present in the results (or with a dated rubric) are deleted.
 `human_judgments.svg` shows human vs. LLM judging comparison.

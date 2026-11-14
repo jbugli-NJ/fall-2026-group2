@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import random
 import subprocess
 from typing import Literal
 
@@ -273,7 +274,7 @@ def git_email() -> str:
     return email
 
 
-def run_labeling(results_path: Path) -> None:
+def run_labeling(results_path: Path, randomize: bool = True) -> None:
     """
     Load results, resume human labeling, and report agreement with the LLM.
     """
@@ -283,13 +284,17 @@ def run_labeling(results_path: Path) -> None:
 
     judgments = remove_stale_judgments(judgments=judgments, pairs=index_pairs(runs=runs))
     judged_pairs = pairs_for_comparison(runs=runs)
-    pending_pairs = filter_unlabeled_pairs(pairs=judged_pairs, judgments=judgments)
+    pending_pairs = list(
+        filter_unlabeled_pairs(pairs=judged_pairs, judgments=judgments).items(),
+    )
+    if randomize:
+        random.shuffle(pending_pairs)
     save_progress(path=labels_path, judgments=judgments, pairs=judged_pairs)
     if pending_pairs:
         email = git_email()
         print(RUBRIC)
         try:
-            for index, (identity, pair) in enumerate(pending_pairs.items(), 1):
+            for index, (identity, pair) in enumerate(pending_pairs, 1):
                 print(f'\nPair {index}/{len(pending_pairs)}')
                 contribution = review_pair(pair=pair)
                 if contribution == 'quit':
@@ -319,9 +324,13 @@ def main(argv: list[str] | None = None) -> None:
         default=Path('benchmarks/gap_analysis/results.json'),
         help='Results JSON; defaults to benchmarks/gap_analysis/results.json.',
     )
+    parser.add_argument(
+        '--random', action=argparse.BooleanOptionalAction, default=True,
+        help='Randomize the order of unlabeled pairs (default: enabled).',
+    )
     args = parser.parse_args(argv)
     try:
-        run_labeling(results_path=args.results)
+        run_labeling(results_path=args.results, randomize=args.random)
     except Exception as e:
         parser.exit(status=1, message=f'Cannot label results: {e}\n')
 
