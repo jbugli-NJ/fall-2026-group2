@@ -55,29 +55,29 @@
 
   <!-- The event's ordinary context links fan out below it. -->
   <path class="branch" d="M518 448 V512 H109 M518 512 H551"/>
-  <path class="edge" d="M109 512 V595"/>
-  <path class="edge" d="M330 512 V595"/>
-  <path class="edge" d="M551 512 V595"/>
+  <path class="edge" d="M109 512 V540"/>
+  <path class="edge" d="M330 512 V540"/>
+  <path class="edge" d="M551 512 V540"/>
 
   <text class="rel" x="24" y="574">HAS_HAZARD</text>
   <text class="rel" x="235" y="574">IN_COUNTRY</text>
   <text class="rel" x="470" y="574">STARTED_ON</text>
 
   <rect class="node" x="24" y="604" width="170" height="68"/>
-  <text class="name" x="40" y="645">Hazard</text>
+  <text class="name" x="109" y="647" text-anchor="middle">Hazard</text>
   <rect class="node" x="230" y="604" width="200" height="68"/>
-  <text class="name" x="246" y="645">Country</text>
+  <text class="name" x="330" y="647" text-anchor="middle">Country</text>
   <rect class="node" x="466" y="604" width="170" height="68"/>
-  <text class="name" x="482" y="645">EventDay</text>
+  <text class="name" x="551" y="647" text-anchor="middle">EventDay</text>
 
   <!-- IFRC GO records share a country, not a disaster-event identifier. -->
   <rect class="node" x="230" y="774" width="200" height="68"/>
-  <text class="name" x="246" y="815">GOEvent</text>
+  <text class="name" x="330" y="817" text-anchor="middle">GOEvent</text>
   <rect class="node" x="466" y="774" width="170" height="68"/>
-  <text class="name" x="482" y="815">GOAppeal</text>
-  <path class="edge" d="M330 774 V680"/>
+  <text class="name" x="551" y="817" text-anchor="middle">GOAppeal</text>
+  <path class="edge" d="M330 774 V672"/>
   <text class="rel" x="345" y="738">IN_COUNTRY</text>
-  <path class="edge" d="M466 808 H438"/>
+  <path class="edge" d="M466 808 H430"/>
   <text class="rel" x="470" y="758">FOR_EVENT</text>
 
   <line x1="24" y1="863" x2="636" y2="863" stroke="#777" stroke-width="1"/>
