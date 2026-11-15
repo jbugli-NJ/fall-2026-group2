@@ -71,10 +71,19 @@ def yearly_counts() -> dict[str, dict[int, int]]:
     return counts
 
 
+def first_year(by_year: dict[int, int]) -> int:
+    """
+    The first plotted year with any records, or after the last year if none.
+    """
+    years = [year for year, records in by_year.items() if records and year >= FIRST_YEAR]
+    return min(years, default=LAST_YEAR + 1)
+
+
 def plot() -> None:
     counts = yearly_counts()
     years = list(range(FIRST_YEAR, LAST_YEAR + 1))
-    names = list(SOURCES)
+    # Oldest coverage first, so the rows step down as sources begin.
+    names = sorted(SOURCES, key=lambda name: (first_year(counts[SOURCES[name]]), name))
     grid = [[counts[SOURCES[name]].get(year, 0) for year in years] for name in names]
     masked = [[value if value > 0 else float('nan') for value in row] for row in grid]
 

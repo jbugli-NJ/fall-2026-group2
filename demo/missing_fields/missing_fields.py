@@ -74,6 +74,10 @@ FIRST_YEAR = 1800
 # (e.g. DesInventar's 0001-01-01 and 2202-01-01).
 PLACEHOLDER_BUCKET = 'placeholder'
 
+# A check counts as a largest gap when at least this share of a
+# collection's records fail it.
+MAJORITY_PERCENT = 50
+
 # Wider than this, a bounding box is regional or national rather than
 # event-shaped; same cut-off as demo/geo_footprints/coverage_survey.py.
 COARSE_KM = 200
@@ -426,13 +430,49 @@ def write_csv(rows: list[dict[str, Any]]) -> None:
 
 def percent(count: int, records: int) -> str:
     """
-    Whole percent, but '<1' rather than '0' so a rare problem stays visible.
+    Whole percent of records, or the record count when the share would
+    round to 0%, so a rare problem stays visible.
     """
     if not records:
         return '–'
     if 0 < count < records / 200:
-        return '<1'
-    return f'{100 * count / records:.0f}'
+        return f"{count:,} record{'s' if count > 1 else ''}"
+    return f'{100 * count / records:.0f}%'
+
+
+def source_of(collection: str) -> str:
+    """
+    The source a collection belongs to, e.g. `usgs` for `usgs-hazards`.
+    """
+    for suffix in RECORD_SUFFIXES:
+        if collection.endswith(suffix):
+            return collection.removesuffix(suffix)
+    return collection
+
+
+def largest_gaps(totals: dict[str, Counter[str]], threshold: int = MAJORITY_PERCENT) -> list[str]:
+    """
+    One line per check that at least `threshold` percent of some
+    collection's records fail, naming each source once (its events,
+    hazards and impacts merged into a range), worst first.
+    """
+    lines = []
+    for check, meaning in CHECKS.items():
+        shares: dict[str, list[float]] = {}
+        for collection, counts in totals.items():
+            if not counts['records']:
+                continue
+            share = 100 * counts[check] / counts['records']
+            if share >= threshold:
+                shares.setdefault(source_of(collection), []).append(share)
+        if not shares:
+            continue
+        named = []
+        for source, values in sorted(shares.items(), key=lambda item: (-max(item[1]), item[0])):
+            low, high = round(min(values)), round(max(values))
+            named.append(f'{source} ({high}%)' if low == high else f'{source} ({low}–{high}%)')
+        lines.append(f"- **{meaning[0].upper()}{meaning[1:]}:** {', '.join(named)}")
+    return lines
 
 
 def write_report(rows: list[dict[str, Any]], run_dates: list[str]) -> None:
@@ -451,7 +491,18 @@ def write_report(rows: list[dict[str, Any]], run_dates: list[str]) -> None:
         '# Montandon missing fields',
         '',
         f"Snapshot of the staging API on {', '.join(run_dates)}. USGS is limited to M{USGS_MIN_MAGNITUDE}+.",
-        'Percent of records with each problem; per-year counts are in `missing_fields.csv`.',
+        'Per-year counts are in `missing_fields.csv`.',
+        '',
+        '## Largest gaps',
+        '',
+        f'Checks that {MAJORITY_PERCENT}% or more of a collection\'s records fail. Each source is named once; a range spans its events, hazards and impacts collections at or above that level.',
+        '',
+        *largest_gaps(totals),
+        '',
+        '## All checks',
+        '',
+        'Each cell is the share of a collection\'s records that fail the check.',
+        'Where that share would round to 0%, the cell gives the number of records instead.',
         '',
         '| Check | Meaning |', '|---|---|',
         *[f'| `{check}` | {meaning} |' for check, meaning in CHECKS.items()],
