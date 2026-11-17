@@ -221,3 +221,17 @@ __marimo__/
 data/
 outputs/
 .claude/
+
+# Generated research paper files
+/research_paper/Latex/Paper.pdf
+/research_paper/Latex/Paper.aux
+/research_paper/Latex/Paper.bbl
+/research_paper/Latex/Paper.blg
+/research_paper/Latex/Paper.fdb_latexmk
+/research_paper/Latex/Paper.fls
+/research_paper/Latex/Paper.log
+/research_paper/Latex/Paper.out
+/research_paper/Latex/Paper.synctex.gz
+/research_paper/Latex/Paper.w18
+/research_paper/Latex/svg-inkscape/
+/research_paper/Latex/fig/*.pdf

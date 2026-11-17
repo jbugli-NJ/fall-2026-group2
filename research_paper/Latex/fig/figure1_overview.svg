@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="830" viewBox="0 0 660 830" role="img" aria-labelledby="title desc">
+  <title id="title">Project workflow</title>
+  <desc id="desc">Montandon and external sources are prepared, stored as source snapshots, represented in Neo4j, retrieved by an LLM using predefined Cypher tools, and compared in paired source-enabled evaluations.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0 0 L9 4.5 L0 9 Z" fill="#222"/>
+    </marker>
+  </defs>
+  <style>
+    .box { fill: #fff; stroke: #222; stroke-width: 1.7; }
+    .core { fill: #f1f1f1; }
+    .edge { fill: none; stroke: #222; stroke-width: 1.8; marker-end: url(#arrow); }
+    .join { fill: none; stroke: #222; stroke-width: 1.8; }
+    .head { font-family: Arial, Helvetica, sans-serif; font-size: 27px; font-weight: 700; fill: #111; }
+    .body { font-family: Arial, Helvetica, sans-serif; font-size: 21px; fill: #222; }
+  </style>
+
+  <rect class="box core" x="25" y="28" width="285" height="116"/>
+  <text class="head" x="43" y="63">Montandon</text>
+  <text class="body" x="43" y="99">EM-DAT, GDACS, IFRC</text>
+  <text class="body" x="43" y="127">CEMS/GDACS footprints</text>
+
+  <rect class="box" x="350" y="28" width="285" height="116"/>
+  <text class="head" x="368" y="63">External sources</text>
+  <text class="body" x="368" y="99">IFRC GO, Media Cloud</text>
+  <text class="body" x="368" y="127">NASA POWER, USGS</text>
+
+  <path class="join" d="M167 144 V174 H330 M493 144 V174 H330"/>
+  <path class="edge" d="M330 174 V208"/>
+
+  <rect class="box" x="100" y="216" width="460" height="84"/>
+  <text class="head" x="121" y="252">Source-specific preparation</text>
+  <text class="body" x="121" y="281">Validate, classify, summarize, match</text>
+
+  <path class="edge" d="M330 300 V348"/>
+  <rect class="box" x="100" y="356" width="460" height="66"/>
+  <text class="head" x="121" y="396">Prepared records in S3</text>
+
+  <path class="edge" d="M330 422 V470"/>
+  <rect class="box core" x="100" y="478" width="460" height="76"/>
+  <text class="head" x="121" y="513">Neo4j evidence graph</text>
+  <text class="body" x="121" y="541">Nodes, properties, relationships</text>
+
+  <path class="edge" d="M330 554 V602"/>
+  <rect class="box" x="100" y="610" width="460" height="76"/>
+  <text class="head" x="121" y="645">LLM + predefined Cypher tools</text>
+  <text class="body" x="121" y="673">Retrieve evidence and answer questions</text>
+
+  <path class="edge" d="M330 686 V734"/>
+  <rect class="box" x="100" y="742" width="460" height="72"/>
+  <text class="head" x="121" y="777">Paired source comparison</text>
+  <text class="body" x="121" y="804">Same question: core vs. source enabled</text>
+</svg>
