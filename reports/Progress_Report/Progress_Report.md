@@ -214,7 +214,7 @@
 * [x] Complete the missing-field analysis and coverage plot
   * [x] Summarize the largest gaps for the report
 * [x] Refine gap analysis based on the initial results
-* [ ] Start the research paper draft
+* [x] Start the research paper draft
 
 ---
 
