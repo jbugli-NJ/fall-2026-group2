@@ -48,6 +48,14 @@ def saved_run(pair: PairedResult) -> SavedAnalysisRun:
 
 # Tests
 
+def test_blank_rater_id() -> None:
+    """
+    Reject a blank rater ID.
+    """
+    with pytest.raises(ValueError, match='Rater ID must not be blank'):
+        label.validate_rater_id('   ')
+
+
 def test_pair_display(saved_run: SavedAnalysisRun, pair: PairedResult) -> None:
     """
     Test evidence before the answers and a code recap after them.
@@ -99,20 +107,19 @@ def test_label_and_resume(
     results = tmp_path / 'benchmarks/gap_analysis/results.json'
     results.parent.mkdir(parents=True)
     results.write_text(json.dumps({'runs': [saved_run.model_dump(mode='json')]}))
-    monkeypatch.setattr(label, 'git_email', lambda: 'reviewer@example.com')
     monkeypatch.setattr(label, 'review_pair', lambda pair: Contribution.NO_CHANGE)
-    label.main(argv=[])
+    label.main(argv=['--rater-id', 'reviewer-1'])
     labels = results.with_name('human_judgments.json')
     records = json.loads(labels.read_text())
     assert records == [{
         'pair_id': label.pair_id(run=saved_run, pair=saved_run.results[0]),
         'contribution': 'no_change',
-        'email': 'reviewer@example.com',
+        'rater_id': 'reviewer-1',
     }]
     assert results.with_name('human_judgments.svg').is_file()
 
     monkeypatch.setattr(label, 'review_pair', lambda pair: pytest.fail('Already labeled'))
-    label.main(argv=[])
+    label.main(argv=['--rater-id', 'reviewer-1'])
     assert json.loads(labels.read_text()) == records
 
 
@@ -134,13 +141,12 @@ def test_cleanup_before_quitting(
         {
             'pair_id': identity,
             'contribution': 'improvement',
-            'email': 'reviewer@example.com',
+            'rater_id': 'reviewer-1',
         }
         for identity in [old_id, 'deleted-pair']
     ]))
-    monkeypatch.setattr(label, 'git_email', lambda: 'reviewer@example.com')
     monkeypatch.setattr(label, 'review_pair', lambda pair: 'quit')
-    label.run_labeling(results_path=results)
+    label.run_labeling(results_path=results, rater_id='reviewer-1')
     assert json.loads(labels.read_text()) == []
 
 
@@ -158,7 +164,7 @@ def test_old_rubric_labels_are_not_reinterpreted(saved_run, tmp_path):
     judgments.write_text(json.dumps([{
         'pair_id': 'old-pair',
         'contribution': 'unsupported',
-        'email': 'reviewer@example.com',
+        'rater_id': 'reviewer-1',
     }]))
     assert label.load_judgments(judgments) == []
 

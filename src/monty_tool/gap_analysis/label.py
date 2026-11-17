@@ -9,7 +9,6 @@ import hashlib
 import json
 from pathlib import Path
 import random
-import subprocess
 from typing import Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -29,11 +28,11 @@ from monty_tool.gap_analysis.storage import load_answer, load_evidence
 
 class HumanJudgment(BaseModel):
     """
-    One classification and the user's email for reference.
+    One classification and an explicitly supplied rater ID for reference.
     """
     pair_id: str = Field(min_length=1)
     contribution: Contribution
-    email: str = Field(min_length=1)
+    rater_id: str
 
 
 def load_runs(path: Path) -> list[SavedAnalysisRun]:
@@ -262,22 +261,21 @@ def report_agreement(
     print(f'Agreement: {matches}/{len(comparisons)} ({rate})')
 
 
-def git_email() -> str:
+def validate_rater_id(value: str) -> str:
     """
-    Read the configured email in git for output saves.
+    Require a nonblank rater ID and remove surrounding whitespace.
     """
-    email = subprocess.run(
-        ['git', 'config', 'user.email'], check=False, capture_output=True, text=True,
-    ).stdout.strip()
-    if not email:
-        raise ValueError('Set git user.email before labeling.')
-    return email
+    value = value.strip()
+    if not value:
+        raise ValueError('Rater ID must not be blank.')
+    return value
 
 
-def run_labeling(results_path: Path, randomize: bool = True) -> None:
+def run_labeling(results_path: Path, rater_id: str, randomize: bool = True) -> None:
     """
     Load results, resume human labeling, and report agreement with the LLM.
     """
+    rater_id = validate_rater_id(rater_id)
     labels_path = results_path.with_name('human_judgments.json')
     runs = load_runs(path=results_path)
     judgments = load_judgments(path=labels_path)
@@ -291,7 +289,6 @@ def run_labeling(results_path: Path, randomize: bool = True) -> None:
         random.shuffle(pending_pairs)
     save_progress(path=labels_path, judgments=judgments, pairs=judged_pairs)
     if pending_pairs:
-        email = git_email()
         print(RUBRIC)
         try:
             for index, (identity, pair) in enumerate(pending_pairs, 1):
@@ -302,7 +299,7 @@ def run_labeling(results_path: Path, randomize: bool = True) -> None:
                 if contribution == 'skip':
                     continue
                 judgments.append(HumanJudgment(
-                    pair_id=identity, contribution=contribution, email=email,
+                    pair_id=identity, contribution=contribution, rater_id=rater_id,
                 ))
                 save_progress(path=labels_path, judgments=judgments, pairs=judged_pairs)
                 agreement = 'agree' if contribution == pair.contribution else 'disagree'
@@ -325,12 +322,18 @@ def main(argv: list[str] | None = None) -> None:
         help='Results JSON; defaults to benchmarks/gap_analysis/results.json.',
     )
     parser.add_argument(
+        '--rater-id', required=True, type=validate_rater_id,
+        help='Rater ID to save with each new judgment (required).',
+    )
+    parser.add_argument(
         '--random', action=argparse.BooleanOptionalAction, default=True,
         help='Randomize the order of unlabeled pairs (default: enabled).',
     )
     args = parser.parse_args(argv)
     try:
-        run_labeling(results_path=args.results, randomize=args.random)
+        run_labeling(
+            results_path=args.results, rater_id=args.rater_id, randomize=args.random,
+        )
     except Exception as e:
         parser.exit(status=1, message=f'Cannot label results: {e}\n')
 
