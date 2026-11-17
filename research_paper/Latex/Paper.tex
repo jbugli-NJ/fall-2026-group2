@@ -2,6 +2,7 @@
 
 \usepackage{cite}
 \usepackage{graphicx}
+\usepackage{svg}
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
 
@@ -180,7 +181,7 @@ Fig.~\ref{fig:pipeline} shows how the sources move through these stages.
 
 \begin{figure}[!t]
     \centering
-    \includegraphics[width=\columnwidth]{fig/figure1_overview.pdf}
+    \includesvg[width=\columnwidth,inkscapelatex=false]{fig/figure1_overview}
     \caption{System workflow from Montandon and external sources to
     graph-based answers and paired source comparison.}
     \label{fig:pipeline}
@@ -208,7 +209,7 @@ identifier match used to attach weather properties.
 
 \begin{figure}[!t]
     \centering
-    \includegraphics[width=\columnwidth]{fig/figure2_network.pdf}
+    \includesvg[width=\columnwidth,inkscapelatex=false]{fig/figure2_network}
     \caption{Graph links around a disaster event. Solid arrows are
     relationships; the dashed arrow indicates the identifier match
     used for weather properties.}
