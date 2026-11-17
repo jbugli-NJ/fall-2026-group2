@@ -1,0 +1,9 @@
+Model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+Pricing: US cross-region (standard)
+USD per million tokens: input $3.30, output $16.50
+Stage          Input tokens  Output tokens Input cost  Output cost Total      
+core                932,932        122,496 $  3.0787   $  2.0212   $  5.0999
+external          1,675,592        128,848 $  5.5295   $  2.1260   $  7.6554
+judge             2,122,106          2,880 $  7.0029   $  0.0475   $  7.0505
+total             4,730,630        254,224 $ 15.6111   $  4.1947   $ 19.8058
+Attempts with missing token counts: 12 (unrecorded usage excluded).
