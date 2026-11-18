@@ -10,9 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-from typing import Any
 
-from huggingface_hub import accept_access_request
 from transformers import set_seed
 
 from monty_tool.gap_analysis.answering import (
@@ -20,7 +18,7 @@ from monty_tool.gap_analysis.answering import (
     answer_question,
     construct_gap_questions,
     make_answerer,
-    select_contexts,
+    select_country_hazards,
 )
 from monty_tool.gap_analysis.external_sources import EXTERNAL_SOURCES, ExternalSourceName
 from monty_tool.gap_analysis.judging import (
@@ -29,15 +27,20 @@ from monty_tool.gap_analysis.judging import (
 from monty_tool.gap_analysis.protocols import ContributionJudge
 from monty_tool.gap_analysis.plotting import build_summary_plot
 from monty_tool.gap_analysis.schemas import (
-    AnswerAttempt,
     Contribution,
+    Evidence,
     GapQuestion,
+    GapSelection,
+    ModelInfo,
+    ModelSummary,
     PairedResult,
+    QuestionSummary,
     SavedAnalysisRun,
     SavedPairedResult,
 )
 from monty_tool.gap_analysis.templates import TEMPLATES
-from monty_tool.gap_analysis.storage import save_attempt
+from monty_tool.gap_analysis.retrieval import DISASTER_LIMIT, retrieve_evidence
+from monty_tool.gap_analysis.storage import save_attempt, save_evidence
 from monty_tool.llm.client import DEFAULT_BEDROCK_MODEL_ID, BedrockQueryAssistant
 from monty_tool.llm.protocols import QueryAssistantProtocol
 from monty_tool.llm.tools import GraphSearchArguments
@@ -48,12 +51,13 @@ from monty_tool.utils.versions import SEED, FrozenModel
 
 def run_pair(
     question: GapQuestion,
-    core_context: dict[str, Any],
+    selection: GapSelection,
     assistant: QueryAssistantProtocol,
     judge: ContributionJudge,
     *,
     external_source: ExternalSourceName,
-    core: AnswerAttempt | None = None,
+    evidence: Evidence,
+    evidence_s3_uri: str,
 ) -> PairedResult:
     """
     Answer with and without an external source, then judge what it adds.
@@ -61,21 +65,24 @@ def run_pair(
     pair = PairedResult(
         external_source=external_source,
         question=question,
-        core_context=core_context,
-        core=core if core is not None else answer_question(
+        selection=selection,
+        evidence_s3_uri=evidence_s3_uri,
+        core=answer_question(
             assistant=assistant,
             question=question,
             external_source=None,
+            evidence=evidence,
         ),
         external=answer_question(
             assistant=assistant,
             question=question,
             external_source=external_source,
+            evidence=evidence,
         ),
     )
     if pair.core.error is None and pair.external.error is None:
         try:
-            pair.contribution = judge.judge(pair)
+            pair.contribution = judge.judge(pair, evidence)
         except Exception as exc:
             pair.judge_error = str(exc)
     return pair
@@ -83,12 +90,14 @@ def run_pair(
 
 # Results and summaries
 
-def summarize(results: Sequence[SavedPairedResult]) -> dict[str, Any]:
+def summarize(results: Sequence[SavedPairedResult]) -> dict[str, QuestionSummary]:
     """
     Count categories and failures for each question template and source.
     """
-    summary = {}
-    groups = sorted({(pair.question.template_id, pair.external_source) for pair in results})
+    summary: dict[str, QuestionSummary] = {}
+    groups: list[tuple[str, ExternalSourceName]] = sorted({
+        (pair.question.template_id, pair.external_source) for pair in results
+    })
     for template_id, source in groups:
         pairs = [
             pair for pair in results
@@ -98,13 +107,7 @@ def summarize(results: Sequence[SavedPairedResult]) -> dict[str, Any]:
             pair.contribution.value for pair in pairs if pair.contribution is not None
         )
         evaluated = sum(counts.values())
-        improved = sum(counts[category.value] for category in (
-            Contribution.FILLS_FIELD, Contribution.EXTENDS_COVERAGE, Contribution.QUALIFIES,
-        ))
-        tool_failures = [
-            pair.core.tool_failure_count + pair.external.tool_failure_count
-            for pair in pairs
-        ]
+        improved = counts[Contribution.IMPROVEMENT.value]
         summary[f'{template_id} / {source}'] = {
             'template_id': template_id,
             'external_source': source,
@@ -117,8 +120,6 @@ def summarize(results: Sequence[SavedPairedResult]) -> dict[str, Any]:
                 for pair in pairs
             ),
             'judge_failures': sum(pair.judge_error is not None for pair in pairs),
-            'tool_failures': sum(tool_failures),
-            'pairs_with_tool_failures': sum(count > 0 for count in tool_failures),
             'categories': {
                 category.value: counts[category.value] for category in Contribution
             },
@@ -128,7 +129,7 @@ def summarize(results: Sequence[SavedPairedResult]) -> dict[str, Any]:
 
 def load_runs(output_dir: Path) -> list[SavedAnalysisRun]:
     """
-    Filter saved runs to the current rubric, then validate them.
+    Select the current rubric before validating saved runs.
     """
     path = output_dir.joinpath('results.json')
     if not path.exists():
@@ -141,7 +142,7 @@ def load_runs(output_dir: Path) -> list[SavedAnalysisRun]:
     ]
 
 
-def summarize_runs(runs: Sequence[SavedAnalysisRun]) -> list[dict[str, Any]]:
+def summarize_runs(runs: Sequence[SavedAnalysisRun]) -> list[ModelSummary]:
     """
     Summarize the current rubric separately for each answer and judge model.
     """
@@ -199,6 +200,16 @@ def _positive_int(value: str) -> int:
     return number
 
 
+def _non_negative_int(value: str) -> int:
+    """
+    Parse a CLI argument as an integer greater than or equal to zero.
+    """
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError('Value must be non-negative.')
+    return number
+
+
 def build_parser() -> argparse.ArgumentParser:
     """
     Define command-line options for running gap analysis.
@@ -207,12 +218,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--answer-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--judge-model', required=True, choices=MODEL_CHOICES)
     parser.add_argument('--country-code')
-    parser.add_argument('--hazard-name', help='Hazard name, such as Cyclone or Earthquake.')
+    parser.add_argument(
+        '--hazard-name',
+        help='Hazard name, such as Cyclone or Earthquake.',
+    )
     parser.add_argument('--from-date')
     parser.add_argument('--to-date')
     parser.add_argument(
         '--limit', type=_positive_int, default=1,
         help='Maximum number of country and hazard combinations (default: 1).',
+    )
+    parser.add_argument(
+        '--offset',
+        type=_non_negative_int,
+        default=0,
+        help='Country–hazard groups to skip (default: 0).',
     )
     parser.add_argument(
         '--external-sources',
@@ -227,7 +247,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help='Require stored data for every selected source (default: enabled).',
     )
-    parser.add_argument('--max-tool-calls', type=_positive_int, default=10)
     parser.add_argument(
         '--output-dir',
         type=Path,
@@ -237,13 +256,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _model_metadata(model: str) -> dict[str, str]:
+def _model_metadata(model: str) -> ModelInfo:
     """
     Return the selected model's ID and revision for the run metadata.
     """
     if model == 'bedrock':
-        return {'id': DEFAULT_BEDROCK_MODEL_ID, 'revision': 'not applicable'}
-    return {'id': model, 'revision': FrozenModel(model).revision}
+        return {
+            'id': DEFAULT_BEDROCK_MODEL_ID,
+            'revision': 'not applicable',
+        }
+    return {
+        'id': model,
+        'revision': FrozenModel(model).revision,
+    }
 
 
 # Runner
@@ -262,26 +287,29 @@ def main(argv: list[str] | None = None) -> int:
     filters = GraphSearchArguments(
         country_code=args.country_code,
         from_date=args.from_date, to_date=args.to_date,
+        offset=args.offset,
     )
-    contexts = select_contexts(
+    selections = select_country_hazards(
         filters,
         args.limit,
         hazard_name=args.hazard_name,
         require_external_data=args.require_external_data,
         external_sources=external_sources,
     )
-    if not contexts:
+    if not selections:
         parser.error('No countries and hazards matched the selection.')
-    questions = [
-        (question, context)
-        for context in contexts
-        for question in construct_gap_questions(context, TEMPLATES)
+    selection_questions = [
+        (selection, construct_gap_questions(selection, TEMPLATES))
+        for selection in selections
     ]
-    seed = SEED if args.answer_model != 'bedrock' or args.judge_model != 'bedrock' else None
+    total_questions = sum(len(questions) for _, questions in selection_questions)
+    seed = (
+        SEED if args.answer_model != 'bedrock' or args.judge_model != 'bedrock'
+        else None
+    )
     if seed is not None:
         set_seed(seed)
     assistant = make_answerer(args.answer_model)
-    assistant.max_tool_calls = args.max_tool_calls
     judge_assistant = (
         assistant
         if args.judge_model == args.answer_model
@@ -302,54 +330,63 @@ def main(argv: list[str] | None = None) -> int:
             if args.judge_model == 'bedrock'
             else 'token_probabilities'
         ),
-        'max_tool_calls': args.max_tool_calls,
-        'selection': {**filters.model_dump(mode='json'), 'hazard_name': args.hazard_name},
+        'selection': {
+            **filters.model_dump(mode='json'),
+            'hazard_name': args.hazard_name,
+        },
         'limit': args.limit,
+        'disaster_limit': DISASTER_LIMIT,
         'require_external_data': args.require_external_data,
-        'contexts': contexts,
+        'selections': [selection.model_dump(mode='json') for selection in selections],
         'templates': [template.model_dump() for template in TEMPLATES],
         'rubric_version': RUBRIC_VERSION,
         'rubric': RUBRIC,
-        'total_questions': len(questions),
+        'total_questions': total_questions,
         'external_sources': external_sources,
         'comparisons': [f'core_vs_{name}' for name in external_sources],
-        'retrieval_policy': (
-            'require_successful_query_per_answer; report_recovered_tool_failures'
-        ),
     }
     current_run = SavedAnalysisRun(metadata=metadata)
     runs.append(current_run)
     save_results(output_dir, runs)
-    for index, (question, context) in enumerate(questions, 1):
-        print(
-            f'{index}/{len(questions)}: '
-            f'{question.country_code} / {question.hazard_name} / {question.template_id}'
-        )
-        core = answer_question(
-            assistant,
-            question,
-            external_source=None,
-        )
-        saved_core = save_attempt(core)
+    index = 0
+    total_comparisons = total_questions * len(external_sources)
+    for selection, questions in selection_questions:
         for external_source in external_sources:
-            pair = run_pair(
-                question=question,
-                core_context=context,
-                assistant=assistant,
-                judge=judge,
+            evidence = retrieve_evidence(
+                selection.filters,
+                hazard_name=selection.hazard_name,
                 external_source=external_source,
-                core=core,
             )
-            current_run.results.append(SavedPairedResult(
-                external_source=pair.external_source,
-                question=pair.question,
-                core_context=pair.core_context,
-                core=saved_core,
-                external=save_attempt(pair.external),
-                contribution=pair.contribution,
-                judge_error=pair.judge_error,
-            ))
-            save_results(output_dir, runs)
+            evidence_s3_uri = save_evidence(evidence)
+            for question in questions:
+                index += 1
+                print(
+                    f'{index}/{total_comparisons}: '
+                    f'{question.country_code} / {question.hazard_name} / '
+                    f'{question.template_id} / {external_source}'
+                )
+                pair = run_pair(
+                    question=question,
+                    selection=selection,
+                    assistant=assistant,
+                    judge=judge,
+                    external_source=external_source,
+                    evidence=evidence,
+                    evidence_s3_uri=evidence_s3_uri,
+                )
+                current_run.results.append(SavedPairedResult(
+                    external_source=pair.external_source,
+                    question=pair.question,
+                    selection=pair.selection,
+                    evidence_s3_uri=pair.evidence_s3_uri,
+                    core=save_attempt(pair.core),
+                    external=save_attempt(pair.external),
+                    contribution=pair.contribution,
+                    judge_error=pair.judge_error,
+                    judge_input_tokens=pair.judge_input_tokens,
+                    judge_output_tokens=pair.judge_output_tokens,
+                ))
+                save_results(output_dir, runs)
     print(f'Results: {output_dir}')
     return int(any(pair.contribution is None for pair in current_run.results))
 

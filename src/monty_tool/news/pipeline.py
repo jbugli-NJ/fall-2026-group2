@@ -17,17 +17,13 @@ def select_disaster_records(
     *,
     start_date: date,
     end_date: date,
-    max_records: int | None = None,
     randomize: bool = False,
 ) -> list[EventContext]:
     """
-    Select event representatives in date or random order with an optional limit.
+    Select event representatives in date or random order.
     """
     if start_date > end_date:
         raise ValueError("start_date must not be later than end_date.")
-
-    if max_records is not None and (type(max_records) is not int or max_records < 1):
-        raise ValueError("max_records must be a positive integer.")
 
     representatives: dict[
         tuple[str, str, str],
@@ -80,7 +76,7 @@ def select_disaster_records(
     )
     if randomize:
         shuffle(selected)
-    return selected[:max_records]
+    return selected
 
 class MediaCloudCollectionJob(BaseModel):
     """An Event and its planned Media Cloud search."""

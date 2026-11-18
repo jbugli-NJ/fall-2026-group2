@@ -87,10 +87,12 @@ def test_local_dry_run_never_collects_loads_model_or_uses_s3(environment, tmp_pa
 
 def test_execute_saves_body_and_unavailable_candidate(environment, capsys):
     args, _, collect, model, get_bucket, _, _, _ = environment
-    assert cli.main([*args, *EXECUTE]) == 0
+    assert cli.main([*args, "--execute", "--request-limit", "1", "--defer-verification"]) == 0
     output = json.loads(capsys.readouterr().out)
     saved = output["saved"][0]
     restored = read_media_cloud_snapshot(Path(saved["snapshot"]))
+    report = json.loads(Path(saved["snapshot"]).read_text())
+    assert report["request_settings"]["max_body_attempts"] == 3
     assert saved["decisions"] == {"uncertain": 2}
     assert saved["verification_mode"] == "deferred"
     assert saved["has_more_pages"] is True
@@ -193,6 +195,7 @@ def test_legacy_local_snapshots_are_not_reused(environment, monkeypatch, capsys)
     [], ["--execute"],
     ["--execute", "--request-limit", "1", "--max-body-attempts", "0"],
     ["--dry-run", "--page-size", "101"],
+    ["--dry-run", "--max-records", "1"],
     ["--dry-run", "--s3-upload"],
     ["--dry-run", "--refresh-hours", "24"],
     ["--dry-run", "--max-pages", "0"],
@@ -219,13 +222,17 @@ def test_exact_event_selection_and_missing_id(environment, capsys):
         cli.main([*args, "--dry-run", "--event-id", "missing"])
 
 
-def test_s3_raw_input_uses_explicit_configuration(environment, monkeypatch, capsys):
+@pytest.mark.parametrize("bucket_name", [None, "", "test-bucket"])
+def test_s3_raw_input_uses_configured_or_default_bucket(
+    environment, monkeypatch, capsys, bucket_name,
+):
     args, load, collect, _, get_bucket, bucket, download, _ = environment
     args = [*args[:2], *args[4:]]  # Remove only --cache-dir and its value.
-    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
+    if bucket_name is not None:
+        monkeypatch.setenv("AWS_BUCKET", bucket_name)
     monkeypatch.setenv("AWS_BUCKET_PREFIX", " /test-owner/ ")
     assert cli.main([*args, "--dry-run"]) == 0
-    get_bucket.assert_called_once_with("test-bucket")
+    get_bucket.assert_called_once_with(bucket_name or "dats-capstone")
     assert download.call_args.args[:2] == (bucket, "test-owner/raw/emdat-events.nogeom.jsonl.gz")
     assert load.call_args.kwargs["geometry"] is False
     assert not download.call_args.args[2].exists()
@@ -308,13 +315,13 @@ def test_exact_s3_run_is_reused_without_new_requests(environment, monkeypatch, t
     model.assert_not_called()
 
 
-def test_s3_upload_uses_shared_default_prefix(environment, monkeypatch, capsys):
-    args, _, _, _, _, bucket, _, _ = environment
-    monkeypatch.setenv("AWS_BUCKET", "test-bucket")
+def test_s3_upload_uses_shared_defaults(environment, capsys):
+    args, _, _, _, get_bucket, bucket, _, _ = environment
     assert cli.main([*args, *EXECUTE, "--s3-upload"]) == 0
     output = json.loads(capsys.readouterr().out)
     key = "shared/group2/media_cloud_articles/current/emdat-events/event-a.json"
     assert output["saved"][0]["s3_key"] == key
+    get_bucket.assert_called_once_with("dats-capstone")
     assert bucket.upload_file.call_args.args[1] == key
 
 
@@ -328,14 +335,19 @@ def test_upload_failure_preserves_local_snapshot(environment, monkeypatch, capsy
     assert Path(output["local_snapshot"]).is_file()
 
 
-def test_total_request_budget_stops_before_next_event(environment, capsys):
+@pytest.mark.parametrize("empty_results", [False, True])
+def test_total_request_budget_stops_before_next_event(environment, capsys, empty_results):
     args, load, collect, _, _, _, _, pause = environment
     load.side_effect = lambda *_a, **_k: iter([record(), record("event-b")])
-    assert cli.main([*args, *EXECUTE, "--max-pages", "10", "--max-body-attempts", "0"]) == 0
+    if empty_results:
+        collect.return_value = collect.return_value.model_copy(update={"stories": []})
+    assert cli.main([*args, *EXECUTE, "--max-body-attempts", "0"]) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["stop_reason"] == "budget_exhausted"
+    assert output["requests_made"] == 1
     assert collect.call_count == 1
     assert collect.call_args.kwargs["max_pages"] == 1
+    assert collect.call_args.kwargs["page_size"] == cli.PAGE_SIZE
     pause.assert_not_called()
 
 

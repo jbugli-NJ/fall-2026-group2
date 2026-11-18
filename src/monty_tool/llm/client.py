@@ -40,7 +40,9 @@ def _system_prompt(
     if not use_tools:
         return (
             f"Today's date is {date.today().isoformat()}. "
-            "You answer questions about disaster records using your own knowledge. "
+            "You answer questions about disaster records. "
+            "When supporting records are supplied, ground your answer in those records "
+            "and explain where relevant information is missing. "
             "Answer in the user's language."
         )
     return (
@@ -102,7 +104,7 @@ class QueryAssistant:
     def _generate(
         self,
         messages: list[dict[str, Any]],
-        max_new_tokens: int = 1024,
+        max_new_tokens: int = 2048,
         *,
         tool_definitions: list[dict[str, Any]] | None = None,
         ) -> dict[str, Any]:
@@ -287,7 +289,7 @@ class BedrockQueryAssistant:
         self,
         messages: list[ConverseMessage],
         system: list[SystemContentBlock],
-        max_new_tokens: int = 1024,
+        max_new_tokens: int = 2048,
         *,
         tool_definitions: list[dict[str, Any]] | None = None,
         ) -> ConverseResponse:

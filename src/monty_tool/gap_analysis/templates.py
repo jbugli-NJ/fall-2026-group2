@@ -12,16 +12,15 @@ TEMPLATES = [
     QuestionTemplate(
         id='introduction_and_context',
         question=(
-            'What do past {hazard} events in {country} tell us about '
-            'where and when this hazard occurs? Include relevant weather evidence.'
+            'Provide context on past {hazard} events in {country} using available data. '
+            'Where and when has this hazard occurred?'
         ),
     ),
     QuestionTemplate(
         id='risk_and_vulnerability_analysis',
         question=(
-            'For {hazard} in {country}, which areas, people, and '
-            'infrastructure have been affected? '
-            'Which groups are reported as especially vulnerable?'
+            'For {hazard} in {country}, what does the available data suggest '
+            'about which groups are especially vulnerable?'
         ),
     ),
     QuestionTemplate(
@@ -36,7 +35,7 @@ TEMPLATES = [
         question=(
             'For {hazard} in {country}, what past actions and reported '
             'needs could inform early action choices? '
-            'Which actions were taken before impact?'
+            'If no actions or needs are clear from available data, say so.'
         ),
     ),
     QuestionTemplate(
@@ -44,7 +43,7 @@ TEMPLATES = [
         question=(
             'What do past appeals for {hazard} in {country} show about '
             'funding requested, funding received, and people targeted? '
-            'Was any funding specifically for early action?'
+            'If no appeal data is provided, say so.'
         ),
     ),
 ]

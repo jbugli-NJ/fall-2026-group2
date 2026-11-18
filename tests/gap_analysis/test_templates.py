@@ -6,7 +6,8 @@ Tests for gap analysis templates.
 
 import pytest
 
-from monty_tool.gap_analysis import answering, templates
+from monty_tool.gap_analysis import answering, retrieval, templates
+from monty_tool.gap_analysis.schemas import GapSelection
 
 
 # Tests
@@ -15,7 +16,7 @@ def test_hazard_name_mapping():
     """
     Resolve table and fallback codes, combining cyclone classifications.
     """
-    names = answering._hazard_code_name_map()
+    names = retrieval.hazard_code_name_map()
     cyclone_codes = (
         'MH0306', 'MH0030', 'MH0307', 'MH0031', 'MH0308', 'MH0032',
         'MH0309', 'MH0057', 'TC', 'EC', 'nat-met-sto-tro', 'nat-met-sto-ext',
@@ -35,10 +36,14 @@ def test_templates_have_unique_ids(hazard_name):
     question_set = {qt.question for qt in templates.TEMPLATES}
     assert len(id_set) == len(templates.TEMPLATES)
     assert len(question_set) == len(templates.TEMPLATES)
-    questions = answering.construct_gap_questions({
-        'country_code': 'JPN', 'hazard_name': hazard_name,
-        'from_date': '2000-01-01', 'to_date': '2025-12-31',
-    }, templates.TEMPLATES)
+    questions = answering.construct_gap_questions(GapSelection.model_validate({
+        'filters': {
+            'country_code': 'JPN',
+            'from_date': '2000-01-01',
+            'to_date': '2025-12-31',
+        },
+        'hazard_name': hazard_name,
+    }), templates.TEMPLATES)
     assert len(questions) == len(templates.TEMPLATES)
     for question in questions:
         assert question.country_code == 'JPN'

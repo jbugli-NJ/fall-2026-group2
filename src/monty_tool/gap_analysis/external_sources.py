@@ -24,8 +24,8 @@ class ExternalSource:
 # Sources
 
 EXTERNAL_SOURCES: dict[ExternalSourceName, ExternalSource] = {
-    'news': ExternalSource('Articles returned by get_event_news.'),
-    'weather': ExternalSource('Weather fields in graph query results.'),
+    'news': ExternalSource('Stored articles verified for matching disaster events.'),
+    'weather': ExternalSource('Weather fields in supplied disaster and impact records.'),
     'shakemap_footprints': ExternalSource(
         'USGS ShakeMap footprints in external_footprints in graph query results. '
         'The footprints field contains Montandon evidence and remains core evidence.',
