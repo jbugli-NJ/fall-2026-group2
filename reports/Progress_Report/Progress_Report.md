@@ -154,7 +154,7 @@
 
 ---
 
-## Date: Week 8 - October 27, 2026 (as of October 30, 2026)
+## Date: Week 8 - October 27, 2026 (as of November 2, 2026)
 - Topics of discussion
   - News article relevance
     - Using token probabilities to classify Media Cloud articles
@@ -162,6 +162,9 @@
     - Determining whether external data fills gaps in Montandon records
     - Comparing answers with and without external data
     - Using LLMs to judge utility by comparing responses
+  - Geospatial data
+    - Collecting hazard footprints from CEMS, GDACS, and USGS ShakeMap
+    - Checking how much location detail each source provides
 
 - Action Items:
 
@@ -169,5 +172,68 @@
 * [x] Build initial gap analysis utilities
   * [x] Add question templates and LLM judging
 * [x] Update the proposal to reflect gap analysis work
+* [x] Build initial hazard footprint collection tools
+
+---
+
+## Date: Week 9 - November 3, 2026
+- Topics of discussion
+  - First gap analysis runs
+    - Comparing the contribution from news, weather, and footprints separately
+    - Adjusting questions to focus on Red Cross Early Action Protocols (EAPs)
+    - Using past disasters for a country and hazard to support planning
+  - Connecting hazard footprints to the network
+  - Report updates
+    - Documenting data sources, coverage, and how they connect
+
+- Action Items:
+
+* [x] Connect hazard footprints to the network and LLM tools
+* [x] Add separate toggles for news, weather, and external footprints
+* [x] Update gap analysis questions for EAP planning
+* [x] Run initial evaluations and save outputs for review
+* [x] Move shared data to the team's S3 folder
+* [x] Add the data sources section to the report
+
+---
+
+## Date: Week 10 - November 10, 2026
+- Topics of discussion
+  - Checking the LLM judge's answers
+    - Building a way to label responses by hand and compare judgments
+    - Further changes needed based on the initial evaluation outputs
+  - Missing fields in Montandon
+    - Comparing gaps by source and year
+    - Missing processing fields, unknown countries, and limited location detail
+  - Initial research paper draft
+
+- Action Items:
+
+* [x] Build a terminal tool for hand-labeling gap analysis responses
+  * [x] Save initial labels and compare with the LLM judge
+* [x] Complete the missing-field analysis and coverage plot
+  * [x] Summarize the largest gaps for the report
+* [x] Refine gap analysis based on the initial results
+* [x] Start the research paper draft
+
+---
+
+## Date: Week 11 - November 17, 2026 (in progress)
+- Topics of discussion
+  - Reworking gap analysis after reviewing earlier runs
+    - Providing the model with retrieved context directly rather than relying on tool calls
+    - Revising prompts to avoid misinterpretations
+    - Reducing the judging categories to three main options
+    - Rerunning evaluations and labeling the new responses
+  - Estimating Bedrock costs for the evaluations
+    - Recording judge token usage and adding a cost calculation script
+  - Continuing the research paper
+
+- Action Items:
+
+* [x] Finalize the gap analysis changes and new evaluation runs
+* [x] Complete another hand-labeling pass
+* [x] Finish the Bedrock cost calculation script
+* [x] Extend the existing research paper draft
 
 ---
