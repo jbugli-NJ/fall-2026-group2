@@ -251,6 +251,15 @@ Outputs accumulate under `benchmarks/gap_analysis/`:
 
 Summaries use the current rubric version and answering/judging model combinations.
 
+To estimate the cost of the saved Sonnet 4.5 runs:
+
+```bash
+uv run -m monty_tool.gap_analysis.cost
+```
+
+This prints separate costs for core answers, external answers, and judging across all saved runs.
+These are estimated based on token counts and existing Bedrock API documentation.
+
 Answer text is uploaded to the selected bucket/prefix under `gap_analysis/answers/*.txt`.
 Retrieved records are saved under `gap_analysis/evidence/*.json` for human review.
 Bucket paths are saved in the committed JSON file for potential reference.
