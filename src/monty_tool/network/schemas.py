@@ -55,8 +55,10 @@ class WeatherNodeData(TypedDict):
 
 class FootprintNodeData(TypedDict):
     """
-    A hazard footprint summary, linked to the events sharing its source
-    Item's correlation ID. Outlines stay at `data_url`, not in the graph.
+    A hazard footprint summary, linked to the events in `event_ids` when
+    set (ShakeMaps, matched by time and distance) and otherwise to the
+    events sharing its source Item's correlation ID. Outlines stay at
+    `data_url`, not in the graph.
     """
     id: str
     item_id: str
@@ -74,6 +76,7 @@ class FootprintNodeData(TypedDict):
     severity_levels: list[str]
     data_url: str
     source_url: str | None
+    event_ids: NotRequired[list[str]]
 
 class BaseNodeData(TypedDict):
     """

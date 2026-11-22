@@ -1,5 +1,9 @@
 """
 Build hazard footprint node data from raw Montandon records stored in S3.
+
+ShakeMap footprints are linked to the GDACS and EM-DAT quakes matched by
+monty_tool.geo.quake_links, not by correlation ID; EM-DAT quakes are
+fetched from Montandon, since the shared raw EM-DAT file has no geometry.
 """
 
 # Imports
@@ -15,8 +19,13 @@ import requests
 
 from monty_tool.boto3_utils.s3_protocols import S3Bucket
 from monty_tool.boto3_utils.s3_utils import download_object, get_bucket, upload_object
-from monty_tool.geo.collect import FOOTPRINT_COLLECTIONS, footprints_from_raw_item
+from monty_tool.geo.collect import (
+    FOOTPRINT_COLLECTIONS,
+    MIN_SHAKEMAP_MAGNITUDE,
+    footprints_from_raw_item,
+)
 from monty_tool.geo.gdacs import COLLECTION as GDACS_COLLECTION
+from monty_tool.geo.quake_links import fetch_emdat_quakes, quake_event_links
 from monty_tool.network.footprints import footprint_to_node_data
 from monty_tool.network.schemas import FootprintNodeData
 from monty_tool.tools.resources import (
@@ -31,6 +40,8 @@ from monty_tool.tools.resources import (
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+USGS_COLLECTION = 'usgs-events'
 
 
 # Helpers
@@ -56,10 +67,15 @@ def raw_footprint_keys(bucket: S3Bucket) -> dict[str, str]:
     return keys
 
 
-def footprint_node_data(path: Path) -> Iterator[FootprintNodeData]:
+def footprint_node_data(
+    path: Path,
+    event_links: dict[str, list[str]] | None = None,
+) -> Iterator[FootprintNodeData]:
     """
     Footprint node data for every raw Item in a file, logging and skipping
-    Items whose footprints cannot be fetched.
+    Items whose footprints cannot be fetched. With `event_links`, each
+    footprint links to its Item's matched events instead of by correlation
+    ID (an Item with no match links to none).
     """
     for line_number, item in enumerate(read_gzip(path), start=1):
         corr_id = item.get('properties', {}).get('monty:corr_id')
@@ -70,8 +86,23 @@ def footprint_node_data(path: Path) -> Iterator[FootprintNodeData]:
         except (requests.RequestException, ValueError, KeyError) as error:
             logger.warning('Skipping %s at line %d: %s', item.get('id'), line_number, error)
             continue
+        event_ids = None if event_links is None else event_links.get(item['id'], [])
         for footprint in footprints:
-            yield footprint_to_node_data(footprint, corr_id)
+            yield footprint_to_node_data(footprint, corr_id, event_ids)
+
+
+def shakemap_event_links(usgs_path: Path, gdacs_path: Path | None) -> dict[str, list[str]]:
+    """
+    GDACS and EM-DAT event IDs for each USGS quake in the raw USGS file.
+    """
+    links = quake_event_links(
+        read_gzip(usgs_path),
+        read_gzip(gdacs_path) if gdacs_path is not None else [],
+        fetch_emdat_quakes(),
+        min_magnitude=MIN_SHAKEMAP_MAGNITUDE,
+    )
+    logger.info('Matched %d USGS quakes to GDACS or EM-DAT events', len(links))
+    return links
 
 
 def main() -> None:
@@ -90,13 +121,20 @@ def main() -> None:
         seen_ids: set[str] = set()
         with gzip.open(output_path, 'wt', encoding='utf-8'):
             pass
+        raw_paths: dict[str, Path] = {}
         for collection, key in keys.items():
             raw_path = tmp_path.joinpath(Path(key).name)
             logger.info('Downloading Montandon data: %s', key)
             download_object(bucket, key, raw_path)
+            raw_paths[collection] = raw_path
+        for collection, raw_path in raw_paths.items():
+            event_links = (
+                shakemap_event_links(raw_path, raw_paths.get(GDACS_COLLECTION))
+                if collection == USGS_COLLECTION else None
+            )
             count = 0
             with gzip.open(output_path, 'at', encoding='utf-8') as file:
-                for node in footprint_node_data(raw_path):
+                for node in footprint_node_data(raw_path, event_links):
                     if node['id'] in seen_ids:
                         continue
                     seen_ids.add(node['id'])
@@ -107,7 +145,6 @@ def main() -> None:
                 'Uploaded %d %s footprints to s3://%s/%s',
                 count, collection, bucket_name, FOOTPRINT_NODE_DATA_BUCKET_KEY,
             )
-
 
 if __name__ == '__main__':
     main()

@@ -23,11 +23,16 @@ FOOTPRINT_NODE_DATA_ADAPTER = TypeAdapter(FootprintNodeData)
 
 # Utilities
 
-def footprint_to_node_data(footprint: Footprint, corr_id: str) -> FootprintNodeData:
+def footprint_to_node_data(
+    footprint: Footprint,
+    corr_id: str,
+    event_ids: list[str] | None = None,
+) -> FootprintNodeData:
     """
     Convert a footprint into flat graph properties, dropping its outline.
+    `event_ids`, when given, replaces correlation-ID linking.
     """
-    return {
+    node: FootprintNodeData = {
         'id': f'{footprint.item_id}#{footprint.layer}',
         'item_id': footprint.item_id,
         'corr_id': corr_id,
@@ -45,6 +50,9 @@ def footprint_to_node_data(footprint: Footprint, corr_id: str) -> FootprintNodeD
         'data_url': footprint.data_url,
         'source_url': footprint.source_url,
     }
+    if event_ids is not None:
+        node['event_ids'] = event_ids
+    return node
 
 
 def validated_footprint_node_data(path: Path) -> Iterator[FootprintNodeData]:
@@ -60,16 +68,27 @@ def validated_footprint_node_data(path: Path) -> Iterator[FootprintNodeData]:
 
 def insert_footprints(driver: Driver, node_data: list[FootprintNodeData]) -> tuple[int, int]:
     """
-    Link footprints to every event sharing their correlation ID, returning
-    the linked and unmatched counts. Unmatched footprints are left out,
-    since their source's events may not be loaded.
+    Link each footprint to the events in its `event_ids` or, without them,
+    to every event sharing its correlation ID, returning the linked and
+    unmatched counts. Unmatched footprints are left out, since their
+    events may not be loaded.
     """
     def attach(tx: ManagedTransaction) -> tuple[int, int]:
         result = tx.run(
             """
             UNWIND $items AS item
-            OPTIONAL MATCH (event:Event {corr_id: item.corr_id})
-            WITH item, collect(event) AS events
+            CALL (item) {
+              OPTIONAL MATCH (event:Event {corr_id: item.corr_id})
+              WHERE item.event_ids IS NULL
+              RETURN collect(event) AS by_corr_id
+            }
+            CALL (item) {
+              UNWIND coalesce(item.event_ids, []) AS event_id
+              OPTIONAL MATCH (event:MontandonItem {id: event_id})
+              WHERE event:Event
+              RETURN collect(event) AS by_event_id
+            }
+            WITH item, by_corr_id + by_event_id AS events
             FOREACH (event IN events |
                 MERGE (footprint:Footprint {id: item.id})
                 SET footprint += item
