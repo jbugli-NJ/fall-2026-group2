@@ -29,9 +29,9 @@ records with IFRC GO response information, news articles, NASA POWER
 weather data, and disaster footprints. A language-model assistant uses
 predefined graph-query tools to retrieve evidence and answer questions.
 For each selected country and hazard type, we compare answers
-produced with the core sources against answers produced when news,
-weather, or external spatial footprints are enabled separately.
-The comparison examines both the answers and the evidence retrieved
+generated from core records with answers generated from the same
+records supplemented by news, weather, or USGS ShakeMap footprints.
+The comparison examines both answers and their supporting evidence
 for five EAP-related question areas.
 \end{abstract}
 
@@ -72,9 +72,9 @@ templates to each selected pair. These templates address hazard
 context and timing, affected areas and vulnerable groups, responding
 organizations and coordination, past actions and needs, and appeal
 funding and people targeted. For each resulting question, we compare
-an answer produced with the core sources against answers produced
-when news, weather, or external spatial footprints are enabled
-separately.
+answers generated from core records with answers generated from the
+same records supplemented by news, weather, or USGS ShakeMap
+footprints, one source at a time.
 
 The contributions of this work are threefold. First, we construct a
 graph representation that connects disaster events with impacts,
@@ -82,8 +82,7 @@ response records, news articles, weather summaries, and spatial
 footprints while retaining source information. Second, we provide a
 question-answering interface based on predefined, validated graph
 queries. Third, we define a paired evaluation procedure for examining
-which requested information is supplied, qualified, corroborated, or
-left unresolved when an external source is made available.
+whether external evidence improves answers to preparedness questions.
 
 \section{Related Work}
 
@@ -253,62 +252,70 @@ a separate \texttt{get\_event\_news} tool. This tool returns saved
 articles linked to a selected event, including metadata and article
 excerpts. The assistant is instructed to retrieve relevant missing
 evidence before concluding that it is unavailable, but tool
-selection remains model-driven. Consequently, evaluation records
-the tool calls and returned evidence as well as the final answer.
+selection remains model-driven.
 
 \section{Evaluation Design}
 
 \subsection{EAP-Related Questions}
 
-Evaluation contexts are defined by country and hazard. Five fixed
-question templates are instantiated for each selected context:
-(1) hazard context and timing, (2) affected areas and vulnerable
-groups, (3) responding organizations and coordination, (4) past
-actions and needs relevant to early-action choices, and (5) appeal
-funding and people targeted. These questions concern historical
-evidence that may inform EAP development.
+Each country and hazard pairing is evaluated using fixed question templates
+developed by reviewing existing EAP documents.
+
+Questions do not cover every EAP component; these were chosen to cover
+expected Montandon data bank utility.
+
+The questions are listed below, substituting the pairing's country and hazard
+for \{country\} and \{hazard\}:
+
+\begin{enumerate}
+    \item Provide context on past \{hazard\} events in \{country\}
+    using available data. Where and when has this hazard occurred?
+    \item For \{hazard\} in \{country\}, what does the available
+    data suggest about which groups are especially vulnerable?
+    \item Which organizations have responded to \{hazard\} in
+    \{country\}, and what roles and coordination are documented?
+    \item For \{hazard\} in \{country\}, what past actions and
+    reported needs could inform early action choices? If no actions
+    or needs are clear from available data, say so.
+    \item What do past appeals for \{hazard\} in \{country\} show
+    about funding requested, funding received, and people targeted?
+    If no appeal data is provided, say so.
+\end{enumerate}
 
 \subsection{Paired Source Comparisons}
 
-For each question, the system first generates a core answer with
-news, NASA POWER weather, and external ShakeMap footprints disabled.
-The core condition retains Montandon records, Montandon-origin
-footprints, and access to IFRC GO tools. The same core answer is
-compared separately with an answer generated after enabling one
-selected external source: news, weather, or external ShakeMap
-footprints.
+For each question and external source, the system generates two
+answers:
+\begin{enumerate}
+    \item The core answer uses Montandon records and retrieved
+    IFRC GO response and appeal records.
+    \item The second answer uses core records alongside added
+    information from the selected source, which can include Media
+    Cloud articles, NASA POWER weather data, or USGS ShakeMap
+    footprints.
+\end{enumerate}
 
-Source access is controlled at the tool or returned-evidence level.
-Disabling news removes the news-retrieval tool. Disabling weather
-removes weather fields and weather-based search filters. Disabling
-external footprints removes the external-footprint fields while
-preserving Montandon-origin footprints. Comparisons therefore
-measure the effect of making a source available within this
-question-answering workflow. Tool-call records are examined to
-determine which evidence the assistant actually retrieved.
+For each country and hazard pairing, the pipeline retrieves up to 10 recent disaster records
+that have associated external data as well as up to 10 IFRC GO response events with appeals.
+
+The retrieved data remains consistent across all evaluated questions for the given pairing.
 
 \subsection{Contribution Categories}
 
-A judge compares the two answers, their retrieved evidence, and
-the question. The rubric assigns one of seven categories:
-\texttt{fills\_field} when external evidence supplies a requested
-value missing from an existing core field;
-\texttt{extends\_coverage} when it answers a requested aspect
-outside the core fields; \texttt{qualifies} when it materially
-corrects or limits an existing answer; \texttt{corroborates} when it
-supports an existing answer without changing it;
-\texttt{core\_sufficient} when core evidence already answers the
-question; \texttt{unresolved} when requested information remains
-missing; and \texttt{unsupported} when an important new or changed
-claim is not supported by retrieved evidence.
+A judge model compares the two answers, their supporting evidence, and the question.
+The rubric assigns one of three categories:
+\begin{itemize}
+    \item \texttt{improvement}: external evidence answers a previously unanswered part of the question
+    or provides a useful correction or qualification.
+    \item \texttt{no\_change}: external evidence does not result in a a substantive change.
+    \item \texttt{regression}: the external evidence introduces an unsupported claim,
+    contradicts Montandon records, or loses a relevant supported finding.
+\end{itemize}
 
-The rubric checks for unsupported claims first. Additional detail
-counts as an improvement only when it addresses the question and is
-supported by relevant evidence. For each source and question type,
-the improvement rate is the number of evaluated comparisons labeled
-\texttt{fills\_field}, \texttt{extends\_coverage}, or
-\texttt{qualifies}, divided by the number of evaluated comparisons.
-Answer and judgment failures are recorded separately.
+The judge is prompted to prioritize regressions over useful additions.
+For each source and question type, the improvement rate is calculated
+by dividing comparisons labeled \texttt{improvement} with the total evaluated comparisons.
+Failures are recorded separately and excluded.
 
 \section{Experimental Setup}
 
@@ -334,4 +341,3 @@ Answer and judgment failures are recorded separately.
 \bibliography{references}
 
 \end{document}
-
