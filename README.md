@@ -283,3 +283,33 @@ Labels save to `human_judgments.json` beside the results, with one judgment per 
 Each new judgment records `--rater-id`; this flag is required.
 On startup, labels for pairs no longer present in the results (or with a dated rubric) are deleted.
 `human_judgments.svg` shows human vs. LLM judging comparison.
+
+## Building the research paper
+
+Building [the research paper](research_paper/Latex/Paper.tex) requires
+`latexmk`, pdfLaTeX, BibTeX, and Inkscape. The paper uses the `IEEEtran`
+document class, Times font metrics, and the `svg` and `booktabs` packages.
+
+On Fedora:
+
+```bash
+sudo dnf install latexmk texlive-latex texlive-bibtex texlive-ieeetran \
+  texlive-times texlive-svg texlive-booktabs inkscape
+```
+
+On macOS with [Homebrew](https://brew.sh/):
+
+```bash
+brew install --cask mactex-no-gui inkscape
+```
+
+From the repository root, build the PDF with:
+
+```bash
+cd research_paper/Latex
+latexmk -pdf -shell-escape Paper.tex
+```
+
+The output is `research_paper/Latex/Paper.pdf`. The `svg` package uses
+Inkscape to convert the figures during compilation, which requires
+`-shell-escape`.
