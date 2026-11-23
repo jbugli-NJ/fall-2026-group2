@@ -119,7 +119,7 @@ PHASE 3: NETWORK ANALYSIS & REPORTING TOOLS (Weeks 5-8)
 - Exploring an alternative to the existing news collection process that supports more historical retrieval and higher volume
 - Sync with Red Cross stakeholders on initial findings and proof-of-concept direction
 
-PHASE 4: PROOF OF CONCEPT, EVALUATION & PAPER WORK (Weeks 8-12)
+PHASE 4: PROOF OF CONCEPT, EVALUATION & ARTICLE WORK (Weeks 8-12)
 
 [Weeks 8-10: Complete the Proof of Concept]
 - Transition the demo app to a full proof-of-concept, extending on existing work for more concrete Red Cross utility
@@ -129,14 +129,14 @@ PHASE 4: PROOF OF CONCEPT, EVALUATION & PAPER WORK (Weeks 8-12)
 - Draft first complete reports for the full network setup and LLM integration
   - Sketch out the investigation process, methods, and initial findings
 
-[Week 11: Revision & Paper Work]
+[Week 11: Revision & Article Work]
 - Revise the proof-of-concept based on Red Cross stakeholder feedback
 - Document what works, what does not work, data limitations, and reasonable next steps to extend on the concept
-- Prepare final figures, results, and code needed for the paper
-- Complete a full draft of the paper documenting the investigation process and findings
+- Prepare final figures, results, and code needed for the article
+- Complete a full draft of the article for the Red Cross Medium channel documenting the investigation process and findings
 
-[Week 12: Paper Completion & Submission]
-- Revise and submit the project paper
+[Week 12: Article Completion & Submission]
+- Revise and submit the article to the Red Cross Medium channel
 - Start preparing the remaining final deliverables for the Red Cross
 
 PHASE 5: FINAL HANDOFF (Weeks 13-15)
@@ -173,12 +173,12 @@ Week 6:  Refine the demo app and/or change course as needed based on instruction
 Week 7:  Draft reports on the network and LLM work; meet with Red Cross stakeholders on findings and
   the proof-of-concept direction.
 Week 8:  Start the proof-of-concept tool or pipeline, test it on data bank records, begin initial gap
-  analysis evaluations to determine external data utility, and begin the paper.
-Week 9:  Continue the proof of concept and gap analysis evaluations; draft the paper's methods, findings, and limitations.
+  analysis evaluations to determine external data utility, and begin the Medium article.
+Week 9:  Continue the proof of concept and gap analysis evaluations; draft the article's methods, findings, and limitations.
 Week 10: Complete the first proof-of-concept version, summarize initial gap analysis findings on external data utility,
-  and complete the first full paper draft.
-Week 11: Revise the proof of concept from stakeholder feedback; complete figures, results, and paper revisions.
-Week 12: Submit the completed research paper; document follow-up work and begin final deliverable preparation.
+  and complete the first full article draft.
+Week 11: Revise the proof of concept from stakeholder feedback; complete figures, results, and article revisions.
+Week 12: Submit the completed article for publication on the Red Cross Medium channel; document follow-up work and begin final deliverable preparation.
 Week 13: Complete remaining analysis, limitations, and next steps; prepare final materials.
 Week 14: Finalize all Red Cross deliverables and repository documentation.
 Week 15: Complete the final presentation and handoff of the proof of concept, reporting tools, and
@@ -190,8 +190,8 @@ KEY MILESTONES:
 - Week 1:  Shared data access and working project foundation complete
 - Week 5: Initial demo app complete
 - Week 7:  Network and LLM reports complete; proof-of-concept direction confirmed
-- Week 10: Working proof of concept plus complete internal paper draft
-- Week 12: Project paper submitted
+- Week 10: Working proof of concept plus complete internal article draft
+- Week 12: Article submitted for publication on the Red Cross Medium channel
 - Week 15: Final handoff complete
 
 DELIVERABLES BY WEEK 15:
@@ -201,7 +201,7 @@ DELIVERABLES BY WEEK 15:
 - Reusable network generation, reporting, and visualization tools
 - LLM integration and fact retrieval evaluation results
 - Proof-of-concept tool or pipeline providing utility to Red Cross stakeholders
-- Project paper submission
+- Article submitted for publication on the Red Cross Medium channel
 - Final report, presentation, and documented repository
 
 
@@ -235,7 +235,7 @@ All Students:
 - Support testing and review
 - Write reports analyzing data through a network science lens and LLM integration dynamics
 - Communicate with Red Cross stakeholders
-- Produce final paper and deliverables for the Red Cross
+- Produce the Medium article and final deliverables for the Red Cross
 
 
 ## 7 Possible Issues:
