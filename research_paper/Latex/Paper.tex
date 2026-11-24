@@ -348,6 +348,23 @@ and 195 for ShakeMap.
 Ten comparisons failed because at least one answer reached the output token limit
 (as opposed to a failure in the judgement stage).
 
+Figs.~\ref{fig:gap-news-weather} and~\ref{fig:gap-shakemap} show improvement rates by question area.
+
+% TODO: Replace these two figures with one combined figure for news, weather, and ShakeMap.
+\begin{figure*}[!t]
+    \centering
+    \includesvg[width=\textwidth,inkscapelatex=false]{../../benchmarks/gap_analysis/summary}
+    \caption{Answer improvement rates by question area for news and weather across all runs.}
+    \label{fig:gap-news-weather}
+\end{figure*}
+
+\begin{figure*}[!t]
+    \centering
+    \includesvg[width=\textwidth,inkscapelatex=false]{../../benchmarks/gap_analysis/shakemap/summary}
+    \caption{Answer improvement rates by question area for ShakeMap footprints across all runs.}
+    \label{fig:gap-shakemap}
+\end{figure*}
+
 \begin{table*}[!t]
 \centering
 \caption{Improvements by question area. Each cell reports improved/evaluated comparisons
