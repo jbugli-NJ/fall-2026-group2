@@ -342,8 +342,42 @@ All runs for a given source are combined for reported results.
 
 \section{Results}
 
-% Add the final evaluation results and the corresponding figures here.
-% Report attempted and evaluated comparisons separately.
+Of 530 attempted comparisons, 520 received judgments: 130 for news, 195 for weather,
+and 195 for ShakeMap.
+
+Ten comparisons failed because at least one answer reached the output token limit
+(as opposed to a failure in the judgement stage).
+
+\begin{table*}[!t]
+\centering
+\caption{Improvements by question area. Each cell reports improved/evaluated comparisons
+and the improvement rate across all runs combined.}
+\label{tab:gap-results}
+\small
+\begin{tabular}{lrrr}
+\hline
+Question area & News & Weather & ShakeMap \\
+\hline
+Context and timing & 15/26 (57.7\%) & 28/35 (80.0\%) & 34/35 (97.1\%) \\
+Vulnerability & 13/26 (50.0\%) & 1/40 (2.5\%) & 5/40 (12.5\%) \\
+Stakeholders and coordination & 14/26 (53.8\%) & 1/40 (2.5\%) & 2/40 (5.0\%) \\
+Early actions and needs & 9/26 (34.6\%) & 9/40 (22.5\%) & 12/40 (30.0\%) \\
+Budget and financing & 2/26 (7.7\%) & 1/40 (2.5\%) & 0/40 (0.0\%) \\
+\hline
+Overall & 53/130 (40.8\%) & 40/195 (20.5\%) & 53/195 (27.2\%) \\
+\hline
+\end{tabular}
+\end{table*}
+
+Context and timing had the highest improvement rate for every source (Table~\ref{tab:gap-results}).
+News also improved half or more of the vulnerability and stakeholder comparisons.
+Financing questions showed little improvement with any source.
+
+The judge labeled 72 news, 154 weather, and 142 ShakeMap comparisons as no change.
+It identified five regressions with news, one with weather, and none with ShakeMap.
+
+One human rater reviewed 49 comparisons: 21 for news and 28 for weather.
+The rater agreed with the automated judge on 38 pairs (77.6\%).
 
 \section{Discussion}
 
