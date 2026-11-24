@@ -319,8 +319,26 @@ Failures are recorded separately and excluded.
 
 \section{Experimental Setup}
 
-% Add the final run's dataset snapshot, selection dates, country--hazard
-% contexts, question counts, sources, models, settings, and run metadata.
+The experiments comprise six runs, with two runs per external source.
+Each run applied the five question templates to the following country and hazard pairings:
+\begin{itemize}
+    \item News: 13 pairings, giving 65 questions per run.
+    \item Weather: 20 pairings, giving 100 questions per run.
+    \item ShakeMap: 20 earthquake pairings, giving 100 questions per run.
+\end{itemize}
+
+Pairings were selected with stored data from the respective external
+source required, up to a limit of 20, with no explicit date bounds.
+
+Within each source, both runs used the same questions and retrieved records.
+The sources cover different samples of country and hazard pairings.
+
+Claude Sonnet 4.5 through Amazon Bedrock generated both answers and judgments.
+Answers were generated from supplied records with tool use disabled.
+
+Judge responses used a structured output schema for parsing consistency.
+
+All runs for a given source are combined for reported results.
 
 \section{Results}
 
