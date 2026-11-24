@@ -226,10 +226,8 @@ same event becomes a \texttt{NewsArticle} node linked to the target
 event-relevance decision; it does not validate every factual claim
 in the article.
 
-Weather summaries are attached to the existing
-\texttt{MontandonItem} whose identifier matches the collected
-weather result's \texttt{item\_id}. Weather is represented as node
-properties rather than a separate weather node.
+Weather summaries are matched to the corresponding Montandon record
+by \texttt{item\_id} and stored as node properties.
 
 Footprints are linked to \texttt{Event} nodes using matching
 correlation identifiers and \texttt{FOOTPRINT\_OF} relationships.
