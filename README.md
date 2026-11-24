@@ -288,13 +288,13 @@ On startup, labels for pairs no longer present in the results (or with a dated r
 
 Building [the research paper](research_paper/Latex/Paper.tex) requires
 `latexmk`, pdfLaTeX, BibTeX, and Inkscape. The paper uses the `IEEEtran`
-document class, Times font metrics, and the `svg` and `booktabs` packages.
+document class, Times and Courier font metrics, and the `svg` package.
 
 On Fedora:
 
 ```bash
 sudo dnf install latexmk texlive-latex texlive-bibtex texlive-ieeetran \
-  texlive-times texlive-svg texlive-booktabs inkscape
+  texlive-times texlive-courier texlive-svg inkscape
 ```
 
 On macOS with [Homebrew](https://brew.sh/):
