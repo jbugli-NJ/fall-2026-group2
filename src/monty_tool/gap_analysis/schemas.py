@@ -63,7 +63,7 @@ class FootprintEvidence(TypedDict):
     label: str
     detail: str
     area_name: str | None
-    size_km: float | None
+    widest_extent_km: float | None
     severity_property: str | None
     severity_levels: list[str] | None
     data_url: str

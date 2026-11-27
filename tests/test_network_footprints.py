@@ -47,6 +47,27 @@ def test_shakemap_node_data_is_external():
     assert footprint_to_node_data(footprint, corr_id='c')['origin'] == 'external'
 
 
+def test_node_data_keeps_matched_events_only_when_given():
+    """
+    Verify `event_ids` is stored when given (even empty) and absent otherwise.
+    """
+    footprint = _footprint(source='USGS', item_id='usgs-event-us1', layer='shaking_intensity')
+    assert 'event_ids' not in footprint_to_node_data(footprint, corr_id='c')
+    assert footprint_to_node_data(footprint, 'c', ['emdat-event-x']).get('event_ids') == ['emdat-event-x']
+    assert footprint_to_node_data(footprint, 'c', []).get('event_ids') == []
+
+
+def test_validated_rows_round_trip_with_matched_events(tmp_path):
+    """
+    Verify node data with `event_ids` passes validation unchanged.
+    """
+    node = footprint_to_node_data(_footprint(), corr_id='c', event_ids=['gdacs-event-1-2'])
+    path = tmp_path / 'footprint.jsonl.gz'
+    with gzip.open(path, 'wt', encoding='utf-8') as file:
+        file.write(json.dumps(node, default=str) + '\n')
+    assert list(validated_footprint_node_data(path)) == [node]
+
+
 def test_validated_rows_round_trip(tmp_path):
     node = footprint_to_node_data(_footprint(), corr_id='c')
     path = tmp_path / 'footprint.jsonl.gz'
@@ -73,3 +94,5 @@ def test_insert_reports_linked_and_unmatched_counts():
     nodes = [footprint_to_node_data(_footprint(), corr_id='c')]
     assert insert_footprints(driver, nodes) == (3, 1)
     assert tx.run.call_args.kwargs['items'] == nodes
+    query = tx.run.call_args.args[0]
+    assert 'item.event_ids IS NULL' in query and 'UNWIND coalesce(item.event_ids, [])' in query

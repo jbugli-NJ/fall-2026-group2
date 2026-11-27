@@ -84,7 +84,7 @@ CALL (event) {
          label: footprint.label,
          detail: footprint.detail,
          area_name: footprint.area_name,
-         size_km: footprint.size_km,
+         widest_extent_km: footprint.size_km,
          severity_property: footprint.severity_property,
          severity_levels: footprint.severity_levels,
          data_url: footprint.data_url
@@ -95,7 +95,7 @@ CALL (event) {
          label: footprint.label,
          detail: footprint.detail,
          area_name: footprint.area_name,
-         size_km: footprint.size_km,
+         widest_extent_km: footprint.size_km,
          severity_property: footprint.severity_property,
          severity_levels: footprint.severity_levels,
          data_url: footprint.data_url
