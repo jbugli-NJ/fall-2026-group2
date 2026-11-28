@@ -256,7 +256,6 @@ ShakeMaps link to GDACS and EM-DAT quakes by time and distance (see
 [quake_links.py](src/monty_tool/geo/quake_links.py)), since Montandon's USGS events rarely have usable country codes.
 To rebuild them, put an M5.5+ `usgs-events.jsonl.gz` in the raw folder, then run
 `update-footprint-data` and `setup-network` before `run-gap-analysis --external-sources shakemap_footprints`.
-An M5.5+ pull is at `shared/group2/footprints/raw/usgs-events.m55.jsonl.gz`.
 
 To estimate the cost of the saved Sonnet 4.5 runs:
 
